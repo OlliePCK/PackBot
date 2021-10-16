@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "@discordjs/builders": "^0.6.0",
+    "@discordjs/rest": "^0.1.0-canary.0",
+    "discord-api-types": "^0.23.1",
+    "discord.js": "^13.2.0",
+    "dotenv": "^10.0.0"
+  },
+  "name": "packbot",
+  "version": "1.0.0",
+  "description": "Discord bot for The Pack",
+  "main": "index.js",
+  "devDependencies": {
+    "eslint": "^8.0.1"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Ollie#4747",
+  "license": "ISC"
+}
