@@ -87,14 +87,14 @@ module.exports = {
 						icon_url: 'https://i.imgur.com/c3z97p3.png',
 					},
 				};
-				return interaction.reply({ embeds: [VariantsEmbed] });
+				return interaction.editReply({ embeds: [VariantsEmbed] });
 			}
 			else {
-				return interaction.reply('That is not a Shopify link!');
+				return interaction.editReply('That is not a Shopify link!');
 			}
 		}
 		if (!validURL(interaction.options.getString('link'))) {
-			return interaction.reply('That is not a Shopify link!');
+			return interaction.editReply('That is not a Shopify link!');
 		}
 		else if (validURL(interaction.options.getString('link'))) {
 			const atcBase = new URL(interaction.options.getString('link'));
@@ -117,15 +117,15 @@ module.exports = {
 							return sendVariants(bodyAsJson, atcBase);
 						}
 						else {
-							return interaction.reply('That is not a valid Shopify link!');
+							return interaction.editReply('That is not a valid Shopify link!');
 						}
 					}
 					catch (error) {
-						return interaction.reply('That is not a valid Shopify link!');
+						return interaction.editReply('That is not a valid Shopify link!');
 					}
 				})
 				.catch(() => {
-					return interaction.reply('That is not a valid Shopify link!');
+					return interaction.editReply('That is not a valid Shopify link!');
 				});
 		}
 	},
