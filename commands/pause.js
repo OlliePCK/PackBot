@@ -2,18 +2,16 @@ const { SlashCommandBuilder } = require('@discordjs/builders');
 
 module.exports = {
 	data: new SlashCommandBuilder()
-		.setName('skip')
-		.setDescription('Skips the currently playing music.'),
+		.setName('pause')
+		.setDescription('Pauses the currently playing music.'),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
 		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
-		try {
-			queue.skip();
-			interaction.editReply(`${interaction.client.emotes.success} | Skipped this song!`);
+		if (queue.pause) {
+			queue.resume();
+			return interaction.editReply('The song has been resumed!');
 		}
-		catch (e) {
-			console.log(e);
-			interaction.editReply(`${interaction.client.emotes.error} | There are no more songs in the queue!`);
-		}
+		queue.pause();
+		interaction.editReply('The song has been paused!');
 	},
 };
