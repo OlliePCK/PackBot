@@ -1,7 +1,8 @@
 const fs = require('fs');
-const { Client, Collection, Intents } = require('discord.js');
+const { Client, Collection, Intents, MessageEmbed } = require('discord.js');
 require('dotenv').config();
 const config = require('./config.json');
+const mongoose = require('mongoose');
 
 const client = new Client({
 	intents: [
@@ -13,6 +14,8 @@ const client = new Client({
 	],
 });
 
+const cookie = process.env.COOKIE;
+
 client.emotes = config.emoji;
 const DisTube = require('distube');
 const { default: SoundCloudPlugin } = require('@distube/soundcloud');
@@ -20,6 +23,16 @@ const { default: SpotifyPlugin } = require('@distube/spotify');
 client.distube = new DisTube.DisTube(client, {
 	searchSongs: 10,
 	emitNewSongOnly: true,
+	nsfw: true,
+	youtubeCookie: cookie,
+	leaveOnStop: false,
+	savePreviousSongs: true,
+	youtubeIdentityToken: 'QUFFLUhqbE13SGdoU3pwR19RdHJxcHVXX3BFd2tkMHd1UXw\\u003d',
+	customFilters: {
+		'clear': 'dynaudnorm=f=200',
+		'lowbass': 'bass=g=6,dynaudnorm=f=200',
+		'8D': 'apulsator=hz=0.08',
+	},
 	plugins: [new SoundCloudPlugin(), new SpotifyPlugin({
 		parallel: true,
 		emitEventsAfterFetching: true,
@@ -51,17 +64,59 @@ for (const file of eventFiles) {
 	}
 }
 
-const status = queue => `Volume: \`${queue.volume}%\` | Filter: \`${queue.filters.join(', ') || 'Off'}\` | Loop: \`${queue.repeatMode ? queue.repeatMode === 2 ? 'All Queue' : 'This Song' : 'Off'}\` | Autoplay: \`${queue.autoplay ? 'On' : 'Off'}\``;
+mongoose.connect(process.env.MONGODB_SRV).then(() => {
+	console.log('Connected to the database!');
+}).catch((err) => {
+	console.log(err);
+});
+
 client.distube
-	.on('playSong', (queue, song) => queue.textChannel.send(
-		`${client.emotes.play} | Playing \`${song.name}\` - \`${song.formattedDuration}\`\nRequested by: ${song.user}\n${status(queue)}`,
-	))
-	.on('addSong', (queue, song) => queue.textChannel.send(
-		`${client.emotes.success} | Added ${song.name} - \`${song.formattedDuration}\` to the queue by ${song.user}`,
-	))
-	.on('addList', (queue, playlist) => queue.textChannel.send(
-		`${client.emotes.success} | Added \`${playlist.name}\` playlist (${playlist.songs.length} songs) to queue\n${status(queue)}`,
-	))
+	.on('playSong', (queue, song) => {
+		const embed = new MessageEmbed()
+			.setTitle(`${client.emotes.play} | Now playing: ${song.name}`)
+			.setURL(`${song.url}`)
+			.addFields(
+				{ name: 'Duration', value: `\`${song.formattedDuration}\``, inline: true },
+				{ name: 'Requested by', value: `${song.user}`, inline: true },
+				{ name: 'Volume', value: `\`${queue.volume}%\``, inline: true },
+				{ name: 'Filter', value: `\`${queue.filters.join(', ') || 'Off'}\``, inline: true },
+				{ name: 'Loop', value: `\`${queue.repeatMode ? queue.repeatMode === 2 ? 'All Queue' : 'This Song' : 'Off'}\``, inline: true },
+				{ name: 'Autoplay', value: `\`${queue.autoplay ? 'On' : 'Off'}\``, inline: true },
+			)
+			.setImage(`${song.thumbnail}`)
+			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setColor('#ff006a');
+		queue.textChannel.send({ embeds: [embed] });
+	})
+	.on('addSong', (queue, song) => {
+		const embed = new MessageEmbed()
+			.setTitle(`${client.emotes.success} | Song added: ${song.name}`)
+			.setURL(`${song.url}`)
+			.addFields(
+				{ name: 'Duration', value: `\`${song.formattedDuration}\``, inline: true },
+				{ name: 'Requested by', value: `${song.user}`, inline: true },
+				{ name: 'Source', value: `\`${song.source}\``, inline: true },
+			)
+			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setColor('#ff006a');
+		queue.textChannel.send({ embeds: [embed] });
+	})
+	.on('addList', (queue, playlist) => {
+		const embed = new MessageEmbed()
+			.setTitle(`${client.emotes.success} | Playlist added: ${playlist.name}`)
+			.setURL(`${playlist.url}`)
+			.addFields(
+				{ name: 'Songs', value: `\`${playlist.songs.length}\``, inline: true },
+				{ name: 'Requested by', value: `${playlist.user}`, inline: true },
+				{ name: 'Duration', value: `\`${playlist.formattedDuration}\``, inline: true },
+			)
+			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setColor('#ff006a');
+		if (playlist.thumbnail) {
+			embed.setImage(`${playlist.thumbnail}`);
+		}
+		queue.textChannel.send({ embeds: [embed] });
+	})
 // DisTubeOptions.searchSongs = true
 	.on('searchResult', (interaction, result) => {
 		let i = 0;

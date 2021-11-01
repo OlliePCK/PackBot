@@ -1,3 +1,6 @@
+const guild = require('../models/guildSchema');
+const mongoose = require('mongoose');
+
 module.exports = {
 	name: 'interactionCreate',
 	async execute(interaction) {
@@ -7,7 +10,18 @@ module.exports = {
 
 		if (!command) return;
 
-		await interaction.deferReply();
+		let guildProfile = await guild.findOne({ guildId: interaction.guildId });
+		if (!guildProfile) {
+			guildProfile = await new guild({
+				_id: mongoose.Types.ObjectId(),
+				guildId: interaction.guildId,
+			});
+			await guildProfile.save().catch(err => console.log(err));
+		}
+
+		if (interaction.commandName != 'purge') {
+			await interaction.deferReply();
+		}
 
 		try {
 			await command.execute(interaction);
