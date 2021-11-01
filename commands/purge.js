@@ -20,7 +20,7 @@ module.exports = {
 
 		interaction.channel.bulkDelete(amount, true).catch(err => {
 			console.error(err);
-			interaction.channel.send('Try again!');
+			interaction.editReply('Try again!');
 			return;
 		});
 		await interaction.editReply({ content: amount + ' messages were deleted!', ephemeral: true });

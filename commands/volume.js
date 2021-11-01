@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
+const { MessageEmbed } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -15,11 +16,25 @@ module.exports = {
 		if (isNaN(volume)) return interaction.editReply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.setVolume(volume);
-			interaction.editReply(`${interaction.client.emotes.success} | Volume set to \`${volume}\``);
+			const embed = new MessageEmbed()
+				.setTitle(`${interaction.client.emotes.success} | Changed the volume!`)
+				.addFields(
+					{ name: 'Requested by', value: `${interaction.user}`, inline: true },
+					{ name: 'Volume', value: `${volume}%`, inline: true },
+				)
+				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setColor('#ff006a');
+			return interaction.editReply({ embeds: [embed] });
+
 		}
 		catch (e) {
 			console.log(e);
-			interaction.editReply(`${interaction.client.emotes.error} | An error occured, please try again!`);
+			const embed = new MessageEmbed()
+				.setTitle(`${interaction.client.emotes.error} | An error occured!`)
+				.setDescription('There is no song up next.')
+				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setColor('#ff006a');
+			return interaction.editReply({ embeds: [embed] });
 		}
 	},
 };

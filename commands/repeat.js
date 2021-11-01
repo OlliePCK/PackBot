@@ -1,4 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
+const { MessageEmbed } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -22,6 +23,13 @@ module.exports = {
 		}
 		mode = queue.setRepeatMode(mode);
 		mode = mode ? mode === 2 ? 'Repeat queue' : 'Repeat song' : 'Off';
-		interaction.editReply(`${interaction.client.emotes.repeat} | Set repeat mode to \`${mode}\``);
+		const embed = new MessageEmbed()
+			.setTitle(`${interaction.client.emotes.success} | Set the repeat mode: \`${mode}\``)
+			.addFields(
+				{ name: 'Requested by', value: `${interaction.user}`, inline: true },
+			)
+			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setColor('#ff006a');
+		return interaction.editReply({ embeds: [embed] });
 	},
 };
