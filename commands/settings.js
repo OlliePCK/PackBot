@@ -1,6 +1,7 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
 const discord = require('discord.js');
 const guild = require('../models/guildSchema');
+const { Permissions } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -45,6 +46,9 @@ module.exports = {
 				.setDescription('Change the bots settings. (administator)'),
 		),
 	async execute(interaction) {
+		if (!interaction.member.permissions.has(Permissions.FLAGS.ADMINISTRATOR)) {
+			return interaction.editReply('You aren\'t an admin!');
+		}
 		const guildProfile = await guild.findOne({ guildId: interaction.guildId });
 		if (interaction.options.getSubcommand() === 'set-live-role') {
 			const role = interaction.options.getRole('live-role');
