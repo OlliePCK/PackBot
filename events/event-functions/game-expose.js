@@ -1,7 +1,17 @@
-const { general } = require('../../config.json');
+const guildModel = require('../../models/guildSchema');
 
 module.exports = client => {
 	client.on('presenceUpdate', async (oldPresence, newPresence) => {
+		const Guild = await newPresence.guild.fetch().catch(e => {
+			return console.log(e);
+		});
+
+		const guildProfile = await guildModel.findOne({ guildId: Guild.id });
+		if (!guildProfile) return;
+
+		if (!guildProfile.generalChannelID) return;
+		const general = guildProfile.generalChannelID;
+
 		if (newPresence == undefined || oldPresence == undefined) {
 			return;
 		}

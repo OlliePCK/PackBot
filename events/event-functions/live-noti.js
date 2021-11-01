@@ -1,7 +1,20 @@
-const { live, liverole } = require('../../config.json');
+const guildModel = require('../../models/guildSchema');
 
 module.exports = client => {
 	client.on('presenceUpdate', async (oldPresence, newPresence) => {
+		const Guild = await newPresence.guild.fetch().catch(e => {
+			return console.log(e);
+		});
+
+		const guildProfile = await guildModel.findOne({ guildId: Guild.id });
+		if (!guildProfile) return;
+
+		if (!guildProfile.liveRoleID) return;
+		const liverole = guildProfile.liveRoleID;
+
+		if (!guildProfile.liveChannelID) return;
+		const live = guildProfile.liveChannelID;
+
 		if (oldPresence == undefined) {
 			return;
 		}
