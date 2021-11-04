@@ -117,19 +117,21 @@ client.distube
 		}
 		queue.textChannel.send({ embeds: [embed] });
 	})
-// DisTubeOptions.searchSongs = true
-	.on('searchResult', (interaction, result) => {
-		let i = 0;
-		interaction.channel.send(`**Choose an option from below**\n${result.map(song => `**${++i}**. ${song.name} - \`${song.formattedDuration}\``).join('\n')}\n*Enter anything else or wait 60 seconds to cancel*`);
+	.on('empty', queue => {
+		const embed = new MessageEmbed()
+			.setTitle(`${client.emotes.success} | No one listening, leaving the channel!`)
+			.setDescription('Thank you for using The Pack music bot.')
+			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setColor('#ff006a');
+		queue.textChannel.send({ embeds: [embed] });
 	})
-// DisTubeOptions.searchSongs = true
-	.on('searchCancel', interaction => interaction.channel.send(`${client.emotes.error} | Searching canceled`))
-	.on('error', (channel, e) => {
-		channel.send(`${client.emotes.error} | An error encountered: ${e}`);
-		console.error(e);
-	})
-	.on('empty', channel => channel.send('Voice channel is empty! Leaving the channel...'))
-	.on('searchNoResult', interaction => interaction.channel.send(`${client.emotes.error} | No result found!`))
-	.on('finish', queue => queue.textChannel.send('Finished!'));
+	.on('finish', queue => {
+		const embed = new MessageEmbed()
+			.setTitle(`${client.emotes.success} | Music finished!`)
+			.setDescription('Thank you for using The Pack music bot.')
+			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setColor('#ff006a');
+		queue.textChannel.send({ embeds: [embed] });
+	});
 
 client.login(process.env.TOKEN);
