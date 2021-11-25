@@ -10,7 +10,6 @@
     "discord.js": "^13.2.0",
     "distube": "^3.0.0-beta.40",
     "dotenv": "^10.0.0",
-    "ffmpeg-static": "^4.4.0",
     "libsodium-wrappers": "^0.7.9",
     "mongoose": "^6.0.12",
     "reconlx": "^2.4.6",

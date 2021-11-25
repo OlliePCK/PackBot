@@ -8,6 +8,10 @@ module.exports = {
 	async execute(interaction) {
 		const voiceChannel = interaction.member.voice.channel;
 		const song = interaction.options.getString('song');
+		if (!voiceChannel) {
+			await interaction.editReply({ content: 'You are not in a voice channel!' });
+			await interaction.deleteReply();
+		}
 		try {
 			interaction.client.distube.playVoiceChannel(voiceChannel, song, { member: interaction.member, textChannel: interaction.channel });
 			await interaction.editReply({ content: 'Song has been added!' });

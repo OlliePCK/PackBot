@@ -18,6 +18,12 @@ module.exports = client => {
 		const oldAct = oldPresence.activities.find(activity => activity.timestamps != null);
 		if (oldAct) {
 			const newAct = newPresence.activities.find(activity => activity.name == oldAct.name);
+			if (newPresence.user.id == '99845226209742848') {
+				return;
+			}
+			if (oldAct.name == '@everyone' || oldAct.name == '@here') {
+				return;
+			}
 			if (newAct == undefined) {
 				const n = new Date();
 				const g = oldAct.timestamps.start;
