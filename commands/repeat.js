@@ -8,7 +8,7 @@ module.exports = {
 		.addStringOption(option => option.setName('mode').setDescription('Repeat modes').setRequired(true).addChoice('Queue repeat', 'queue').addChoice('Song repeat', 'song').addChoice('Repeat off', 'off')),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		let mode = null;
 		switch (interaction.options.getString('mode')) {
 		case 'off':
@@ -28,8 +28,11 @@ module.exports = {
 			.addFields(
 				{ name: 'Requested by', value: `${interaction.user}`, inline: true },
 			)
-			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setFooter({
+				text: 'The Pack',
+				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+			})
 			.setColor('#ff006a');
-		return interaction.editReply({ embeds: [embed] });
+		return interaction.reply({ embeds: [embed] });
 	},
 };

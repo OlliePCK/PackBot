@@ -47,7 +47,7 @@ module.exports = {
 		),
 	async execute(interaction) {
 		if (!interaction.member.permissions.has(Permissions.FLAGS.ADMINISTRATOR)) {
-			return interaction.editReply('You aren\'t an admin!');
+			return interaction.reply('You aren\'t an admin!');
 		}
 		const guildProfile = await guild.findOne({ guildId: interaction.guildId });
 		if (interaction.options.getSubcommand() === 'set-live-role') {
@@ -57,44 +57,56 @@ module.exports = {
 				.setTitle(`${interaction.client.emotes.success} | Set live role!`)
 				.addField('Role', `${role}`, true)
 				.addField('Set by', `${interaction.user}`, true)
-				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setFooter({
+					text: 'The Pack',
+					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+				})
 				.setColor('#ff006a');
-			interaction.editReply({ embeds: [embed] });
+			interaction.reply({ embeds: [embed] });
 		}
 		else if (interaction.options.getSubcommand() === 'set-live-channel') {
 			const channel = interaction.options.getChannel('live-channel');
 			if (!channel.isText()) {
-				return interaction.editReply('That is not a text channel!');
+				return interaction.reply('That is not a text channel!');
 			}
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { liveChannelID: channel.id });
 			const embed = new discord.MessageEmbed()
 				.setTitle(`${interaction.client.emotes.success} | Set live channel!`)
 				.addField('Channel', `${channel}`, true)
 				.addField('Set by', `${interaction.user}`, true)
-				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setFooter({
+					text: 'The Pack',
+					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+				})
 				.setColor('#ff006a');
-			interaction.editReply({ embeds: [embed] });
+			interaction.reply({ embeds: [embed] });
 		}
 		else if (interaction.options.getSubcommand() === 'set-general-channel') {
 			const channel = interaction.options.getChannel('general-channel');
 			if (!channel.isText()) {
-				return interaction.editReply('That is not a text channel!');
+				return interaction.reply('That is not a text channel!');
 			}
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { generalChannelID: channel.id });
 			const embed = new discord.MessageEmbed()
 				.setTitle(`${interaction.client.emotes.success} | Set general channel!`)
 				.addField('Channel', `${channel}`, true)
 				.addField('Set by', `${interaction.user}`, true)
-				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setFooter({
+					text: 'The Pack',
+					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+				})
 				.setColor('#ff006a');
-			interaction.editReply({ embeds: [embed] });
+			interaction.reply({ embeds: [embed] });
 		}
 		else if (interaction.options.getSubcommand() === 'info') {
 			const Guild = await interaction.guild.fetch();
 			const embed = new discord.MessageEmbed()
 				.setTitle(`${interaction.guild.name}'s Settings`)
 				.setDescription('Please configure the bot using the subcommands if there are no fields below!\n\n**/settings set-live-role `{live-role}`** sets the role assigned to users when they go live **ENSURE THE ROLE IS HIGHER THAN ALL USERS IN ROLE SETTINGS OR THE FEATURE WILL NOT WORK CORRECTLY**\n\n**/settings set-live-channel `{live-channel}`** sets the channel for live notifications to be sent to, setting this enables the live notification feature.\n\n**/settings set-general-channel `{general-channel}`** sets the general channel for play time notifications to be sent to, setting this enables the game expose feature.\n\nTo get the ID\'s of roles/channels, **enable developer mode** in Discord settings, right click the role/channel and select `Copy ID`\n ')
-				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setFooter({
+					text: 'The Pack',
+					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+				})
 				.setColor('#ff006a');
 			if (guildProfile.liveRoleID) {
 				await Guild.roles.fetch(guildProfile.liveRoleID)
@@ -106,7 +118,7 @@ module.exports = {
 			else embed.addField('Live Channel', '`Not Set`', true);
 			if (guildProfile.generalChannelID) embed.addField('General Channel', `<#${guildProfile.generalChannelID}>`, true);
 			else embed.addField('General Channel', '`Not Set`', true);
-			interaction.editReply({ embeds: [embed] });
+			interaction.reply({ embeds: [embed] });
 		}
 	},
 };

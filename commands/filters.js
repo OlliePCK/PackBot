@@ -28,18 +28,21 @@ module.exports = {
 		),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		if (interaction.options.getString('filter') === 'off' && queue.filters?.length) queue.setFilter(false);
 		else if (Object.keys(interaction.client.distube.filters).includes(interaction.options.getString('filter'))) queue.setFilter(interaction.options.getString('filter'));
-		else if (interaction.options.getString('filter')) return interaction.editReply(`${interaction.client.emotes.error} | Not a valid filter`);
+		else if (interaction.options.getString('filter')) return interaction.reply(`${interaction.client.emotes.error} | Not a valid filter`);
 		const embed = new MessageEmbed()
 			.setTitle(`${interaction.client.emotes.success} | Filter set!`)
 			.addFields(
 				{ name: 'Filter:', value: `\`${queue.filters.join(', ') || 'Off'}\``, inline: true },
 				{ name: 'Requested by', value: `${interaction.user}`, inline: true },
 			)
-			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setFooter({
+				text: 'The Pack',
+				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+			})
 			.setColor('#ff006a');
-		interaction.editReply({ embeds: [embed] });
+		interaction.reply({ embeds: [embed] });
 	},
 };

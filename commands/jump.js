@@ -11,9 +11,9 @@ module.exports = {
 				.setRequired(true)),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		const pos = Number(interaction.options.getInteger('position'));
-		if (isNaN(pos)) return interaction.editReply(`${interaction.client.emotes.error} | Please enter a valid number!`);
+		if (isNaN(pos)) return interaction.reply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.jump(pos - 1)
 				.then(q => {
@@ -22,17 +22,23 @@ module.exports = {
 						.addFields(
 							{ name: 'Requested by', value: `${interaction.user}`, inline: true },
 						)
-						.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+						.setFooter({
+							text: 'The Pack',
+							iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+						})
 						.setColor('#ff006a');
-					interaction.editReply({ embeds: [embed] });
+					interaction.reply({ embeds: [embed] });
 				}).catch(e => {
 					console.log(e);
 					const embed = new MessageEmbed()
 						.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 						.setDescription('Not a valid place in the queue!')
-						.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+						.setFooter({
+							text: 'The Pack',
+							iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+						})
 						.setColor('#ff006a');
-					interaction.editReply({ embeds: [embed] });
+					interaction.reply({ embeds: [embed] });
 				});
 		}
 		catch (e) {
@@ -40,9 +46,12 @@ module.exports = {
 			const embed = new MessageEmbed()
 				.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 				.setDescription('Not a valid place in the queue!')
-				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setFooter({
+					text: 'The Pack',
+					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+				})
 				.setColor('#ff006a');
-			interaction.editReply({ embeds: [embed] });
+			interaction.reply({ embeds: [embed] });
 		}
 	},
 };

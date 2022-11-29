@@ -7,7 +7,7 @@ module.exports = {
 		.setDescription('Stops the currently playing music.'),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		queue.stop();
 		const embed = new MessageEmbed()
 			.setTitle(`${interaction.client.emotes.success} | Music stopped!`)
@@ -15,8 +15,11 @@ module.exports = {
 			.addFields(
 				{ name: 'Requested by', value: `${interaction.user}`, inline: true },
 			)
-			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setFooter({
+				text: 'The Pack',
+				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+			})
 			.setColor('#ff006a');
-		return interaction.editReply({ embeds: [embed] });
+		return interaction.reply({ embeds: [embed] });
 	},
 };

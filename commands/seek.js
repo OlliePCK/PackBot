@@ -11,9 +11,9 @@ module.exports = {
 				.setRequired(true)),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		const time = Number(interaction.options.getInteger('time'));
-		if (isNaN(time)) return interaction.editReply(`${interaction.client.emotes.error} | Please enter a valid number!`);
+		if (isNaN(time)) return interaction.reply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.seek(time);
 			const embed = new MessageEmbed()
@@ -21,13 +21,16 @@ module.exports = {
 				.addFields(
 					{ name: 'Requested by', value: `${interaction.user}`, inline: true },
 				)
-				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setFooter({
+					text: 'The Pack',
+					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+				})
 				.setColor('#ff006a');
-			return interaction.editReply({ embeds: [embed] });
+			return interaction.reply({ embeds: [embed] });
 		}
 		catch (e) {
 			console.log(e);
-			return interaction.editReply(`${interaction.client.emotes.error} | An error occured, please try again!`);
+			return interaction.reply(`${interaction.client.emotes.error} | An error occured, please try again!`);
 		}
 	},
 };

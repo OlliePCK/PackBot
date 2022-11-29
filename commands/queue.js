@@ -1,6 +1,5 @@
 const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
-const { pagination } = require('reconlx');
+const { MessageEmbed, MessageActionRow, MessageButton } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -8,23 +7,76 @@ module.exports = {
 		.setDescription('Show the current queue for music.'),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
+		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing playing!`);
 		const channel = interaction.channel;
-		const author = interaction.member.user;
-		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing playing!`);
-		await interaction.editReply('Fetching queue...');
-		await interaction.deleteReply();
-		const embeds = generateQueueEmbed(queue, interaction);
-		pagination({
-			embeds: embeds,
-			time: 20000,
-			channel: channel,
-			author: author,
+		const id = interaction.user.id;
+		pages[id] = pages[id] || 0;
+		embeds = generateQueueEmbed(queue, interaction);
+
+		const embed = embeds[pages[id]];
+
+		const filter = (i) => i.user.id === id;
+		const time = 1000 * 60 * 5;
+
+		interaction.reply({
+			ephemeral: true,
+			embeds: [embed],
+			components: [getRow(id)]
+		});
+
+		const collector = channel.createMessageComponentCollector({ filter, time });
+		collector.on('collect', (btnInt) => {
+			if (!btnInt) {
+				return;
+			}
+
+			btnInt.deferUpdate();
+
+			if (btnInt.customId != 'prev_embed' && btnInt.customId != 'next_embed') {
+				return;
+			}
+
+			if (btnInt.customId == 'prev_embed' && pages[id] > 0) {
+				--pages[id];
+			}
+			else if (btnInt.customId == 'next_embed' && pages[id] < embeds.length - 1) {
+				++pages[id];
+			}
+
+			interaction.reply({
+				embeds: [embeds[pages[id]]],
+				components: [getRow(id)]
+			});
 		});
 	},
 };
 
+const pages = {};
+let embeds = [];
+
+function getRow(id) {
+	const row = new MessageActionRow();
+
+	row.addComponents(
+		new MessageButton()
+			.setCustomId('prev_embed')
+			.setStyle('SECONDARY')
+			.setEmoji('⏮️')
+			.setDisabled(pages[id] === 0)
+	);
+
+	row.addComponents(
+		new MessageButton()
+			.setCustomId('next_embed')
+			.setStyle('SECONDARY')
+			.setEmoji('⏭️')
+			.setDisabled(pages[id] === embeds.length - 1)
+	);
+
+	return row;
+}
+
 function generateQueueEmbed(queue, interaction) {
-	const embeds = [];
 	let k = 10;
 	for (let i = 0; i < queue.songs.length; i += 10) {
 		const current = queue.songs.slice(i, k);
@@ -43,7 +95,10 @@ function generateQueueEmbed(queue, interaction) {
 				{ name: 'Loop', value: `\`${queue.repeatMode ? queue.repeatMode === 2 ? 'All Queue' : 'This Song' : 'Off'}\``, inline: true },
 				{ name: 'Autoplay', value: `\`${queue.autoplay ? 'On' : 'Off'}\``, inline: true },
 			)
-			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setFooter({
+				text: 'The Pack',
+				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+			})
 			.setColor('#ff006a');
 		embeds.push(embed);
 	}

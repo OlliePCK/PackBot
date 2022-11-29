@@ -9,17 +9,17 @@ module.exports = {
 		const voiceChannel = interaction.member.voice.channel;
 		const song = interaction.options.getString('song');
 		if (!voiceChannel) {
-			await interaction.editReply({ content: 'You are not in a voice channel!' });
+			await interaction.reply({ content: 'You are not in a voice channel!' });
 			await interaction.deleteReply();
 		}
 		try {
-			interaction.client.distube.playVoiceChannel(voiceChannel, song, { member: interaction.member, textChannel: interaction.channel });
-			await interaction.editReply({ content: 'Song has been added!' });
+			interaction.client.distube.play(voiceChannel, song, { member: interaction.member, textChannel: interaction.channel });
+			await interaction.reply({ content: 'Song has been added!' });
 			await interaction.deleteReply();
 		}
 		catch (e) {
 			console.log(e);
-			await interaction.editReply(`${interaction.client.emotes.error} | Error: \`${e}\``);
+			await interaction.reply(`${interaction.client.emotes.error} | Error: \`${e}\``);
 			await interaction.deleteReply();
 		}
 	},

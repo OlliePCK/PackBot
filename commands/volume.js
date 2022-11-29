@@ -11,9 +11,9 @@ module.exports = {
 				.setRequired(true)),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		const volume = parseInt(interaction.options.getInteger('volume'));
-		if (isNaN(volume)) return interaction.editReply(`${interaction.client.emotes.error} | Please enter a valid number!`);
+		if (isNaN(volume)) return interaction.reply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.setVolume(volume);
 			const embed = new MessageEmbed()
@@ -22,9 +22,12 @@ module.exports = {
 					{ name: 'Requested by', value: `${interaction.user}`, inline: true },
 					{ name: 'Volume', value: `${volume}%`, inline: true },
 				)
-				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setFooter({
+					text: 'The Pack',
+					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+				})
 				.setColor('#ff006a');
-			return interaction.editReply({ embeds: [embed] });
+			return interaction.reply({ embeds: [embed] });
 
 		}
 		catch (e) {
@@ -32,9 +35,12 @@ module.exports = {
 			const embed = new MessageEmbed()
 				.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 				.setDescription('There is no song up next.')
-				.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+				.setFooter({
+					text: 'The Pack',
+					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+				})
 				.setColor('#ff006a');
-			return interaction.editReply({ embeds: [embed] });
+			return interaction.reply({ embeds: [embed] });
 		}
 	},
 };

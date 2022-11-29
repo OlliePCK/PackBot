@@ -19,10 +19,6 @@ module.exports = {
 			await guildProfile.save().catch(err => console.log(err));
 		}
 
-		if (interaction.commandName != 'purge') {
-			await interaction.deferReply();
-		}
-
 		try {
 			await command.execute(interaction);
 		}

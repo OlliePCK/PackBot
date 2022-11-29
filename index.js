@@ -14,12 +14,16 @@ const client = new Client({
 	],
 });
 
+// test
+
 const cookie = process.env.COOKIE;
+const IDtoken = process.env.IDTOKEN;
 
 client.emotes = config.emoji;
 const DisTube = require('distube');
 const { default: SoundCloudPlugin } = require('@distube/soundcloud');
 const { default: SpotifyPlugin } = require('@distube/spotify');
+const { YtDlpPlugin } = require('@distube/yt-dlp');
 client.distube = new DisTube.DisTube(client, {
 	searchSongs: 10,
 	emitNewSongOnly: true,
@@ -27,18 +31,18 @@ client.distube = new DisTube.DisTube(client, {
 	youtubeCookie: cookie,
 	leaveOnStop: false,
 	savePreviousSongs: true,
-	youtubeIdentityToken: 'QUFFLUhqbE13SGdoU3pwR19RdHJxcHVXX3BFd2tkMHd1UXw\\u003d',
+	youtubeIdentityToken: IDtoken,
 	customFilters: {
 		'clear': 'dynaudnorm=f=200',
 		'lowbass': 'bass=g=6,dynaudnorm=f=200',
 		'8D': 'apulsator=hz=0.08',
 	},
-	plugins: [new SoundCloudPlugin(), new SpotifyPlugin({
+	plugins: [new SoundCloudPlugin(), new YtDlpPlugin({ update: true }), new SpotifyPlugin({
 		parallel: true,
-		emitEventsAfterFetching: true,
+		emitEventsAfterFetching: false,
 		api: {
-			clientId: 'a89d775136c3427b91179300236b7ae9',
-			clientSecret: 'bb53191555f846f7bd3291a6ece7ea49',
+			clientId: process.env.CLIENTID,
+			clientSecret: process.env.CLIENTSECRET,
 		},
 	})],
 });
@@ -84,7 +88,10 @@ client.distube
 				{ name: 'Autoplay', value: `\`${queue.autoplay ? 'On' : 'Off'}\``, inline: true },
 			)
 			.setImage(`${song.thumbnail}`)
-			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setFooter({
+				text: 'The Pack',
+				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+			})
 			.setColor('#ff006a');
 		queue.textChannel.send({ embeds: [embed] });
 	})
@@ -97,7 +104,10 @@ client.distube
 				{ name: 'Requested by', value: `${song.user}`, inline: true },
 				{ name: 'Source', value: `\`${song.source}\``, inline: true },
 			)
-			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setFooter({
+				text: 'The Pack',
+				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+			})
 			.setColor('#ff006a');
 		queue.textChannel.send({ embeds: [embed] });
 	})
@@ -110,7 +120,10 @@ client.distube
 				{ name: 'Requested by', value: `${playlist.user}`, inline: true },
 				{ name: 'Duration', value: `\`${playlist.formattedDuration}\``, inline: true },
 			)
-			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setFooter({
+				text: 'The Pack',
+				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+			})
 			.setColor('#ff006a');
 		if (playlist.thumbnail) {
 			embed.setImage(`${playlist.thumbnail}`);
@@ -121,7 +134,10 @@ client.distube
 		const embed = new MessageEmbed()
 			.setTitle(`${client.emotes.success} | No one listening, leaving the channel!`)
 			.setDescription('Thank you for using The Pack music bot.')
-			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setFooter({
+				text: 'The Pack',
+				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+			})
 			.setColor('#ff006a');
 		queue.textChannel.send({ embeds: [embed] });
 	})
@@ -129,7 +145,10 @@ client.distube
 		const embed = new MessageEmbed()
 			.setTitle(`${client.emotes.success} | Music finished!`)
 			.setDescription('Thank you for using The Pack music bot.')
-			.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
+			.setFooter({
+				text: 'The Pack',
+				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+			})
 			.setColor('#ff006a');
 		queue.textChannel.send({ embeds: [embed] });
 	});
