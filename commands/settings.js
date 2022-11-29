@@ -1,6 +1,6 @@
 const discord = require('discord.js');
 const guild = require('../models/guildSchema');
-const { SlashCommandBuilder, Permissions } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -45,7 +45,7 @@ module.exports = {
 				.setDescription('Change the bots settings. (administator)'),
 		),
 	async execute(interaction) {
-		if (!interaction.member.permissions.has(Permissions.FLAGS.ADMINISTRATOR)) {
+		if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
 			return interaction.reply('You aren\'t an admin!');
 		}
 		const guildProfile = await guild.findOne({ guildId: interaction.guildId });
@@ -54,14 +54,16 @@ module.exports = {
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { liveRoleID: role.id });
 			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Set live role!`)
-				.addField('Role', `${role}`, true)
-				.addField('Set by', `${interaction.user}`, true)
+				.addFields([
+					{ name: 'Role', value: `${role}` },
+					{ name: 'Set by', value: `${interaction.user}` }
+				])
 				.setFooter({
 					text: 'The Pack',
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			interaction.reply({ embeds: [embed] });
+			return interaction.reply({ embeds: [embed] });
 		}
 		else if (interaction.options.getSubcommand() === 'set-live-channel') {
 			const channel = interaction.options.getChannel('live-channel');
@@ -71,14 +73,16 @@ module.exports = {
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { liveChannelID: channel.id });
 			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Set live channel!`)
-				.addField('Channel', `${channel}`, true)
-				.addField('Set by', `${interaction.user}`, true)
+				.addFields([
+					{ name: 'Channel', value: `${channel}` },
+					{ name: 'Set by', value: `${interaction.user}` }
+				])
 				.setFooter({
 					text: 'The Pack',
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			interaction.reply({ embeds: [embed] });
+			return interaction.reply({ embeds: [embed] });
 		}
 		else if (interaction.options.getSubcommand() === 'set-general-channel') {
 			const channel = interaction.options.getChannel('general-channel');
@@ -88,14 +92,16 @@ module.exports = {
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { generalChannelID: channel.id });
 			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Set general channel!`)
-				.addField('Channel', `${channel}`, true)
-				.addField('Set by', `${interaction.user}`, true)
+				.addFields([
+					{ name: 'Channel', value: `${channel}` },
+					{ name: 'Set by', value: `${interaction.user}` }
+				])
 				.setFooter({
 					text: 'The Pack',
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			interaction.reply({ embeds: [embed] });
+			return interaction.reply({ embeds: [embed] });
 		}
 		else if (interaction.options.getSubcommand() === 'info') {
 			const Guild = await interaction.guild.fetch();
@@ -107,17 +113,23 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
+			let embObj = [
+				{ name: 'Live Role', value: '' },
+				{ name: 'Live Channel', value: '' },
+				{ name: 'General Channel', value: '' },
+			]
 			if (guildProfile.liveRoleID) {
 				await Guild.roles.fetch(guildProfile.liveRoleID)
-					.then(role => embed.addField('Live Role', `${role}`, true))
+					.then(role => embObj[0].value = `${role}`)
 					.catch(console.error);
 			}
-			else { embed.addField('Live Role', '`Not Set`', true); }
-			if (guildProfile.liveChannelID) embed.addField('Live Channel', `<#${guildProfile.liveChannelID}>`, true);
-			else embed.addField('Live Channel', '`Not Set`', true);
-			if (guildProfile.generalChannelID) embed.addField('General Channel', `<#${guildProfile.generalChannelID}>`, true);
-			else embed.addField('General Channel', '`Not Set`', true);
-			interaction.reply({ embeds: [embed] });
+			else { embObj[0].value = '`Not Set`'; }
+			if (guildProfile.liveChannelID) embObj[1].value = `<#${guildProfile.liveChannelID}>`;
+			else embObj[1].value = '`Not Set`';
+			if (guildProfile.generalChannelID) embObj[2].value = `<#${guildProfile.generalChannelID}>`;
+			else embObj[2].value = '`Not Set`';
+			embed.addFields(embObj);
+			return interaction.reply({ embeds: [embed] });
 		}
 	},
 };

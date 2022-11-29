@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, Permissions } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -7,7 +7,7 @@ module.exports = {
 		.addIntegerOption(option => option.setName('amount').setDescription('The amount of messages to delete').setRequired(true)),
 	async execute(interaction) {
 		const amount = interaction.options.getInteger('amount');
-		if (!interaction.member.permissions.has(Permissions.FLAGS.ADMINISTRATOR)) {
+		if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
 			return interaction.reply('You aren\'t an admin');
 		}
 		if (isNaN(amount)) {
