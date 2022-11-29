@@ -1,5 +1,4 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -11,7 +10,7 @@ module.exports = {
 		if (queue.songs.length <= 1) return interaction.reply(`${interaction.client.emotes.error} | You can't undo the currently playing song!`);
 		try {
 			const spliced = queue.songs.splice(-1);
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Removed ${spliced[0].name}!`)
 				.setDescription('Thank you for using The Pack music bot.')
 				.addFields(
@@ -26,7 +25,7 @@ module.exports = {
 		}
 		catch (e) {
 			console.log(e);
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 				.setDescription('There is no song up next.')
 				.setFooter({

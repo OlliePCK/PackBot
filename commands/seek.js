@@ -1,5 +1,4 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -16,7 +15,7 @@ module.exports = {
 		if (isNaN(time)) return interaction.reply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.seek(time);
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Seeked to ${time} seconds!`)
 				.addFields(
 					{ name: 'Requested by', value: `${interaction.user}`, inline: true },

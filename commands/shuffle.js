@@ -1,5 +1,4 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -11,7 +10,7 @@ module.exports = {
 		try {
 			queue.shuffle()
 				.then(() => {
-					const embed = new MessageEmbed()
+					const embed = new EmbedBuilder()
 						.setTitle(`${interaction.client.emotes.success} | The queue has been shuffled!`)
 						.addFields(
 							{ name: 'Requested by', value: `${interaction.user}`, inline: true },
@@ -24,7 +23,7 @@ module.exports = {
 					return interaction.reply({ embeds: [embed] });
 				})
 				.catch(() => {
-					const embed = new MessageEmbed()
+					const embed = new EmbedBuilder()
 						.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 						.setDescription('There was a problem shuffling the queue, try again shortly.')
 						.setFooter({
@@ -37,7 +36,7 @@ module.exports = {
 		}
 		catch (e) {
 			console.log(e);
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 				.setDescription('There was a problem shuffling the queue, try again shortly.')
 				.setFooter({

@@ -1,5 +1,4 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -9,7 +8,7 @@ module.exports = {
 		const queue = interaction.client.distube.getQueue(interaction);
 		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		queue.stop();
-		const embed = new MessageEmbed()
+		const embed = new EmbedBuilder()
 			.setTitle(`${interaction.client.emotes.success} | Music stopped!`)
 			.setDescription('Thank you for using The Pack music bot.')
 			.addFields(

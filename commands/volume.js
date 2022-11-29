@@ -1,5 +1,4 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -16,7 +15,7 @@ module.exports = {
 		if (isNaN(volume)) return interaction.reply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.setVolume(volume);
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Changed the volume!`)
 				.addFields(
 					{ name: 'Requested by', value: `${interaction.user}`, inline: true },
@@ -32,7 +31,7 @@ module.exports = {
 		}
 		catch (e) {
 			console.log(e);
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 				.setDescription('There is no song up next.')
 				.setFooter({

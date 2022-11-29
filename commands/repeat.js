@@ -1,11 +1,16 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('repeat')
 		.setDescription('Set the repeat mode of the currently playing music.')
-		.addStringOption(option => option.setName('mode').setDescription('Repeat modes').setRequired(true).addChoice('Queue repeat', 'queue').addChoice('Song repeat', 'song').addChoice('Repeat off', 'off')),
+		.addStringOption(option => option.setName('mode').setDescription('Repeat modes').setRequired(true)
+			.addChoices(
+				{ name: 'Queue repeat', value: 'queue' },
+				{ name: 'Song repeat', value: 'song' },
+				{ name: 'Repeat off', value: 'off' }
+			)
+		),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
 		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
@@ -23,7 +28,7 @@ module.exports = {
 		}
 		mode = queue.setRepeatMode(mode);
 		mode = mode ? mode === 2 ? 'Repeat queue' : 'Repeat song' : 'Off';
-		const embed = new MessageEmbed()
+		const embed = new EmbedBuilder()
 			.setTitle(`${interaction.client.emotes.success} | Set the repeat mode: \`${mode}\``)
 			.addFields(
 				{ name: 'Requested by', value: `${interaction.user}`, inline: true },

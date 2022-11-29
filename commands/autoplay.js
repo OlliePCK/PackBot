@@ -1,5 +1,4 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -10,7 +9,7 @@ module.exports = {
 		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		try {
 			const autoplay = queue.toggleAutoplay();
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Autoplay: \`${autoplay ? 'On' : 'Off'}\``)
 				.addFields(
 					{ name: 'Requested by', value: `${interaction.user}`, inline: true },
@@ -24,7 +23,7 @@ module.exports = {
 		}
 		catch (e) {
 			console.log(e);
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 				.setDescription('Please try again.')
 				.setFooter({

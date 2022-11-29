@@ -1,7 +1,6 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
 const discord = require('discord.js');
 const guild = require('../models/guildSchema');
-const { Permissions } = require('discord.js');
+const { SlashCommandBuilder, Permissions } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -53,7 +52,7 @@ module.exports = {
 		if (interaction.options.getSubcommand() === 'set-live-role') {
 			const role = interaction.options.getRole('live-role');
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { liveRoleID: role.id });
-			const embed = new discord.MessageEmbed()
+			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Set live role!`)
 				.addField('Role', `${role}`, true)
 				.addField('Set by', `${interaction.user}`, true)
@@ -70,7 +69,7 @@ module.exports = {
 				return interaction.reply('That is not a text channel!');
 			}
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { liveChannelID: channel.id });
-			const embed = new discord.MessageEmbed()
+			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Set live channel!`)
 				.addField('Channel', `${channel}`, true)
 				.addField('Set by', `${interaction.user}`, true)
@@ -87,7 +86,7 @@ module.exports = {
 				return interaction.reply('That is not a text channel!');
 			}
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { generalChannelID: channel.id });
-			const embed = new discord.MessageEmbed()
+			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Set general channel!`)
 				.addField('Channel', `${channel}`, true)
 				.addField('Set by', `${interaction.user}`, true)
@@ -100,7 +99,7 @@ module.exports = {
 		}
 		else if (interaction.options.getSubcommand() === 'info') {
 			const Guild = await interaction.guild.fetch();
-			const embed = new discord.MessageEmbed()
+			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.guild.name}'s Settings`)
 				.setDescription('Please configure the bot using the subcommands if there are no fields below!\n\n**/settings set-live-role `{live-role}`** sets the role assigned to users when they go live **ENSURE THE ROLE IS HIGHER THAN ALL USERS IN ROLE SETTINGS OR THE FEATURE WILL NOT WORK CORRECTLY**\n\n**/settings set-live-channel `{live-channel}`** sets the channel for live notifications to be sent to, setting this enables the live notification feature.\n\n**/settings set-general-channel `{general-channel}`** sets the general channel for play time notifications to be sent to, setting this enables the game expose feature.\n\nTo get the ID\'s of roles/channels, **enable developer mode** in Discord settings, right click the role/channel and select `Copy ID`\n ')
 				.setFooter({

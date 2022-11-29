@@ -1,5 +1,4 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -14,7 +13,7 @@ module.exports = {
 			}
 			catch (e) {
 				console.log(e);
-				const embed = new MessageEmbed()
+				const embed = new EmbedBuilder()
 					.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 					.setDescription('Please try again.')
 					.setFooter({
@@ -24,7 +23,7 @@ module.exports = {
 					.setColor('#ff006a');
 				interaction.reply({ embeds: [embed] });
 			}
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | The song has been resumed!`)
 				.addFields(
 					{ name: 'Requested by', value: `${interaction.user}`, inline: true },
@@ -39,7 +38,7 @@ module.exports = {
 		else {
 			try {
 				queue.pause();
-				const embed = new MessageEmbed()
+				const embed = new EmbedBuilder()
 					.setTitle(`${interaction.client.emotes.success} | The song has been paused!`)
 					.addFields(
 						{ name: 'Requested by', value: `${interaction.user}`, inline: true },
@@ -53,7 +52,7 @@ module.exports = {
 			}
 			catch (e) {
 				console.log(e);
-				const embed = new MessageEmbed()
+				const embed = new EmbedBuilder()
 					.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 					.setDescription('Please try again.')
 					.setFooter({

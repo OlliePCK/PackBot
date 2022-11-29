@@ -1,5 +1,4 @@
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -17,7 +16,7 @@ module.exports = {
 		try {
 			queue.jump(pos - 1)
 				.then(q => {
-					const embed = new MessageEmbed()
+					const embed = new EmbedBuilder()
 						.setTitle(`${interaction.client.emotes.success} | Jumped to: \`${q.songs[0].name}\``)
 						.addFields(
 							{ name: 'Requested by', value: `${interaction.user}`, inline: true },
@@ -30,7 +29,7 @@ module.exports = {
 					interaction.reply({ embeds: [embed] });
 				}).catch(e => {
 					console.log(e);
-					const embed = new MessageEmbed()
+					const embed = new EmbedBuilder()
 						.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 						.setDescription('Not a valid place in the queue!')
 						.setFooter({
@@ -43,7 +42,7 @@ module.exports = {
 		}
 		catch (e) {
 			console.log(e);
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.error} | An error occured!`)
 				.setDescription('Not a valid place in the queue!')
 				.setFooter({

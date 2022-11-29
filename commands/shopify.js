@@ -1,6 +1,6 @@
 /* eslint-disable no-undef */
 /* eslint-disable no-inline-comments */
-const { SlashCommandBuilder } = require('@discordjs/builders');
+const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()

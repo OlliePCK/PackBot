@@ -1,6 +1,5 @@
 /* eslint-disable comma-dangle */
-const { SlashCommandBuilder } = require('@discordjs/builders');
-const { MessageEmbed } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -12,7 +11,7 @@ module.exports = {
 		try {
 			queue.skip()
 				.then(() => {
-					const embed = new MessageEmbed()
+					const embed = new EmbedBuilder()
 						.setTitle(`${interaction.client.emotes.success} | Song has been skipped!`)
 						.addFields(
 							{ name: 'Requested by', value: `${interaction.user}`, inline: true },
@@ -25,24 +24,25 @@ module.exports = {
 					return interaction.reply({ embeds: [embed] });
 				})
 				.catch(e => {
-					const embed = new MessageEmbed()
-						.setTitle(`${interaction.client.emotes.error} | An error occured!`)
-						.setDescription('There is no song up next.')
+					queue.stop();
+					const embed = new EmbedBuilder()
+						.setTitle(`${interaction.client.emotes.success} | Song has been skipped!`)
+						.addFields(
+							{ name: 'Requested by', value: `${interaction.user}`, inline: true },
+						)
 						.setFooter({
 							text: 'The Pack',
 							iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 						})
 						.setColor('#ff006a');
-					console.log(e);
 					return interaction.reply({ embeds: [embed] });
 				});
 		}
 		catch (e) {
-			queue.stop();
 			console.log(e);
-			const embed = new MessageEmbed()
+			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.error} | An error occured!`)
-				.setDescription('There is no song up next. The music has been stopped.')
+				.setDescription('There is no song up next.')
 				.setFooter({
 					text: 'The Pack',
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'

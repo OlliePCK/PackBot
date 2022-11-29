@@ -1,16 +1,16 @@
 const fs = require('fs');
-const { Client, Collection, Intents, MessageEmbed } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 require('dotenv').config();
 const config = require('./config.json');
 const mongoose = require('mongoose');
 
 const client = new Client({
 	intents: [
-		Intents.FLAGS.GUILDS,
-		Intents.FLAGS.GUILD_MESSAGES,
-		Intents.FLAGS.GUILD_PRESENCES,
-		Intents.FLAGS.GUILD_MEMBERS,
-		Intents.FLAGS.GUILD_VOICE_STATES,
+		GatewayIntentBits.Guilds,
+		GatewayIntentBits.GuildMessages,
+		GatewayIntentBits.GuildPresences,
+		GatewayIntentBits.GuildMembers,
+		GatewayIntentBits.GuildVoiceStates,
 	],
 });
 
@@ -39,7 +39,7 @@ client.distube = new DisTube.DisTube(client, {
 	},
 	plugins: [new SoundCloudPlugin(), new YtDlpPlugin({ update: true }), new SpotifyPlugin({
 		parallel: true,
-		emitEventsAfterFetching: false,
+		emitEventsAfterFetching: true,
 		api: {
 			clientId: process.env.CLIENTID,
 			clientSecret: process.env.CLIENTSECRET,
@@ -76,14 +76,14 @@ mongoose.connect(process.env.MONGODB_SRV).then(() => {
 
 client.distube
 	.on('playSong', (queue, song) => {
-		const embed = new MessageEmbed()
+		const embed = new EmbedBuilder()
 			.setTitle(`${client.emotes.play} | Now playing: ${song.name}`)
 			.setURL(`${song.url}`)
 			.addFields(
 				{ name: 'Duration', value: `\`${song.formattedDuration}\``, inline: true },
 				{ name: 'Requested by', value: `${song.user}`, inline: true },
 				{ name: 'Volume', value: `\`${queue.volume}%\``, inline: true },
-				{ name: 'Filter', value: `\`${queue.filters.join(', ') || 'Off'}\``, inline: true },
+				{ name: 'Filter', value: `\`${queue.filters.names.join(', ') || 'Off'}\``, inline: true },
 				{ name: 'Loop', value: `\`${queue.repeatMode ? queue.repeatMode === 2 ? 'All Queue' : 'This Song' : 'Off'}\``, inline: true },
 				{ name: 'Autoplay', value: `\`${queue.autoplay ? 'On' : 'Off'}\``, inline: true },
 			)
@@ -96,7 +96,7 @@ client.distube
 		queue.textChannel.send({ embeds: [embed] });
 	})
 	.on('addSong', (queue, song) => {
-		const embed = new MessageEmbed()
+		const embed = new EmbedBuilder()
 			.setTitle(`${client.emotes.success} | Song added: ${song.name}`)
 			.setURL(`${song.url}`)
 			.addFields(
@@ -112,7 +112,7 @@ client.distube
 		queue.textChannel.send({ embeds: [embed] });
 	})
 	.on('addList', (queue, playlist) => {
-		const embed = new MessageEmbed()
+		const embed = new EmbedBuilder()
 			.setTitle(`${client.emotes.success} | Playlist added: ${playlist.name}`)
 			.setURL(`${playlist.url}`)
 			.addFields(
@@ -131,7 +131,7 @@ client.distube
 		queue.textChannel.send({ embeds: [embed] });
 	})
 	.on('empty', queue => {
-		const embed = new MessageEmbed()
+		const embed = new EmbedBuilder()
 			.setTitle(`${client.emotes.success} | No one listening, leaving the channel!`)
 			.setDescription('Thank you for using The Pack music bot.')
 			.setFooter({
@@ -142,7 +142,7 @@ client.distube
 		queue.textChannel.send({ embeds: [embed] });
 	})
 	.on('finish', queue => {
-		const embed = new MessageEmbed()
+		const embed = new EmbedBuilder()
 			.setTitle(`${client.emotes.success} | Music finished!`)
 			.setDescription('Thank you for using The Pack music bot.')
 			.setFooter({
