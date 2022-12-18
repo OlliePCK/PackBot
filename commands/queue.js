@@ -17,6 +17,7 @@ module.exports = {
 
 function generateQueueEmbed(queue, interaction) {
 	const current = queue.songs.slice(0, 10);
+	let j = 0;
 	const info = current.map(track => `\`${++j}.\` [${track.name}](${track.url}) - \`${track.formattedDuration}\``).join('\n');
 	const embed = new EmbedBuilder()
 		.setTitle(`${interaction.client.emotes.play} | Now playing: ${queue.songs[0].name}`)
