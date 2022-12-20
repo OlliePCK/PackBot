@@ -7,9 +7,9 @@ module.exports = {
 		.setName('shopify')
 		.setDescription('Provides info on a Shopify product such as stock numbers and add to cart links.')
 		.addStringOption(option => option.setName('link').setDescription('A link to a Shopify product').setRequired(true)),
-	async execute(interaction) {
+	execute: async (interaction) => {
 		const fetch = require('node-fetch');
-		function validURL(str) {
+		const validURL = (str) => {
 			const pattern = new RegExp(
 				'^(https?:\\/\\/)?' + // protocol
                     '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' + // domain name
@@ -20,27 +20,26 @@ module.exports = {
 				'i',
 			); // fragment locator
 			return !!pattern.test(str);
-		}
-		function sendVariants(json, atcBase) {
+		};
+		const sendVariants = (json, atcBase) => {
 			if (json.product) {
-				const product = json.product;
-				const name = product.title;
-				const field_list = [];
-				for (variant in product.variants) {
-					const variant_names = [];
-					variant = product.variants[variant];
-					for (i = 1; i < 4; i++) {
-						const k = `option${i}`;
+				const { product } = json;
+				const { title: name, variants } = product;
+				const fieldList = [];
+				for (const variant of variants) {
+					const variantNames = [];
+					for (let i = 1; i < 4; i++) {
+						const key = `option${i}`;
 						if (
-							variant[k] &&
-                            variant[k] != 'Default Title' &&
-                            variant[k] != '-'
+							variant[key] &&
+                            variant[key] != 'Default Title' &&
+                            variant[key] != '-'
 						) {
-							variant_names.push(variant[k]);
+							variantNames.push(variant[key]);
 						}
 					}
 					const variant_id = variant.id.toString();
-					const variant_name = variant_names.join(' ').trim();
+					const variant_name = variantNames.join(' ').trim();
 					const variant_stock = variant.inventory_quantity;
 					const atc =
                         atcBase.protocol +
@@ -55,7 +54,7 @@ module.exports = {
 							value: '[Add to Cart](' + atc + ')',
 							inline: true,
 						};
-						field_list.push(entry);
+						fieldList.push(entry);
 					}
 					else if (variant_stock == undefined) {
 						const entry = {
@@ -63,7 +62,7 @@ module.exports = {
 							value: '[Stock #: N/A](' + atc + ')',
 							inline: true,
 						};
-						field_list.push(entry);
+						fieldList.push(entry);
 					}
 					else {
 						const entry = {
@@ -71,7 +70,7 @@ module.exports = {
 							value: '[Stock #: ' + variant_stock + '](' + atc + ')',
 							inline: true,
 						};
-						field_list.push(entry);
+						fieldList.push(entry);
 					}
 				}
 				const VariantsEmbed = {
@@ -81,20 +80,20 @@ module.exports = {
 					title: atcBase.hostname.toString(),
 					url: interaction.options.getString('link'),
 					color: 0xff006a,
-					fields: field_list,
+					fields: fieldList,
 					footer: {
 						text: 'Developed by Ollie#4747',
 						icon_url: 'https://i.imgur.com/c3z97p3.png',
 					},
 				};
-				return interaction.editReply({ embeds: [VariantsEmbed] });
+				return interaction.reply({ embeds: [VariantsEmbed] });
 			}
 			else {
-				return interaction.editReply('That is not a Shopify link!');
+				return interaction.reply('That is not a Shopify link!');
 			}
 		}
 		if (!validURL(interaction.options.getString('link'))) {
-			return interaction.editReply('That is not a Shopify link!');
+			return interaction.reply('That is not a Shopify link!');
 		}
 		else if (validURL(interaction.options.getString('link'))) {
 			const atcBase = new URL(interaction.options.getString('link'));
@@ -117,15 +116,15 @@ module.exports = {
 							return sendVariants(bodyAsJson, atcBase);
 						}
 						else {
-							return interaction.editReply('That is not a valid Shopify link!');
+							return interaction.reply('That is not a valid Shopify link!');
 						}
 					}
 					catch (error) {
-						return interaction.editReply('That is not a valid Shopify link!');
+						return interaction.reply('That is not a valid Shopify link!');
 					}
 				})
 				.catch(() => {
-					return interaction.editReply('That is not a valid Shopify link!');
+					return interaction.reply('That is not a valid Shopify link!');
 				});
 		}
 	},
