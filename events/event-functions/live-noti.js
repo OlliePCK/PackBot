@@ -1,3 +1,4 @@
+const { ActivityType } = require('discord.js');
 const guildModel = require('../../models/guildSchema');
 
 module.exports = client => {
@@ -18,11 +19,11 @@ module.exports = client => {
 		if (oldPresence == undefined) {
 			return;
 		}
-		const oldStreamingStatus = oldPresence.activities.find(activity => activity.type === 'STREAMING') ? true : false;
-		const newStreamingStatus = newPresence.activities.find(activity => activity.type === 'STREAMING') ? true : false;
+		const oldStreamingStatus = oldPresence.activities.find(activity => activity.type === 1) ? true : false;
+		const newStreamingStatus = newPresence.activities.find(activity => activity.type === 1) ? true : false;
 		const discName = newPresence.user.username;
 		if (newStreamingStatus === true && oldStreamingStatus === false) {
-			const streamURL = newPresence.activities.find(activity => activity.type === 'STREAMING').url;
+			const streamURL = newPresence.activities.find(activity => activity.type === 1).url;
 			console.log(`${discName}, just went live!`);
 			newPresence.member.roles.add(liverole).catch(() => {
 				return client.channels.cache.get(live).send('An error occured adding the live role to the user! Please ensure **The Pack** bot role is higher than all users!').catch(console.error);
