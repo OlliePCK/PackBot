@@ -36,5 +36,7 @@ function generateQueueEmbed(queue, interaction) {
 			iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 		})
 		.setColor('#ff006a');
-	return embed;
+		embed = embed.build();
+		interaction.reply({ embed });
+		
 }
