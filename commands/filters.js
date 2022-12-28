@@ -32,8 +32,11 @@ module.exports = {
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
 		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
-		if (interaction.options.getString('filter') === 'off' && queue.filters?.length) queue.setFilter(false);
-		else if (Object.keys(interaction.client.distube.filters).includes(interaction.options.getString('filter'))) queue.setFilter(interaction.options.getString('filter'));
+		if (interaction.options.getString('filter') === 'off' && queue.filters.size) queue.filters.clear();
+		else if (Object.keys(interaction.client.distube.filters).includes(interaction.options.getString('filter'))) {
+			if(queue.filters.has(interaction.options.getString('filter'))) queue.filters.remove(interaction.options.getString('filter'));
+			else queue.filters.add(interaction.options.getString('filter'));
+		}
 		else if (interaction.options.getString('filter')) return interaction.reply(`${interaction.client.emotes.error} | Not a valid filter`);
 		const embed = new EmbedBuilder()
 			.setTitle(`${interaction.client.emotes.success} | Filter set!`)
@@ -46,6 +49,6 @@ module.exports = {
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 			})
 			.setColor('#ff006a');
-		interaction.reply({ embeds: [embed] });
+		return interaction.reply({ embeds: [embed] });
 	},
 };
