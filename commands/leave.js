@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
-		.setName('disconnect')
+		.setName('leave')
 		.setDescription('Disconnect the music bot from the voice channel.'),
 	async execute(interaction) {
 		if (!interaction.client.distube.voices.get(interaction)) return interaction.reply(`${interaction.client.emotes.error} | The bot is not in a voice channel!`);

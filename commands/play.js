@@ -1,16 +1,58 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('play')
 		.setDescription('Play a song from YouTube, Soundcloud or Spotify')
-		.addStringOption(option => option.setName('song').setDescription('Takes a playlist, search terms or song link.').setRequired(true)),
+		.addStringOption(option => option.setName('song').setDescription('Takes a playlist, search terms or song link.')),
 	async execute(interaction) {
 		const voiceChannel = interaction.member.voice.channel;
-		let song = interaction.options.getString('song');
 		if (!voiceChannel) {
 			await interaction.reply({ content: 'You are not in a voice channel!' });
 			await interaction.deleteReply();
+			return;
+		}
+		const queue = interaction.client.distube.getQueue(interaction);
+		let song = interaction.options.getString('song');
+		if (!song) {
+			if (!queue) {
+				await interaction.reply({ content: 'There is nothing in the queue right now!' });
+				await interaction.deleteReply();
+				return;
+			}
+			if (queue.paused) {
+				try {
+					queue.resume();
+				}
+				catch (e) {
+					console.log(e);
+					const embed = new EmbedBuilder()
+						.setTitle(`${interaction.client.emotes.error} | An error occurred!`)
+						.setDescription('Please try again.')
+						.setFooter({
+							text: 'The Pack',
+							iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+						})
+						.setColor('#ff006a');
+					return interaction.reply({ embeds: [embed] });
+				}
+				const embed = new EmbedBuilder()
+					.setTitle(`${interaction.client.emotes.success} | The song has been resumed!`)
+					.addFields(
+						{ name: 'Requested by', value: `${interaction.user}`, inline: true },
+					)
+					.setFooter({
+						text: 'The Pack',
+						iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					})
+					.setColor('#ff006a');
+				return interaction.reply({ embeds: [embed] });
+			}
+			else {
+				await interaction.reply({ content: 'You need to provide a song to play!' });
+				await interaction.deleteReply();
+				return;
+			}
 		}
 		try {
 			if (song.startsWith("https://") || song.startsWith("http://")) {
@@ -27,8 +69,15 @@ module.exports = {
 		}
 		catch (e) {
 			console.log(e);
-			await interaction.reply(`${interaction.client.emotes.error} | Error: \`${e}\``);
-			await interaction.deleteReply();
+			const embed = new EmbedBuilder()
+				.setTitle(`${interaction.client.emotes.error} | An error occurred!`)
+				.setDescription('Please try again.')
+				.setFooter({
+					text: 'The Pack',
+					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+				})
+				.setColor('#ff006a');
+			return interaction.reply({ embeds: [embed] });
 		}
 	},
 };
