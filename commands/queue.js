@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, MessageEmbed, MessageActionRow, MessageButton } = require('discord.js');
+const { SlashCommandBuilder, MessageEmbed, ActionRowBuilder, ButtonBuilder } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -8,13 +8,13 @@ module.exports = {
 		const queue = interaction.client.distube.getQueue(interaction);
 		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing playing!`);
 
-		const row = new MessageActionRow()
+		const row = new ActionRowBuilder()
 			.addComponents(
-				new MessageButton()
+				new ButtonBuilder()
 					.setCustomId('previous')
 					.setLabel('Previous')
 					.setStyle('SECONDARY'),
-				new MessageButton()
+				new ButtonBuilder()
 					.setCustomId('next')
 					.setLabel('Next')
 					.setStyle('SECONDARY')
