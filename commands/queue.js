@@ -71,10 +71,7 @@ function generateQueueEmbed(queue, interaction, pageNumber) {
 			{ name: 'Loop', value: `\`${queue.repeatMode ? queue.repeatMode === 2 ? 'All Queue' : 'This Song' : 'Off'}\``, inline: true },
 			{ name: 'Autoplay', value: `\`${queue.autoplay ? 'On' : 'Off'}\``, inline: true },
 		)
-		.setFooter({
-			text: 'The Pack',
-			iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
-		})
+		.setFooter('The Pack', 'https://i.imgur.com/5RpRCEY.jpeg')
 		.setColor('#ff006a');
 		return embed;
 }
