@@ -20,6 +20,7 @@ module.exports = {
 		}
 
 		try {
+			await interaction.deferReply({ ephemeral: true }); // Add this line to defer the reply
 			await command.execute(interaction);
 		}
 		catch (error) {
