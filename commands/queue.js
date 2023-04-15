@@ -6,7 +6,7 @@ module.exports = {
 		.setDescription('Show the current queue for music.'),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing playing!`);
+		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing playing!`);
 
 		const row = new MessageActionRow()
 			.addComponents(
@@ -20,7 +20,7 @@ module.exports = {
 					.setStyle('SECONDARY')
 			);
 
-		await interaction.reply({
+		await interaction.editReply({
 			ephemeral: true,
 			embeds: [generateQueueEmbed(queue, interaction, 1)],
 			components: [row],

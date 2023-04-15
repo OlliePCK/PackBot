@@ -6,8 +6,8 @@ module.exports = {
 		.setDescription('Removes the last song from the queue.'),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
-		if (queue.songs.length <= 1) return interaction.reply(`${interaction.client.emotes.error} | You can't undo the currently playing song!`);
+		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (queue.songs.length <= 1) return interaction.editReply(`${interaction.client.emotes.error} | You can't undo the currently playing song!`);
 		try {
 			const spliced = queue.songs.splice(-1);
 			const embed = new EmbedBuilder()
@@ -21,7 +21,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 		catch (e) {
 			console.log(e);
@@ -33,7 +33,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 	},
 };

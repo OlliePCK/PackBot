@@ -8,18 +8,18 @@ module.exports = {
 	async execute(interaction) {
 		const amount = interaction.options.getInteger('amount');
 		if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-			return interaction.reply('You aren\'t an admin');
+			return interaction.editReply('You aren\'t an admin');
 		}
 		if (isNaN(amount)) {
-			return interaction.reply('That isn\'t a valid number!');
+			return interaction.editReply('That isn\'t a valid number!');
 		}
 		else if (amount < 1 || amount > 100) {
-			return interaction.reply('You tryna nuke us? Can only purge max 100 messages at a time!');
+			return interaction.editReply('You tryna nuke us? Can only purge max 100 messages at a time!');
 		}
 
 		interaction.channel.bulkDelete(amount, true).catch(err => {
 			console.error(err);
-			interaction.reply('Try again!');
+			interaction.editReply('Try again!');
 			return;
 		});
 	},

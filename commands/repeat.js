@@ -13,7 +13,7 @@ module.exports = {
 		),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		let mode = null;
 		switch (interaction.options.getString('mode')) {
 		case 'off':
@@ -38,6 +38,6 @@ module.exports = {
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 			})
 			.setColor('#ff006a');
-		return interaction.reply({ embeds: [embed] });
+		return interaction.editReply({ embeds: [embed] });
 	},
 };

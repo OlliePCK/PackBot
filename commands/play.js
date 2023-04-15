@@ -8,7 +8,7 @@ module.exports = {
 	async execute(interaction) {
 		const voiceChannel = interaction.member.voice.channel;
 		if (!voiceChannel) {
-			await interaction.reply({ content: 'You are not in a voice channel!' });
+			await interaction.editReply({ content: 'You are not in a voice channel!' });
 			await interaction.deleteReply();
 			return;
 		}
@@ -16,7 +16,7 @@ module.exports = {
 		let song = interaction.options.getString('song');
 		if (!song) {
 			if (!queue) {
-				await interaction.reply({ content: 'There is nothing in the queue right now!' });
+				await interaction.editReply({ content: 'There is nothing in the queue right now!' });
 				await interaction.deleteReply();
 				return;
 			}
@@ -34,7 +34,7 @@ module.exports = {
 							iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 						})
 						.setColor('#ff006a');
-					return interaction.reply({ embeds: [embed] });
+					return interaction.editReply({ embeds: [embed] });
 				}
 				const embed = new EmbedBuilder()
 					.setTitle(`${interaction.client.emotes.success} | The song has been resumed!`)
@@ -46,10 +46,10 @@ module.exports = {
 						iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 					})
 					.setColor('#ff006a');
-				return interaction.reply({ embeds: [embed] });
+				return interaction.editReply({ embeds: [embed] });
 			}
 			else {
-				await interaction.reply({ content: 'You need to provide a song to play!' });
+				await interaction.editReply({ content: 'You need to provide a song to play!' });
 				await interaction.deleteReply();
 				return;
 			}
@@ -57,13 +57,13 @@ module.exports = {
 		try {
 			if (song.startsWith("https://") || song.startsWith("http://")) {
 				interaction.client.distube.play(voiceChannel, song, { member: interaction.member, textChannel: interaction.channel });
-				await interaction.reply({ content: 'Song has been added!' });
+				await interaction.editReply({ content: 'Song has been added!' });
 				await interaction.deleteReply();
 			}
 			else {
 				song = song + ' audio';
 				interaction.client.distube.play(voiceChannel, song, { member: interaction.member, textChannel: interaction.channel });
-				await interaction.reply({ content: 'Song has been added!' });
+				await interaction.editReply({ content: 'Song has been added!' });
 				await interaction.deleteReply();
 			}
 		}
@@ -77,7 +77,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 	},
 };

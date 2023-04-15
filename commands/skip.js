@@ -7,7 +7,7 @@ module.exports = {
 		.setDescription('Skips the currently playing music.'),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		try {
 			queue.skip()
 				.then(() => {
@@ -21,7 +21,7 @@ module.exports = {
 							iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 						})
 						.setColor('#ff006a');
-					return interaction.reply({ embeds: [embed] });
+					return interaction.editReply({ embeds: [embed] });
 				})
 				.catch(e => {
 					queue.stop();
@@ -35,7 +35,7 @@ module.exports = {
 							iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 						})
 						.setColor('#ff006a');
-					return interaction.reply({ embeds: [embed] });
+					return interaction.editReply({ embeds: [embed] });
 				});
 		}
 		catch (e) {
@@ -48,7 +48,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 	},
 };

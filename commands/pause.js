@@ -6,7 +6,7 @@ module.exports = {
 		.setDescription('Pauses the currently playing music.'),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		if (queue.paused) {
 			try {
 				queue.resume();
@@ -21,7 +21,7 @@ module.exports = {
 						iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 					})
 					.setColor('#ff006a');
-				interaction.reply({ embeds: [embed] });
+				interaction.editReply({ embeds: [embed] });
 			}
 			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | The song has been resumed!`)
@@ -33,7 +33,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			interaction.reply({ embeds: [embed] });
+			interaction.editReply({ embeds: [embed] });
 		}
 		else {
 			try {
@@ -48,7 +48,7 @@ module.exports = {
 						iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 					})
 					.setColor('#ff006a');
-				interaction.reply({ embeds: [embed] });
+				interaction.editReply({ embeds: [embed] });
 			}
 			catch (e) {
 				console.log(e);
@@ -60,7 +60,7 @@ module.exports = {
 						iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 					})
 					.setColor('#ff006a');
-				interaction.reply({ embeds: [embed] });
+				interaction.editReply({ embeds: [embed] });
 			}
 		}
 	},

@@ -5,7 +5,7 @@ module.exports = {
 		.setName('leave')
 		.setDescription('Disconnect the music bot from the voice channel.'),
 	async execute(interaction) {
-		if (!interaction.client.distube.voices.get(interaction)) return interaction.reply(`${interaction.client.emotes.error} | The bot is not in a voice channel!`);
+		if (!interaction.client.distube.voices.get(interaction)) return interaction.editReply(`${interaction.client.emotes.error} | The bot is not in a voice channel!`);
 		try {
 			interaction.client.distube.voices.leave(interaction);
 			const embed = new EmbedBuilder()
@@ -19,7 +19,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 		catch (e) {
 			console.log(e);
@@ -31,7 +31,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 	},
 };

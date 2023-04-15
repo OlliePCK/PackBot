@@ -10,9 +10,9 @@ module.exports = {
 				.setRequired(true)),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		const pos = Number(interaction.options.getInteger('position'));
-		if (isNaN(pos)) return interaction.reply(`${interaction.client.emotes.error} | Please enter a valid number!`);
+		if (isNaN(pos)) return interaction.editReply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.jump(pos - 1)
 				.then(q => {
@@ -26,7 +26,7 @@ module.exports = {
 							iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 						})
 						.setColor('#ff006a');
-					interaction.reply({ embeds: [embed] });
+					interaction.editReply({ embeds: [embed] });
 				}).catch(e => {
 					console.log(e);
 					const embed = new EmbedBuilder()
@@ -37,7 +37,7 @@ module.exports = {
 							iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 						})
 						.setColor('#ff006a');
-					interaction.reply({ embeds: [embed] });
+					interaction.editReply({ embeds: [embed] });
 				});
 		}
 		catch (e) {
@@ -50,7 +50,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			interaction.reply({ embeds: [embed] });
+			interaction.editReply({ embeds: [embed] });
 		}
 	},
 };

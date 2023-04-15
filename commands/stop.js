@@ -6,7 +6,7 @@ module.exports = {
 		.setDescription('Stops the currently playing music.'),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		queue.stop();
 		const embed = new EmbedBuilder()
 			.setTitle(`${interaction.client.emotes.success} | Music stopped!`)
@@ -19,6 +19,6 @@ module.exports = {
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 			})
 			.setColor('#ff006a');
-		return interaction.reply({ embeds: [embed] });
+		return interaction.editReply({ embeds: [embed] });
 	},
 };

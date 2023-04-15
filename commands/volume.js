@@ -10,9 +10,9 @@ module.exports = {
 				.setRequired(true)),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
 		const volume = parseInt(interaction.options.getInteger('volume'));
-		if (isNaN(volume)) return interaction.reply(`${interaction.client.emotes.error} | Please enter a valid number!`);
+		if (isNaN(volume)) return interaction.editReply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.setVolume(volume);
 			const embed = new EmbedBuilder()
@@ -26,7 +26,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 
 		}
 		catch (e) {
@@ -39,7 +39,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 	},
 };

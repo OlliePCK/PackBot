@@ -46,7 +46,7 @@ module.exports = {
 		),
 	async execute(interaction) {
 		if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-			return interaction.reply('You aren\'t an admin!');
+			return interaction.editReply('You aren\'t an admin!');
 		}
 		const guildProfile = await guild.findOne({ guildId: interaction.guildId });
 		if (interaction.options.getSubcommand() === 'set-live-role') {
@@ -63,12 +63,12 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 		else if (interaction.options.getSubcommand() === 'set-live-channel') {
 			const channel = interaction.options.getChannel('live-channel');
 			if (!channel.isText()) {
-				return interaction.reply('That is not a text channel!');
+				return interaction.editReply('That is not a text channel!');
 			}
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { liveChannelID: channel.id });
 			const embed = new discord.EmbedBuilder()
@@ -82,12 +82,12 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 		else if (interaction.options.getSubcommand() === 'set-general-channel') {
 			const channel = interaction.options.getChannel('general-channel');
 			if (!channel.isText()) {
-				return interaction.reply('That is not a text channel!');
+				return interaction.editReply('That is not a text channel!');
 			}
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { generalChannelID: channel.id });
 			const embed = new discord.EmbedBuilder()
@@ -101,7 +101,7 @@ module.exports = {
 					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
 				})
 				.setColor('#ff006a');
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 		else if (interaction.options.getSubcommand() === 'info') {
 			const Guild = await interaction.guild.fetch();
@@ -129,7 +129,7 @@ module.exports = {
 			if (guildProfile.generalChannelID) embObj[2].value = `<#${guildProfile.generalChannelID}>`;
 			else embObj[2].value = '`Not Set`';
 			embed.addFields(embObj);
-			return interaction.reply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 	},
 };
