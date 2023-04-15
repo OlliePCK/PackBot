@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, MessageEmbed, MessageActionRow, MessageButton } = require('discord.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -7,19 +7,59 @@ module.exports = {
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
 		if (!queue) return interaction.reply(`${interaction.client.emotes.error} | There is nothing playing!`);
-		return interaction.reply({
+
+		const row = new MessageActionRow()
+			.addComponents(
+				new MessageButton()
+					.setCustomId('previous')
+					.setLabel('Previous')
+					.setStyle('SECONDARY'),
+				new MessageButton()
+					.setCustomId('next')
+					.setLabel('Next')
+					.setStyle('SECONDARY')
+			);
+
+		await interaction.reply({
 			ephemeral: true,
-			embeds: [generateQueueEmbed(queue, interaction)],
+			embeds: [generateQueueEmbed(queue, interaction, 1)],
+			components: [row],
+		});
+
+		const filter = (i) => i.user.id === interaction.user.id;
+
+		const collector = interaction.channel.createMessageComponentCollector({ filter, time: 60000 });
+
+		collector.on('collect', async (i) => {
+			let currentPage = parseInt(i.message.embeds[0].footer.text.split(' ')[1]);
+
+			if (i.customId === 'previous') {
+				currentPage--;
+			} else if (i.customId === 'next') {
+				currentPage++;
+			}
+
+			await i.update({
+				embeds: [generateQueueEmbed(queue, interaction, currentPage)],
+			});
 		});
 	},
 };
 
+function generateQueueEmbed(queue, interaction, pageNumber) {
+	const pageSize = 10;
+	const totalSongs = queue.songs.length;
+	const totalPages = Math.ceil(totalSongs / pageSize);
+	const startIndex = (pageNumber - 1) * pageSize;
+	const endIndex = Math.min(startIndex + pageSize, totalSongs);
 
-function generateQueueEmbed(queue, interaction) {
-	const current = queue.songs.slice(0, 10);
-	let j = 0;
+	if (pageNumber < 1 || pageNumber > totalPages) return;
+
+	const current = queue.songs.slice(startIndex, endIndex);
+	let j = startIndex;
 	const info = current.map(track => `\`${++j}.\` [${track.name}](${track.url}) - \`${track.formattedDuration}\``).join('\n');
-	const embed = new EmbedBuilder()
+
+	const embed = new MessageEmbed()
 		.setTitle(`${interaction.client.emotes.play} | Now playing: ${queue.songs[0].name}`)
 		.setURL(`${queue.songs[0].url}`)
 		.setDescription(`${info}`)
@@ -37,5 +77,4 @@ function generateQueueEmbed(queue, interaction) {
 		})
 		.setColor('#ff006a');
 		return embed;
-		
 }
