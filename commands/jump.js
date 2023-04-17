@@ -15,9 +15,9 @@ module.exports = {
 		if (isNaN(pos)) return interaction.editReply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.jump(pos - 1)
-				.then(q => {
+				.then(s => {
 					const embed = new EmbedBuilder()
-						.setTitle(`${interaction.client.emotes.success} | Jumped to: \`${q.songs[0].name}\``)
+						.setTitle(`${interaction.client.emotes.success} | Jumped to: \`${s.name}\``)
 						.addFields(
 							{ name: 'Requested by', value: `${interaction.user}`, inline: true },
 						)

@@ -10,6 +10,21 @@ module.exports = {
 
 		if (!command) return;
 
+		try {
+			if (command.isEphemeral) {
+				await interaction.deferReply({ ephemeral: true }); // Add this line to defer the reply
+    			await command.execute(interaction);
+			}
+    		else {
+				await interaction.deferReply(); // Add this line to defer the reply
+    			await command.execute(interaction);
+			}
+		}
+		catch (error) {
+    		console.log(error);
+    		await interaction.editReply({ content: 'There was an error while executing this command!', ephemeral: true });
+		}
+
 		let guildProfile = await guild.findOne({ guildId: interaction.guildId });
 		if (!guildProfile) {
 			guildProfile = await new guild({
@@ -17,15 +32,6 @@ module.exports = {
 				guildId: interaction.guildId,
 			});
 			await guildProfile.save().catch(err => console.log(err));
-		}
-
-		try {
-			await interaction.deferReply({ ephemeral: true }); // Add this line to defer the reply
-			await command.execute(interaction);
-		}
-		catch (error) {
-			console.log(error);
-			await interaction.editReply({ content: 'There was an error while executing this command!', ephemeral: true });
 		}
 	},
 };
