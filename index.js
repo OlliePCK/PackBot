@@ -282,8 +282,7 @@ client.distube
 			.addFields(
 				{ name: 'Duration', value: `\`${song.formattedDuration}\``, inline: true },
 				{ name: 'Requested by', value: `${song.user}`, inline: true },
-				{ name: 'Source', value: `\`${song.source}\``, inline: true },
-				{ name: 'Position in queue', value: queue.songs.length - 1, inline: true },
+				{ name: 'Position in queue', value: `${queue.songs.length}`, inline: true },
 			)
 			.setThumbnail(song.thumbnail)
 			.setFooter({
