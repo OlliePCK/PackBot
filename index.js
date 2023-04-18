@@ -79,15 +79,15 @@ mongoose.connect(process.env.MONGODB_SRV).then(() => {
 client.distube
 	.on('playSong', (queue, song) => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.play} | Now playing: ${song.name}`)
+			.setTitle(`${client.emotes.play} | Now playing: ${song.name}`)
 			.setURL(`${song.url}`)
 			.addFields(
 				{ name: 'Duration', value: `\`${song.formattedDuration}\``, inline: true },
 				{ name: 'Requested by', value: `${song.user}`, inline: true },
 				{ name: 'Volume', value: `\`${queue.volume}%\``, inline: true },
 				{ name: 'Filter', value: `\`${queue.filters.names.join(', ') || 'Off'}\``, inline: true },
-				{ name: 'Loop', value: `${queue.repeatMode ? queue.repeatMode === 2 ? `${client.emoji.repeat} All Queue` : `${client.emoji.repeat} This Song` : 'Off'}`, inline: true },
-				{ name: 'Autoplay', value: `${queue.autoplay ? `${client.emoji.autoplay} On` : 'Off'}`, inline: true },
+				{ name: 'Loop', value: `${queue.repeatMode ? queue.repeatMode === 2 ? `${client.emotes.repeat} All Queue` : `${client.emotes.repeat} This Song` : 'Off'}`, inline: true },
+				{ name: 'Autoplay', value: `${queue.autoplay ? `${client.emotes.autoplay} On` : 'Off'}`, inline: true },
 			)
 			.setImage(`${song.thumbnail}`)
 			.setFooter({
@@ -99,7 +99,7 @@ client.distube
 	})
 	.on('pause', queue => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.pause} | Music paused!`)
+			.setTitle(`${client.emotes.pause} | Music paused!`)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -109,7 +109,7 @@ client.distube
 	})
 	.on('stop', queue => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.stop} | Music stopped!`)
+			.setTitle(`${client.emotes.stop} | Music stopped!`)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -119,7 +119,7 @@ client.distube
 	})
 	.on('skip', queue => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.skip} | Skipped: ${queue.previousSongs[0].name}`)
+			.setTitle(`${client.emotes.skip} | Skipped: ${queue.previousSongs[0].name}`)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -129,7 +129,7 @@ client.distube
 	})
 	.on('repeatModeChange', (queue, repeatMode) => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${repeatMode === 2 ? `${client.emoji.repeat} All Queue` : repeatMode === 1 ? `${client.emoji.repeat} This Song` : 'Off'} | Loop mode changed!`)
+			.setTitle(`${repeatMode === 2 ? `${client.emotes.repeat} All Queue` : repeatMode === 1 ? `${client.emotes.repeat} This Song` : 'Off'} | Loop mode changed!`)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -139,7 +139,7 @@ client.distube
 	})
 	.on('shuffle', queue => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.shuffle} | Queue shuffled!`)
+			.setTitle(`${client.emotes.shuffle} | Queue shuffled!`)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -149,7 +149,7 @@ client.distube
 	})
 	.on('filterAdd', (queue, filter) => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.filter} | Added Filter: \`${filter}\``)
+			.setTitle(`${client.emotes.filter} | Added Filter: \`${filter}\``)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -159,7 +159,7 @@ client.distube
 	})
 	.on('filterRemove', (queue, filter) => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.filter} | Removed Filter: \`${filter}\``)
+			.setTitle(`${client.emotes.filter} | Removed Filter: \`${filter}\``)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -169,7 +169,7 @@ client.distube
 	})
 	.on('volumeChange', (queue, volume) => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.volume} | Volume changed: \`${volume}%\``)
+			.setTitle(`${client.emotes.volume} | Volume changed: \`${volume}%\``)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -179,7 +179,7 @@ client.distube
 	})
 	.on('autoplayOn', queue => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.autoplay} | Autoplay enabled!`)
+			.setTitle(`${client.emotes.autoplay} | Autoplay enabled!`)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -189,7 +189,7 @@ client.distube
 	})
 	.on('autoplayOff', queue => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.autoplay} | Autoplay disabled!`)
+			.setTitle(`${client.emotes.autoplay} | Autoplay disabled!`)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -199,7 +199,7 @@ client.distube
 	})
 	.on('volumeNaturallyChanged', (queue, volume) => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.volume} | Volume changed to: \`${volume}%\``)
+			.setTitle(`${client.emotes.volume} | Volume changed to: \`${volume}%\``)
 			.setFooter({
 				text: 'The Pack',
 				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
@@ -225,7 +225,7 @@ client.distube
 	})
 	.on('searchCancel', message => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.error} | Search Cancelled`)
+			.setTitle(`${client.emotes.error} | Search Cancelled`)
 			.setDescription('The search has been cancelled. Please try again.')
 			.setFooter({
 				text: 'The Pack',
@@ -236,7 +236,7 @@ client.distube
 	})
 	.on('error', (channel, error) => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.error} | Error occurred!`)
+			.setTitle(`${client.emotes.error} | Error occurred!`)
 			.setDescription(`An error occurred while executing the command: ${error}`)
 			.setFooter({
 				text: 'The Pack',
@@ -247,7 +247,7 @@ client.distube
 	})
 	.on('finish', queue => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.success} | Music finished!`)
+			.setTitle(`${client.emotes.success} | Music finished!`)
 			.setDescription('Thank you for using The Pack music bot.')
 			.setFooter({
 				text: 'The Pack',
@@ -258,7 +258,7 @@ client.distube
 	})
 	.on('addList', (queue, playlist) => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.success} | Playlist added: ${playlist.name}`)
+			.setTitle(`${client.emotes.success} | Playlist added: ${playlist.name}`)
 			.setURL(`${playlist.url}`)
 			.addFields(
 				{ name: 'Songs', value: `\`${playlist.songs.length}\``, inline: true },
@@ -277,7 +277,7 @@ client.distube
 	})
 	.on('addSong', (queue, song) => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.success} | Song added: ${song.name}`)
+			.setTitle(`${client.emotes.success} | Song added: ${song.name}`)
 			.setURL(`${song.url}`)
 			.addFields(
 				{ name: 'Duration', value: `\`${song.formattedDuration}\``, inline: true },
@@ -295,7 +295,7 @@ client.distube
 	})
 	.on('empty', queue => {
 		const embed = new EmbedBuilder()
-			.setTitle(`${client.emoji.success} | No one listening, leaving the channel!`)
+			.setTitle(`${client.emotes.success} | No one listening, leaving the channel!`)
 			.setDescription('Thank you for using The Pack music bot.')
 			.setFooter({
 				text: 'The Pack',
