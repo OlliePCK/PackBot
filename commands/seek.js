@@ -11,7 +11,7 @@ module.exports = {
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
 		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
-		const time = Number(interaction.options.getInteger('time'));
+		const time = interaction.options.getInteger('time');
 		if (isNaN(time)) return interaction.editReply(`${interaction.client.emotes.error} | Please enter a valid number!`);
 		try {
 			queue.seek(time);
@@ -19,6 +19,7 @@ module.exports = {
 				.setTitle(`${interaction.client.emotes.success} | Seeked to ${time} seconds!`)
 				.addFields(
 					{ name: 'Requested by', value: `${interaction.user}`, inline: true },
+					{ name: 'Elapsed', value: `\`${queue.formattedCurrentTime}\u00A0\``, inline: true }
 				)
 				.setFooter({
 					text: 'The Pack',
