@@ -14,8 +14,6 @@ const client = new Client({
 	],
 });
 
-// test
-
 const cookie = process.env.COOKIE;
 const IDtoken = process.env.IDTOKEN;
 
@@ -48,6 +46,7 @@ client.distube = new DisTube.DisTube(client, {
 });
 
 client.commands = new Collection();
+client.monitoringTasks = new Collection();
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
 const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
 
