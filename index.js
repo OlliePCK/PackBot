@@ -15,7 +15,6 @@ const client = new Client({
 });
 
 const cookie = process.env.COOKIE;
-const IDtoken = process.env.IDTOKEN;
 
 client.emotes = config.emoji;
 const DisTube = require('distube');
