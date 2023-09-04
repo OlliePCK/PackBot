@@ -29,7 +29,6 @@ client.distube = new DisTube.DisTube(client, {
 	youtubeCookie: cookie,
 	leaveOnStop: false,
 	savePreviousSongs: true,
-	youtubeIdentityToken: IDtoken,
 	customFilters: {
 		'clear': 'dynaudnorm=f=200',
 		'lowbass': 'bass=g=6,dynaudnorm=f=200',
