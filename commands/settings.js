@@ -67,7 +67,7 @@ module.exports = {
 		}
 		else if (interaction.options.getSubcommand() === 'set-live-channel') {
 			const channel = interaction.options.getChannel('live-channel');
-			if (!channel.isText()) {
+			if (!channel.isTextBased()) {
 				return interaction.editReply('That is not a text channel!');
 			}
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { liveChannelID: channel.id });
@@ -86,7 +86,7 @@ module.exports = {
 		}
 		else if (interaction.options.getSubcommand() === 'set-general-channel') {
 			const channel = interaction.options.getChannel('general-channel');
-			if (!channel.isText()) {
+			if (!channel.isTextBased()) {
 				return interaction.editReply('That is not a text channel!');
 			}
 			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { generalChannelID: channel.id });
