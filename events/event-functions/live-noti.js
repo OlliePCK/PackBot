@@ -1,4 +1,3 @@
-const { ActivityType } = require('discord.js');
 const guildModel = require('../../models/guildSchema');
 
 module.exports = client => {
