@@ -2,9 +2,11 @@ const guildModel = require('../../models/guildSchema');
 
 module.exports = client => {
 	client.on('presenceUpdate', async (oldPresence, newPresence) => {
-		const Guild = await newPresence.guild.fetch().catch(e => {
-			return console.log(e);
-		});
+		const Guild = newPresence.guild;
+
+		if (Guild == undefined | Guild == null) {
+			return;
+		}
 
 		const guildProfile = await guildModel.findOne({ guildId: Guild.id });
 		if (!guildProfile) return;
