@@ -3,6 +3,11 @@ const mongoose = require('mongoose');
 
 module.exports = {
 	name: 'interactionCreate',
+	/**
+	 * Executes the command associated with the interaction.
+	 * @param {Interaction} interaction - The interaction object.
+	 * @returns {Promise<void>} - A promise that resolves once the command execution is complete.
+	 */
 	async execute(interaction) {
 		if (!interaction.isCommand()) return;
 
