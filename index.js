@@ -2,7 +2,6 @@ const fs = require('fs');
 const { Client, Collection, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 require('dotenv').config();
 const config = require('./config.json');
-const mongoose = require('mongoose');
 
 const client = new Client({
 	intents: [
@@ -14,39 +13,30 @@ const client = new Client({
 	],
 });
 
-const cookie = process.env.COOKIE;
-
 client.emotes = config.emoji;
-const DisTube = require('distube');
-const { default: SoundCloudPlugin } = require('@distube/soundcloud');
-const { default: SpotifyPlugin } = require('@distube/spotify');
-const { YtDlpPlugin } = require('@distube/yt-dlp');
-client.distube = new DisTube.DisTube(client, {
-	searchSongs: 10,
-	emitNewSongOnly: true,
-	nsfw: true,
-	youtubeCookie: cookie,
-	leaveOnStop: false,
-	savePreviousSongs: true,
-	customFilters: {
-		'clear': 'dynaudnorm=f=200',
-		'lowbass': 'bass=g=6,dynaudnorm=f=200',
-		'8D': 'apulsator=hz=0.08',
-	},
-	plugins: [new SoundCloudPlugin(), new YtDlpPlugin({ update: true }), new SpotifyPlugin({
-		parallel: true,
-		emitEventsAfterFetching: true,
-		api: {
-			clientId: process.env.CLIENTID,
-			clientSecret: process.env.CLIENTSECRET,
-		},
-	})],
+const { DisTube } = require('distube');
+const { SoundCloudPlugin } = require('@distube/soundcloud');
+const { SpotifyPlugin } = require('@distube/spotify');
+const { YouTubePlugin } = require('@distube/youtube');
+const { FilePlugin } = require('@distube/file');
+const { DirectLinkPlugin } = require('@distube/direct-link');
+
+client.distube = new DisTube(client, {
+	plugins: [
+		new YouTubePlugin(),
+		new SoundCloudPlugin(),
+		new SpotifyPlugin(),
+		new DirectLinkPlugin(),
+		new FilePlugin(),
+	],
+	emitAddListWhenCreatingQueue: true,
+	emitAddSongWhenCreatingQueue: true,
 });
 
 client.commands = new Collection();
 client.monitoringTasks = new Collection();
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
-const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
+const eventFiles = fs.readdirSync('./events/client').filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
 	const command = require(`./commands/${file}`);
@@ -56,7 +46,7 @@ for (const file of commandFiles) {
 }
 
 for (const file of eventFiles) {
-	const event = require(`./events/${file}`);
+	const event = require(`./events/client/${file}`);
 	if (event.once) {
 		client.once(event.name, (...args) => event.execute(...args));
 	}
@@ -64,14 +54,6 @@ for (const file of eventFiles) {
 		client.on(event.name, (...args) => event.execute(...args));
 	}
 }
-
-mongoose.set("strictQuery", false);
-
-mongoose.connect(process.env.MONGODB_SRV).then(() => {
-	console.log('Connected to the database!');
-}).catch((err) => {
-	console.log(err);
-});
 
 client.distube
 	.on('playSong', (queue, song) => {

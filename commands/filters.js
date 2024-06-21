@@ -26,7 +26,6 @@ module.exports = {
 				{ name: 'tremolo', value: 'tremolo' },
 				{ name: 'off', value: 'off' },
 				{ name: 'earwax', value: 'earwax' }
-
 			)
 		),
 	async execute(interaction) {

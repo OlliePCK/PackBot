@@ -1,6 +1,6 @@
 const discord = require('discord.js');
-const guild = require('../models/guildSchema');
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
+const db = require('../database/db.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
@@ -48,10 +48,12 @@ module.exports = {
 		if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
 			return interaction.editReply('You aren\'t an admin!');
 		}
-		const guildProfile = await guild.findOne({ guildId: interaction.guildId });
+		const connection = await db.pool.getConnection();
+		const [rows] = await connection.query('SELECT * FROM Guilds WHERE guildId = ?', [interaction.guildId]);
+        const guildProfile = rows[0];
 		if (interaction.options.getSubcommand() === 'set-live-role') {
 			const role = interaction.options.getRole('live-role');
-			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { liveRoleID: role.id });
+			await connection.query('UPDATE Guilds SET liveRoleID = ? WHERE guildId = ?', [role.id, interaction.guildId]);
 			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Set live role!`)
 				.addFields([
@@ -70,7 +72,7 @@ module.exports = {
 			if (!channel.isTextBased()) {
 				return interaction.editReply('That is not a text channel!');
 			}
-			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { liveChannelID: channel.id });
+			await connection.query('UPDATE Guilds SET liveChannelID = ? WHERE guildId = ?', [channel.id, interaction.guildId]);
 			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Set live channel!`)
 				.addFields([
@@ -89,7 +91,7 @@ module.exports = {
 			if (!channel.isTextBased()) {
 				return interaction.editReply('That is not a text channel!');
 			}
-			await guild.findOneAndUpdate({ guildId: interaction.guildId }, { generalChannelID: channel.id });
+			await connection.query('UPDATE Guilds SET generalChannelID = ? WHERE guildId = ?', [channel.id, interaction.guildId]);
 			const embed = new discord.EmbedBuilder()
 				.setTitle(`${interaction.client.emotes.success} | Set general channel!`)
 				.addFields([
