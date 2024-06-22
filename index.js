@@ -37,6 +37,8 @@ client.commands = new Collection();
 client.monitoringTasks = new Collection();
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
 const eventFiles = fs.readdirSync('./events/client').filter(file => file.endsWith('.js'));
+const eventFunctions = fs.readdirSync('./events/event-functions').filter(file => file.endsWith('.js'));
+
   
 for (const file of commandFiles) {
 	const command = require(`./commands/${file}`);
@@ -47,6 +49,16 @@ for (const file of commandFiles) {
 
 for (const file of eventFiles) {
 	const event = require(`./events/client/${file}`);
+	if (event.once) {
+		client.once(event.name, (...args) => event.execute(...args));
+	}
+	else {
+		client.on(event.name, (...args) => event.execute(...args));
+	}
+}
+
+for (const file of eventFunctions) {
+	const event = require(`./events/event-functions/${file}`);
 	if (event.once) {
 		client.once(event.name, (...args) => event.execute(...args));
 	}
