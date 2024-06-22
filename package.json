@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "@discordjs/opus": "^0.9.0",
+    "@discordjs/opus": "0.9.0",
     "@distube/direct-link": "^1.0.1",
     "@distube/file": "^1.0.1",
     "@distube/soundcloud": "^2.0.1",
@@ -14,5 +14,8 @@
     "mysql2": "^3.10.1",
     "npm": "^10.8.1",
     "sodium-native": "^4.1.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.5.0"
   }
 }

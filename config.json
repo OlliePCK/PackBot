@@ -1,0 +1,15 @@
+{
+    "emoji": {
+        "play": "🎵",
+        "pause": "⏸",
+        "stop": "⏹",
+        "skip": "⏭",
+        "repeat": "🔁",
+        "autoplay": "🔄",
+        "shuffle": "🔀",
+        "filter": "🔍",
+        "volume": "🔊",
+        "error": "❌",
+        "success": "✅"
+    }
+}

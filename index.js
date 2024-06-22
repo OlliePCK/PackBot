@@ -1,7 +1,7 @@
 const fs = require('fs');
 const { Client, Collection, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-require('dotenv').config();
 const config = require('./config.json');
+require('dotenv').config();
 
 const client = new Client({
 	intents: [
@@ -37,7 +37,7 @@ client.commands = new Collection();
 client.monitoringTasks = new Collection();
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
 const eventFiles = fs.readdirSync('./events/client').filter(file => file.endsWith('.js'));
-
+  
 for (const file of commandFiles) {
 	const command = require(`./commands/${file}`);
 	// Set a new item in the Collection
@@ -271,17 +271,5 @@ client.distube
 			.setColor('#ff006a');
 		queue.textChannel.send({ embeds: [embed] });
 	})
-	.on('empty', queue => {
-		const embed = new EmbedBuilder()
-			.setTitle(`${client.emotes.success} | No one listening, leaving the channel!`)
-			.setDescription('Thank you for using The Pack music bot.')
-			.setFooter({
-				text: 'The Pack',
-				iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
-			})
-			.setColor('#ff006a');
-		queue.textChannel.send({ embeds: [embed] });
-	});
-
 
 client.login(process.env.TOKEN);
