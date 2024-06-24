@@ -9,7 +9,7 @@ module.exports = client => {
 
 		const pool = db.pool;
 		try {
-			const [rows] = await pool.query('SELECT * FROM Guilds WHERE guildId = ?', [Guild.id]);
+			const [rows] = await pool.execute('SELECT * FROM Guilds WHERE guildId = ?', [Guild.id]);
 			const guildProfile = rows[0];
 			if (!guildProfile) return;
 

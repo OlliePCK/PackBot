@@ -10,7 +10,7 @@ module.exports = client => {
 
 		const pool = db.pool;
 		try {
-			const [rows] = await pool.query('SELECT * FROM Guilds WHERE guildId = ?', [Guild.id]);
+			const [rows] = await pool.execute('SELECT * FROM Guilds WHERE guildId = ?', [Guild.id]);
 			const guildProfile = rows[0];
 			if (!guildProfile) return;
 
@@ -23,9 +23,6 @@ module.exports = client => {
 			const oldAct = oldPresence.activities.find(activity => activity.timestamps != null);
 			if (oldAct) {
 				const newAct = newPresence.activities.find(activity => activity.name == oldAct.name);
-				if (newPresence.user.id == '99845226209742848') {
-					return;
-				}
 				if (oldAct.name == '@everyone' || oldAct.name == '@here') {
 					return;
 				}
