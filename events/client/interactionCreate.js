@@ -28,20 +28,23 @@ module.exports = {
 			await interaction.editReply({ content: 'There was an error while executing this command!', ephemeral: true });
 		}
 
-		const connection = await db.pool.getConnection();
-
 		// Try to find the guild profile
-		const [rows] = await connection.query('SELECT * FROM Guilds WHERE guildId = ?', [interaction.guildId]);
-		let guildProfile = rows[0];
+		try {
+			const connection = await db.pool.getConnection();
+			const [rows] = await connection.query('SELECT * FROM Guilds WHERE guildId = ?', [interaction.guildId]);
+			let guildProfile = rows[0];
 
-		if (!guildProfile) {
-			// Guild profile not found, create a new one
-			const result = await connection.query('INSERT INTO Guilds (guildId) VALUES (?)', [interaction.guildId]);
-			const insertId = result[0].insertId;
+			if (!guildProfile) {
+				// Guild profile not found, create a new one
+				const result = await connection.query('INSERT INTO Guilds (guildId) VALUES (?)', [interaction.guildId]);
+				const insertId = result[0].insertId;
 
-			// Fetch the newly created guild profile
-			const [newRows] = await connection.query('SELECT * FROM Guilds WHERE id = ?', [insertId]);
-			guildProfile = newRows[0];
+				// Fetch the newly created guild profile
+				const [newRows] = await connection.query('SELECT * FROM Guilds WHERE id = ?', [insertId]);
+				guildProfile = newRows[0];
+			}
+		} catch (error) {
+			console.error(error);
 		}
 	},
 };
