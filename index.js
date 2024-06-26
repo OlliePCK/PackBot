@@ -34,7 +34,6 @@ client.distube = new DisTube(client, {
 });
 
 client.commands = new Collection();
-client.monitoringTasks = new Collection();
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
 const eventFiles = fs.readdirSync('./events/client').filter(file => file.endsWith('.js'));
 const eventFunctions = fs.readdirSync('./events/event-functions').filter(file => file.endsWith('.js'));
