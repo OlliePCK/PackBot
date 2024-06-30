@@ -19,7 +19,7 @@ module.exports = {
 
 		interaction.channel.bulkDelete(amount, true).catch(err => {
 			console.error(err);
-			interaction.editReply('Try again!');
+			interaction.editReply('Try again! PackBot may not have the right permissions!');
 			return;
 		});
 	},
