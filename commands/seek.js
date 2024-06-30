@@ -23,7 +23,7 @@ module.exports = {
 				)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			return interaction.editReply({ embeds: [embed] });

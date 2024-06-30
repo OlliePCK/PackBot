@@ -105,7 +105,7 @@ function generateQueueEmbed(queue, interaction, pageNumber) {
 			{ name: 'Loop', value: `\`${interaction.client.emotes.repeat}\u00A0${queue.repeatMode ? queue.repeatMode === 2 ? 'All Queue' : 'This Song' : 'Off'}\``, inline: true },
 			{ name: 'Autoplay', value: `\`${interaction.client.emotes.autoplay}\u00A0${queue.autoplay ? 'On' : 'Off'}\``, inline: true }
 		  )
-		.setFooter({ text: `Page ${pageNumber} of ${totalPages} | The Pack`, iconURL: 'https://i.imgur.com/5RpRCEY.jpeg' })
+		.setFooter({ text: `Page ${pageNumber} of ${totalPages} | The Pack`, iconURL: 'https://i.imgur.com/L49zHx9.jpg' })
 		.setColor('#ff006a');
 		return embed;
 }

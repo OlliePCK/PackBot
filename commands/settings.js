@@ -62,7 +62,7 @@ module.exports = {
 				])
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			return interaction.editReply({ embeds: [embed] });
@@ -81,7 +81,7 @@ module.exports = {
 				])
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			return interaction.editReply({ embeds: [embed] });
@@ -100,7 +100,7 @@ module.exports = {
 				])
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			return interaction.editReply({ embeds: [embed] });
@@ -112,7 +112,7 @@ module.exports = {
 				.setDescription('Please configure the bot using the subcommands if there are no fields below!\n\n**/settings set-live-role `{live-role}`** sets the role assigned to users when they go live **ENSURE THE ROLE IS HIGHER THAN ALL USERS IN ROLE SETTINGS OR THE FEATURE WILL NOT WORK CORRECTLY**\n\n**/settings set-live-channel `{live-channel}`** sets the channel for live notifications to be sent to, setting this enables the live notification feature.\n\n**/settings set-general-channel `{general-channel}`** sets the general channel for play time notifications to be sent to, setting this enables the game expose feature.\n\nTo get the ID\'s of roles/channels, **enable developer mode** in Discord settings, right click the role/channel and select `Copy ID`\n ')
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			let embObj = [

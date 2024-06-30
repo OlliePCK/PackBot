@@ -83,7 +83,7 @@ client.distube
 				.setImage(`${song.thumbnail}`)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -97,7 +97,7 @@ client.distube
 				.setTitle(`${client.emotes.pause} | Music paused!`)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -111,7 +111,7 @@ client.distube
 				.setTitle(`${client.emotes.stop} | Music stopped!`)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -125,7 +125,7 @@ client.distube
 				.setTitle(`${client.emotes.skip} | Skipped: ${queue.previousSongs[0].name}`)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -139,7 +139,7 @@ client.distube
 				.setTitle(`${repeatMode === 2 ? `${client.emotes.repeat} All Queue` : repeatMode === 1 ? `${client.emotes.repeat} This Song` : 'Off'} | Loop mode changed!`)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -153,7 +153,7 @@ client.distube
 				.setTitle(`${client.emotes.shuffle} | Queue shuffled!`)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -167,7 +167,7 @@ client.distube
 				.setTitle(`${client.emotes.filter} | Added Filter: \`${filter}\``)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -181,7 +181,7 @@ client.distube
 				.setTitle(`${client.emotes.filter} | Removed Filter: \`${filter}\``)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -195,7 +195,7 @@ client.distube
 				.setTitle(`${client.emotes.volume} | Volume changed: \`${volume}%\``)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -209,7 +209,7 @@ client.distube
 				.setTitle(`${client.emotes.autoplay} | Autoplay enabled!`)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -223,7 +223,7 @@ client.distube
 				.setTitle(`${client.emotes.autoplay} | Autoplay disabled!`)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -237,7 +237,7 @@ client.distube
 				.setTitle(`${client.emotes.volume} | Volume changed to: \`${volume}%\``)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -252,7 +252,7 @@ client.distube
 				.setTitle(`🔎 | Results for: \`${result.query}\``)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			result.items.forEach(song => {
@@ -272,7 +272,7 @@ client.distube
 				.setDescription('The search has been cancelled. Please try again.')
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			message.channel.send({ embeds: [embed] });
@@ -287,7 +287,7 @@ client.distube
 				.setDescription(`An error occurred while executing the command: ${error}`)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			channel.send({ embeds: [embed] });
@@ -302,7 +302,7 @@ client.distube
 				.setDescription('Thank you for using The Pack music bot.')
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
@@ -322,7 +322,7 @@ client.distube
 				)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			if (playlist.thumbnail) {
@@ -346,7 +346,7 @@ client.distube
 				.setThumbnail(song.thumbnail)
 				.setFooter({
 					text: 'The Pack',
-					iconURL: 'https://i.imgur.com/5RpRCEY.jpeg'
+					iconURL: 'https://i.imgur.com/L49zHx9.jpg'
 				})
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
