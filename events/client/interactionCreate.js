@@ -30,17 +30,16 @@ module.exports = {
 
 		// Try to find the guild profile
 		try {
-			const connection = await db.pool.getConnection();
-			const [rows] = await connection.query('SELECT * FROM Guilds WHERE guildId = ?', [interaction.guildId]);
+			const [rows] = await db.pool.query('SELECT * FROM Guilds WHERE guildId = ?', [interaction.guildId]);
 			let guildProfile = rows[0];
 
 			if (!guildProfile) {
 				// Guild profile not found, create a new one
-				const result = await connection.query('INSERT INTO Guilds (guildId) VALUES (?)', [interaction.guildId]);
+				const result = await db.pool.query('INSERT INTO Guilds (guildId) VALUES (?)', [interaction.guildId]);
 				const insertId = result[0].insertId;
 
 				// Fetch the newly created guild profile
-				const [newRows] = await connection.query('SELECT * FROM Guilds WHERE id = ?', [insertId]);
+				const [newRows] = await db.pool.query('SELECT * FROM Guilds WHERE id = ?', [insertId]);
 				guildProfile = newRows[0];
 			}
 		} catch (error) {

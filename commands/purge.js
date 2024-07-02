@@ -17,7 +17,7 @@ module.exports = {
 			return interaction.editReply('You tryna nuke us? Can only purge max 100 messages at a time!');
 		}
 
-		interaction.channel.bulkDelete(amount, true).catch(err => {
+		interaction.channel.bulkDelete(amount + 1, true).catch(err => {
 			console.error(err);
 			interaction.editReply('Try again! PackBot may not have the right permissions!');
 			return;
