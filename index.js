@@ -24,7 +24,7 @@ const { DirectLinkPlugin } = require('@distube/direct-link');
 
 client.distube = new DisTube(client, {
 	plugins: [
-		new YouTubePlugin(),
+		//new YouTubePlugin(),
 		new SoundCloudPlugin(),
 		new SpotifyPlugin(),
 		new DirectLinkPlugin(),
@@ -355,5 +355,6 @@ client.distube
 			console.error(error);
 		}
 	})
+	.on("ffmpegDebug", console.log)
 
 client.login(process.env.TOKEN);
