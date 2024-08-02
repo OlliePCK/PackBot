@@ -1,3 +1,4 @@
+const youtubeNotifications = require('../../scripts/youtube-notifications');
 const gameExpose = require('../event-functions/game-expose');
 const liveNoti = require('../event-functions/live-noti');
 
@@ -13,5 +14,6 @@ module.exports = {
 		client.user.setPresence({ activities: [{ name: 'thepck.com' }], status: 'available' });
 		gameExpose(client);
 		liveNoti(client);
+		youtubeNotifications(client);
 	},
 };

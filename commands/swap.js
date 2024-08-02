@@ -44,7 +44,7 @@ module.exports = {
 			.setDescription(`Swapped positions \`${songPosition1}\` and \`${songPosition2}\`.`)
 			.setFooter({
 				text: 'The Pack',
-				iconURL: 'https://i.imgur.com/L49zHx9.jpg'
+				iconURL: interaction.client.logo
 			})
 			.setColor('#ff006a');
 		interaction.editReply({ embeds: [embed] });

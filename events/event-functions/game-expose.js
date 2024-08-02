@@ -9,13 +9,6 @@ module.exports = client => {
 		}
 
 		try {
-			const [rows] = await db.pool.query('SELECT * FROM Guilds WHERE guildId = ?', [Guild.id]);
-			const guildProfile = rows[0];
-			if (!guildProfile) return;
-
-			if (!guildProfile.generalChannelID) return;
-			const general = guildProfile.generalChannelID;
-
 			if (newPresence == undefined || oldPresence == undefined) {
 				return;
 			}
@@ -33,6 +26,12 @@ module.exports = client => {
 					}
 					const hours = Math.abs(n - g) / 36e5;
 					if (hours >= 6) {
+						const [rows] = await db.pool.query('SELECT * FROM Guilds WHERE guildId = ?', [Guild.id]);
+						const guildProfile = rows[0];
+						if (!guildProfile) return;
+
+						if (!guildProfile.generalChannelID) return;
+						const general = guildProfile.generalChannelID;
 						console.log(`${oldPresence.user.username} has been playing ${oldAct.name} for ${Math.round(hours)} hours.`);
 						return client.channels.cache.get(general).send(`${oldPresence.user.username} has been playing ${oldAct.name} for ${Math.round((hours) * 100) / 100} hours.`);
 					}

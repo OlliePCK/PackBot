@@ -1,11 +1,12 @@
 const discord = require('discord.js');
-const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, PermissionFlagsBits } = require('discord.js');
 const db = require('../database/db.js');
 
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('settings')
 		.setDescription('Change the bots settings. (administator)')
+		.setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
 		.addSubcommand(subcommand =>
 			subcommand
 				.setName('set-live-role')
@@ -41,6 +42,17 @@ module.exports = {
 		)
 		.addSubcommand(subcommand =>
 			subcommand
+				.setName('set-youtube-channel')
+				.setDescription('Sets the server channel for YouTube notifications.')
+				.addChannelOption(option =>
+					option
+						.setName('youtube-channel')
+						.setDescription('The servers channel for YouTube notifications.')
+						.setRequired(true),
+				),
+		)
+		.addSubcommand(subcommand =>
+			subcommand
 				.setName('info')
 				.setDescription('Change the bots settings. (administator)'),
 		),
@@ -62,7 +74,7 @@ module.exports = {
 					])
 					.setFooter({
 						text: 'The Pack',
-						iconURL: 'https://i.imgur.com/L49zHx9.jpg'
+						iconURL: interaction.client.logo
 					})
 					.setColor('#ff006a');
 				return interaction.editReply({ embeds: [embed] });
@@ -81,7 +93,7 @@ module.exports = {
 					])
 					.setFooter({
 						text: 'The Pack',
-						iconURL: 'https://i.imgur.com/L49zHx9.jpg'
+						iconURL: interaction.client.logo
 					})
 					.setColor('#ff006a');
 				return interaction.editReply({ embeds: [embed] });
@@ -100,7 +112,26 @@ module.exports = {
 					])
 					.setFooter({
 						text: 'The Pack',
-						iconURL: 'https://i.imgur.com/L49zHx9.jpg'
+						iconURL: interaction.client.logo
+					})
+					.setColor('#ff006a');
+				return interaction.editReply({ embeds: [embed] });
+			}
+			else if (interaction.options.getSubcommand() === 'set-youtube-channel') {
+				const channel = interaction.options.getChannel('youtube-channel');
+				if (!channel.isTextBased()) {
+					return interaction.editReply('That is not a text channel!');
+				}
+				await db.pool.query('UPDATE Guilds SET youtubeChannelID = ? WHERE guildId = ?', [channel.id, interaction.guildId]);
+				const embed = new discord.EmbedBuilder()
+					.setTitle(`${interaction.client.emotes.success} | Set YouTube channel!`)
+					.addFields([
+						{ name: 'Channel', value: `${channel}` },
+						{ name: 'Set by', value: `${interaction.user}` }
+					])
+					.setFooter({
+						text: 'The Pack',
+						iconURL: interaction.client.logo
 					})
 					.setColor('#ff006a');
 				return interaction.editReply({ embeds: [embed] });
@@ -109,16 +140,17 @@ module.exports = {
 				const Guild = await interaction.guild.fetch();
 				const embed = new discord.EmbedBuilder()
 					.setTitle(`${interaction.guild.name}'s Settings`)
-					.setDescription('Please configure the bot using the subcommands if there are no fields below!\n\n**/settings set-live-role `{live-role}`** sets the role assigned to users when they go live **ENSURE THE ROLE IS HIGHER THAN ALL USERS IN ROLE SETTINGS OR THE FEATURE WILL NOT WORK CORRECTLY**\n\n**/settings set-live-channel `{live-channel}`** sets the channel for live notifications to be sent to, setting this enables the live notification feature.\n\n**/settings set-general-channel `{general-channel}`** sets the general channel for play time notifications to be sent to, setting this enables the game expose feature.\n\nTo get the ID\'s of roles/channels, **enable developer mode** in Discord settings, right click the role/channel and select `Copy ID`\n ')
+					.setDescription('Here are the current settings for the server. To change them use `/settings set-<setting>`. For example `/settings set-live-role`.')
 					.setFooter({
 						text: 'The Pack',
-						iconURL: 'https://i.imgur.com/L49zHx9.jpg'
+						iconURL: interaction.client.logo
 					})
 					.setColor('#ff006a');
 				let embObj = [
 					{ name: 'Live Role', value: '' },
 					{ name: 'Live Channel', value: '' },
 					{ name: 'General Channel', value: '' },
+					{ name: 'YouTube Channel', value: ''}
 				]
 				if (guildProfile.liveRoleID) {
 					await Guild.roles.fetch(guildProfile.liveRoleID)
@@ -130,6 +162,8 @@ module.exports = {
 				else embObj[1].value = '`Not Set`';
 				if (guildProfile.generalChannelID) embObj[2].value = `<#${guildProfile.generalChannelID}>`;
 				else embObj[2].value = '`Not Set`';
+				if (guildProfile.youtubeChannelID) embObj[3].value = `<#${guildProfile.youtubeChannelID}>`;
+				else embObj[3].value = '`Not Set`';
 				embed.addFields(embObj);
 				return interaction.editReply({ embeds: [embed] });
 			}

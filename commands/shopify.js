@@ -82,7 +82,7 @@ module.exports = {
 					color: 0xff006a,
 					fields: fieldList,
 					footer: {
-						text: 'Developed by Ollie#4747',
+						text: 'Developed by @OlliePCK',
 						icon_url: 'https://i.imgur.com/c3z97p3.png',
 					},
 				};

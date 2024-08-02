@@ -45,7 +45,7 @@ module.exports = {
 			)
 			.setFooter({
 				text: 'The Pack',
-				iconURL: 'https://i.imgur.com/L49zHx9.jpg'
+				iconURL: interaction.client.logo
 			})
 			.setColor('#ff006a');
 		return interaction.editReply({ embeds: [embed] });

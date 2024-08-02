@@ -13,7 +13,7 @@ module.exports = {
                 .setDescription('Thank you for using The Pack music bot.')
                 .setFooter({
                     text: 'The Pack',
-                    iconURL: 'https://i.imgur.com/L49zHx9.jpg'
+                    iconURL: oldState.client.logo
                 })
                 .setColor('#ff006a');
             queue.textChannel.send({ embeds: [embed] })

@@ -13,7 +13,8 @@
     "dotenv": "^16.4.5",
     "mysql2": "^3.10.1",
     "npm": "^10.8.1",
-    "sodium-native": "^4.1.1"
+    "sodium-native": "^4.1.1",
+    "undici": "^6.19.2"
   },
   "devDependencies": {
     "eslint": "^9.5.0"
