@@ -1,23 +1,33 @@
 {
+  "name": "packbot",
+  "version": "1.0.0",
+  "description": "PackBot is a versatile Discord bot designed to enhance your server with music playback, Shopify data scraping, and customizable settings. Additionally, it features event functions to notify when users are streaming or playing games for extended periods.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OlliePCK/PackBot.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/OlliePCK/PackBot/issues"
+  },
+  "homepage": "https://github.com/OlliePCK/PackBot#readme",
   "dependencies": {
-    "@discordjs/opus": "0.9.0",
+    "@discordjs/opus": "^0.9.0",
     "@distube/direct-link": "^1.0.1",
     "@distube/file": "^1.0.1",
-    "@distube/soundcloud": "^2.0.1",
+    "@distube/soundcloud": "^2.0.3",
     "@distube/spotify": "^2.0.2",
-    "@distube/youtube": "^1.0.2",
+    "@distube/youtube": "^1.0.4",
     "@distube/yt-dlp": "^2.0.1",
-    "@distube/ytdl-core": "^4.13.7",
-    "axios": "^1.7.2",
     "discord.js": "^14.15.3",
     "distube": "^5.0.2",
     "dotenv": "^16.4.5",
-    "mysql2": "^3.10.1",
-    "npm": "^10.8.1",
-    "sodium-native": "^4.1.1",
-    "undici": "^6.19.2"
-  },
-  "devDependencies": {
-    "eslint": "^9.5.0"
+    "mysql2": "^3.11.0",
+    "sodium-native": "^4.1.1"
   }
 }
