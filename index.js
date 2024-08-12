@@ -25,18 +25,19 @@ const { DirectLinkPlugin } = require('@distube/direct-link');
 
 client.distube = new DisTube(client, {
 	plugins: [
-		new YouTubePlugin({ cookies: JSON.parse(fs.readFileSync("cookies.json")) }),
-		new SoundCloudPlugin({
+		//new YouTubePlugin({ cookies: JSON.parse(fs.readFileSync("cookies.json")) }),
+		/*new SoundCloudPlugin({
 			clientId: process.env.SOUNDCLOUD_CLIENT_ID,
 			oauthToken: process.env.SOUNDCLOUD_OAUTH_TOKEN,
-		  }),
-		  new SpotifyPlugin({
+		  }),*/
+		new SoundCloudPlugin(),
+		new SpotifyPlugin({
 			api: {
-			  clientId: process.env.SPOTIFY_CLIENT_ID,
-			  clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
-			  topTracksCountry: "AU",
+				clientId: process.env.SPOTIFY_CLIENT_ID,
+				clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+				topTracksCountry: "AU",
 			},
-		  }),
+		}),
 		new DirectLinkPlugin(),
 		new FilePlugin(),
 		new YtDlpPlugin({ update: true }),
