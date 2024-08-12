@@ -41,9 +41,9 @@ module.exports = {
             const [rows] = await db.pool.query('SELECT * FROM Guilds WHERE guildId = ?', [interaction.guildId]);
             const guildProfile = rows[0];
             if (interaction.options.getSubcommand() === 'add') {
-                const handle = interaction.options.getString('handle');
+                let handle = interaction.options.getString('handle').replace(/^@/, ''); // Trim the @ symbol if present
                 if (!guildProfile.youtubeChannelID) {
-                    return interaction.editReply(`You haven't set a Discord channel for notifications yet. Use \`/settings set-youtube-channel youtube-channel\` to set one.`)
+                    return interaction.editReply(`You haven't set a Discord channel for notifications yet. Use \`/settings set-youtube-channel youtube-channel\` to set one.`);
                 }
                 const channel = await verifyYouTubeChannel(handle);
                 if (!channel) {
@@ -57,7 +57,7 @@ module.exports = {
                             return interaction.editReply('This YouTube channel is already in the notification list!');
                         } else {
                             console.error(error);
-                            return interaction.editReply('An error occured while adding this YouTube channel!');
+                            return interaction.editReply('An error occurred while adding this YouTube channel!');
                         }
                     }
                     const embed = new EmbedBuilder()
@@ -74,10 +74,10 @@ module.exports = {
                             iconURL: interaction.client.logo
                         })
                         .setColor('#ff006a');
-                    return interaction.editReply({ embeds: [embed] })
+                    return interaction.editReply({ embeds: [embed] });
                 }
             } else if (interaction.options.getSubcommand() === 'remove') {
-                const handle = interaction.options.getString('handle');
+                let handle = interaction.options.getString('handle').replace(/^@/, ''); // Trim the @ symbol if present
                 const [rows] = await db.pool.query('SELECT * FROM Youtube WHERE handle = ? AND guildId = ?', [handle, interaction.guildId]);
                 if (!rows[0]) {
                     return interaction.editReply('This YouTube channel is not in the notification list!');
@@ -98,7 +98,7 @@ module.exports = {
                             iconURL: interaction.client.logo
                         })
                         .setColor('#ff006a');
-                    return interaction.editReply({ embeds: [embed] })
+                    return interaction.editReply({ embeds: [embed] });
                 }
             } else if (interaction.options.getSubcommand() === 'view') {
                 const [rows] = await db.pool.query('SELECT * FROM Youtube WHERE guildId = ?', [interaction.guildId]);
@@ -129,12 +129,11 @@ module.exports = {
                     return interaction.editReply({ embeds: [embed] });
                 }
             }
-        }
-        catch (error) {
+        } catch (error) {
             console.error(error);
-            return interaction.editReply('An error occured while executing this command!');
+            return interaction.editReply('An error occurred while executing this command!');
         }
-    },
+    }
 };
 
 async function verifyYouTubeChannel(handle) {
