@@ -61,7 +61,6 @@ module.exports = {
 				await interaction.deleteReply();
 			}
 			else {
-				song = song + ' audio';
 				interaction.client.distube.play(voiceChannel, song, { member: interaction.member, textChannel: interaction.channel });
 				await interaction.editReply({ content: 'Song has been added!' });
 				await interaction.deleteReply();
