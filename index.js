@@ -367,6 +367,5 @@ client.distube
 			console.error(error);
 		}
 	})
-	.on("ffmpegDebug", console.log);
 
 client.login(process.env.TOKEN);
