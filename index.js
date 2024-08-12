@@ -20,13 +20,23 @@ const { SoundCloudPlugin } = require('@distube/soundcloud');
 const { SpotifyPlugin } = require('@distube/spotify');
 const { YouTubePlugin } = require('@distube/youtube');
 const { FilePlugin } = require('@distube/file');
+const { YtDlpPlugin } = require('@distube/yt-dlp');
 const { DirectLinkPlugin } = require('@distube/direct-link');
 
 client.distube = new DisTube(client, {
 	plugins: [
 		new YouTubePlugin({ cookies: JSON.parse(fs.readFileSync("cookies.json")) }),
-		new SoundCloudPlugin(),
-		new SpotifyPlugin(),
+		new SoundCloudPlugin({
+			clientId: process.env.SOUNDCLOUD_CLIENT_ID,
+			oauthToken: process.env.SOUNDCLOUD_OAUTH_TOKEN,
+		  }),
+		  new SpotifyPlugin({
+			api: {
+			  clientId: process.env.SPOTIFY_CLIENT_ID,
+			  clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+			  topTracksCountry: "AU",
+			},
+		  }),
 		new DirectLinkPlugin(),
 		new FilePlugin(),
 		new YtDlpPlugin({ update: true }),
@@ -286,7 +296,7 @@ client.distube
 		try {
 			const embed = new EmbedBuilder()
 				.setTitle(`${client.emotes.error} | Error occurred!`)
-				.setDescription(`An error occurred while executing the command: ${error}`)
+				.setDescription(`An error occurred! ${error}`)
 				.setFooter({
 					text: 'The Pack',
 					iconURL: client.logo
@@ -356,5 +366,6 @@ client.distube
 			console.error(error);
 		}
 	})
+	.on("ffmpegDebug", console.log);
 
 client.login(process.env.TOKEN);

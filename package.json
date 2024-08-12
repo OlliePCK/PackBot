@@ -29,5 +29,8 @@
     "dotenv": "^16.4.5",
     "mysql2": "^3.11.0",
     "sodium-native": "^4.1.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.9.0"
   }
 }

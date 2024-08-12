@@ -122,19 +122,24 @@ module.exports = {
 				if (!channel.isTextBased()) {
 					return interaction.editReply('That is not a text channel!');
 				}
-				await db.pool.query('UPDATE Guilds SET youtubeChannelID = ? WHERE guildId = ?', [channel.id, interaction.guildId]);
-				const embed = new discord.EmbedBuilder()
-					.setTitle(`${interaction.client.emotes.success} | Set YouTube channel!`)
-					.addFields([
-						{ name: 'Channel', value: `${channel}` },
-						{ name: 'Set by', value: `${interaction.user}` }
-					])
-					.setFooter({
-						text: 'The Pack',
-						iconURL: interaction.client.logo
-					})
-					.setColor('#ff006a');
-				return interaction.editReply({ embeds: [embed] });
+				try {
+					await db.pool.query('UPDATE Guilds SET youtubeChannelID = ? WHERE guildId = ?', [channel.id, interaction.guildId]);
+					const embed = new discord.EmbedBuilder()
+						.setTitle(`${interaction.client.emotes.success} | Set YouTube channel!`)
+						.addFields([
+							{ name: 'Channel', value: `${channel}` },
+							{ name: 'Set by', value: `${interaction.user}` }
+						])
+						.setFooter({
+							text: 'The Pack',
+							iconURL: interaction.client.logo
+						})
+						.setColor('#ff006a');
+					return interaction.editReply({ embeds: [embed] });
+				} catch (error) {
+					console.error(error);
+					return interaction.editReply('An error occured while executing this command!');
+				}
 			}
 			else if (interaction.options.getSubcommand() === 'info') {
 				const Guild = await interaction.guild.fetch();
@@ -150,7 +155,7 @@ module.exports = {
 					{ name: 'Live Role', value: '' },
 					{ name: 'Live Channel', value: '' },
 					{ name: 'General Channel', value: '' },
-					{ name: 'YouTube Channel', value: ''}
+					{ name: 'YouTube Channel', value: '' }
 				]
 				if (guildProfile.liveRoleID) {
 					await Guild.roles.fetch(guildProfile.liveRoleID)
