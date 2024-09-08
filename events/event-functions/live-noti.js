@@ -33,7 +33,7 @@ module.exports = client => {
 				if (newPresence.member.voice.channel) {
 					const voiceChannelID = newPresence.member.voice.channelId;
 					await fetch(`https://discord.com/api/v10/channels/${voiceChannelID}/voice-status`, {
-						method: 'PUT',
+						method: 'POST',
 						headers: {
 							Authorization: `Bot ${process.env.TOKEN}`,
 							'Content-Type': 'application/json',
@@ -61,7 +61,7 @@ module.exports = client => {
 				if (newPresence.member.voice.channel) {
 					const voiceChannelID = newPresence.member.voice.channelId;
 					await fetch(`https://discord.com/api/v10/channels/${voiceChannelID}/voice-status`, {
-						method: 'PUT',
+						method: 'POST',
 						headers: {
 							Authorization: `Bot ${process.env.TOKEN}`,
 							'Content-Type': 'application/json',
