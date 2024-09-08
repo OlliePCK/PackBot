@@ -29,7 +29,20 @@ module.exports = client => {
 				newPresence.member.roles.add(liverole).catch(() => {
 					return client.channels.cache.get(live).send('An error occured adding the live role to the user! Please ensure **The Pack** bot role is higher than all users!').catch(console.error);
 				});
-				return client.channels.cache.get(live).send(`**${discName}** just went live! Watch: ${streamURL}`).catch(console.error);
+				client.channels.cache.get(live).send(`**${discName}** just went live! Watch: ${streamURL}`).catch(console.error);
+				if (newPresence.member.voice.channel) {
+					const voiceChannelID = newPresence.member.voice.channelId;
+					await fetch(`https://discord.com/api/v10/channels/${voiceChannelID}/voice-status`, {
+						method: 'PUT',
+						headers: {
+							Authorization: `Bot ${process.env.TOKEN}`,
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							status: 'LIVE STREAMING 🔴',
+						}),
+					});
+				}
 			}
 			else if (oldStreamingStatus === true && newStreamingStatus === false) {
 				const [rows] = await db.pool.query('SELECT * FROM Guilds WHERE guildId = ?', [Guild.id]);
@@ -44,7 +57,20 @@ module.exports = client => {
 				newPresence.member.roles.remove(liverole).catch(() => {
 					return client.channels.cache.get(live).send('An error occured removing the live role to the user! Please ensure **The Pack** bot role is higher than all users!').catch(console.error);
 				});
-				return console.log(`${discName}, just stopped streaming.`);
+				console.log(`${discName}, just stopped streaming.`);
+				if (newPresence.member.voice.channel) {
+					const voiceChannelID = newPresence.member.voice.channelId;
+					await fetch(`https://discord.com/api/v10/channels/${voiceChannelID}/voice-status`, {
+						method: 'PUT',
+						headers: {
+							Authorization: `Bot ${process.env.TOKEN}`,
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							status: '',
+						}),
+					});
+				}
 			}
 		} catch (error) {
 			return console.error(error);
