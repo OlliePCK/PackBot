@@ -1,5 +1,4 @@
 const db = require('../database/db.js');
-const fetch = require('node-fetch');
 
 module.exports = client => {
     let isChecking = false;
@@ -16,18 +15,25 @@ module.exports = client => {
 
     async function fetch_latest_videos(channelId, maxResults = 5) {
         try {
-            const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=${maxResults}&key=${process.env.YOUTUBE_API_KEY}`);
+            const response = await fetch(
+                `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}` +
+                `&order=date&type=video&maxResults=${maxResults}&key=${process.env.YOUTUBE_API_KEY}`
+            );
             const data = await response.json();
+
             if (!response.ok) {
                 console.error('YouTube API error:', data);
                 return [];
             }
+
             if (data.items && data.items.length) {
-                return data.items.map(item => ({
+                const videos = data.items.map(item => ({
                     videoId: item.id.videoId,
                     videoSnippet: item.snippet,
                     publishedAt: new Date(item.snippet.publishedAt)
                 }));
+                videos.sort((a, b) => b.publishedAt - a.publishedAt);
+                return videos;
             }
             return [];
         } catch (error) {
@@ -36,9 +42,9 @@ module.exports = client => {
         }
     }
 
-    async function fetch_last_checked_videos(channelId) {
+    async function fetch_all_last_checked_videos() {
         try {
-            const [rows] = await db.pool.query('SELECT lastCheckedVideo, lastChecked, guildId FROM Youtube WHERE channelId = ?', [channelId]);
+            const [rows] = await db.pool.query('SELECT channelId, lastCheckedVideo, guildId, initialized FROM Youtube');
             return rows;
         } catch (error) {
             console.error('Error fetching last checked videos from database:', error);
@@ -46,9 +52,12 @@ module.exports = client => {
         }
     }
 
-    async function update_last_checked_video(channelId, guildId, videoId) {
+    async function update_last_checked_video(channelId, guildId, videoId, initialized = true) {
         try {
-            await db.pool.query('UPDATE Youtube SET lastCheckedVideo = ?, lastChecked = NOW() WHERE channelId = ? AND guildId = ?', [videoId, channelId, guildId]);
+            await db.pool.query(
+                'UPDATE Youtube SET lastCheckedVideo = ?, lastChecked = NOW(), initialized = ? WHERE channelId = ? AND guildId = ?',
+                [videoId, initialized, channelId, guildId]
+            );
         } catch (error) {
             console.error('Error updating last checked video in database:', error);
             throw error;
@@ -57,19 +66,30 @@ module.exports = client => {
 
     async function send_notification(guildId, videoId, videoSnippet) {
         try {
-            const [guildRows] = await db.pool.query('SELECT youtubeChannelID FROM Guilds WHERE guildId = ?', [guildId]);
+            const [guildRows] = await db.pool.query(
+                'SELECT youtubeChannelID FROM Guilds WHERE guildId = ?',
+                [guildId]
+            );
             if (guildRows.length > 0 && guildRows[0].youtubeChannelID) {
                 const channel = await client.channels.fetch(guildRows[0].youtubeChannelID);
                 if (channel) {
-                    const message = `**${videoSnippet.channelTitle}** uploaded a new YouTube video!\nhttps://www.youtube.com/watch?v=${videoId} ||@everyone||`;
+                    const message = {
+                        content: `**${videoSnippet.channelTitle}** uploaded a new video: **${videoSnippet.title}**\nhttps://www.youtube.com/watch?v=${videoId}`,
+                        embeds: [{
+                            title: videoSnippet.title,
+                            url: `https://www.youtube.com/watch?v=${videoId}`,
+                            thumbnail: {
+                                url: videoSnippet.thumbnails.default.url,
+                            },
+                        }],
+                    };
                     await channel.send(message);
                 } else {
                     console.error(`Channel with ID ${guildRows[0].youtubeChannelID} not found`);
                 }
             }
         } catch (error) {
-            console.error('Error sending notification:', error);
-            throw error;
+            console.error(`Error sending notification to guild ${guildId}:`, error);
         }
     }
 
@@ -77,26 +97,50 @@ module.exports = client => {
         if (isChecking) return;
         isChecking = true;
 
+        let nextCheckScheduled = false;
+
         try {
-            const channels = await fetch_channels_to_check();
-            for (const { channelId } of channels) {
+            const channelsToCheck = await fetch_channels_to_check();
+            const lastCheckedVideos = await fetch_all_last_checked_videos();
+
+            const lastCheckedMap = new Map();
+            for (const { channelId, lastCheckedVideo, guildId, initialized } of lastCheckedVideos) {
+                if (!lastCheckedMap.has(channelId)) {
+                    lastCheckedMap.set(channelId, []);
+                }
+                lastCheckedMap.get(channelId).push({ lastCheckedVideo, guildId, initialized });
+            }
+
+            for (const { channelId } of channelsToCheck) {
                 const latestVideos = await fetch_latest_videos(channelId);
                 if (!latestVideos.length) continue;
 
-                const lastCheckedDataArray = await fetch_last_checked_videos(channelId);
-                if (!lastCheckedDataArray.length) continue;
+                const lastCheckedDataArray = lastCheckedMap.get(channelId);
+                if (!lastCheckedDataArray || !lastCheckedDataArray.length) continue;
 
                 for (const lastCheckedData of lastCheckedDataArray) {
-                    const { lastCheckedVideo, guildId } = lastCheckedData;
+                    const { lastCheckedVideo, guildId, initialized } = lastCheckedData;
 
-                    // Find new videos that haven't been notified yet
-                    const newVideos = [];
-                    for (const videoData of latestVideos) {
-                        if (videoData.videoId === lastCheckedVideo) {
-                            // Reached the last notified video
-                            break;
+                    if (!initialized) {
+                        const mostRecentVideo = latestVideos[0];
+                        if (mostRecentVideo) {
+                            await update_last_checked_video(channelId, guildId, mostRecentVideo.videoId, true);
+                            console.log(`Initialized channel ${channelId} for guild ${guildId} with video ${mostRecentVideo.videoId}`);
                         }
-                        newVideos.push(videoData);
+                        continue;
+                    }
+
+                    let newVideos = [];
+
+                    if (!lastCheckedVideo) {
+                        newVideos = [...latestVideos];
+                    } else {
+                        for (const videoData of latestVideos) {
+                            if (videoData.videoId === lastCheckedVideo) {
+                                break;
+                            }
+                            newVideos.push(videoData);
+                        }
                     }
 
                     if (!newVideos.length) {
@@ -104,34 +148,36 @@ module.exports = client => {
                         continue;
                     }
 
-                    // Send notifications for new videos (from oldest to newest)
-                    for (let i = newVideos.length - 1; i >= 0; i--) {
-                        const { videoId, videoSnippet } = newVideos[i];
-                        await send_notification(guildId, videoId, videoSnippet);
-                        // Update the last checked video
-                        await update_last_checked_video(channelId, guildId, videoId);
-                    }
+                    newVideos.reverse();
+
+                    const notificationPromises = newVideos.map(async ({ videoId, videoSnippet }) => {
+                        try {
+                            await send_notification(guildId, videoId, videoSnippet);
+                            await update_last_checked_video(channelId, guildId, videoId);
+                        } catch (error) {
+                            console.error(`Failed to send notification for video ${videoId}:`, error);
+                        }
+                    });
+
+                    await Promise.allSettled(notificationPromises);
                 }
             }
         } catch (error) {
-            if (error.message.includes('quota')) {
-                console.error('Quota exceeded, retrying after some time...');
-                // Implement a retry mechanism, e.g., exponential backoff
-                setTimeout(checkChannels, 60 * 60 * 1000); // Retry after 1 hour
+            if (error.message && error.message.includes('quota')) {
+                console.error('YouTube API quota exceeded, retrying after some time...');
+                setTimeout(checkChannels, 60 * 60 * 1000);
+                nextCheckScheduled = true;
+                return;
             } else {
                 console.error('Error in checkChannels:', error);
             }
         } finally {
             isChecking = false;
+            if (!nextCheckScheduled) {
+                setTimeout(checkChannels, 1800000);
+            }
         }
     }
 
-    function checkChannelsInterval() {
-        checkChannels();
-        setInterval(() => {
-            checkChannels();
-        }, 1800000); // 30 minutes
-    }
-
-    checkChannelsInterval();
+    checkChannels();
 };

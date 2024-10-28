@@ -26,10 +26,6 @@ const { DirectLinkPlugin } = require('@distube/direct-link');
 client.distube = new DisTube(client, {
 	plugins: [
 		new YouTubePlugin({ cookies: JSON.parse(fs.readFileSync("cookies.json")) }),
-		/*new SoundCloudPlugin({
-			clientId: process.env.SOUNDCLOUD_CLIENT_ID,
-			oauthToken: process.env.SOUNDCLOUD_OAUTH_TOKEN,
-		  }),*/
 		new SoundCloudPlugin(),
 		new SpotifyPlugin({
 			api: {
@@ -367,7 +363,7 @@ client.distube
 			console.error(error);
 		}
 	})
-	//.on('debug', console.log);
-	.on('ffmpegDebug', console.log)
+	.on('debug', console.log)
+	.on('ffmpegDebug', console.log);
 
 client.login(process.env.TOKEN);
