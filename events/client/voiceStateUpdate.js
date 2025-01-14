@@ -6,8 +6,7 @@ module.exports = {
     execute(oldState, newState) {
         if (!oldState?.channel) return;
         const voice = oldState.client.distube.voices.get(oldState);
-        const queue = oldState.client.distube.queues.get(oldState);
-        if (voice && isVoiceChannelEmpty(oldState) && queue) {
+        if (voice && isVoiceChannelEmpty(oldState)) {
             const embed = new EmbedBuilder()
                 .setTitle(`${oldState.client.emotes.success} | No one listening, leaving the channel!`)
                 .setDescription('Thank you for using The Pack music bot.')
