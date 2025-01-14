@@ -6,7 +6,6 @@ module.exports = {
     execute(oldState, newState) {
         if (!oldState?.channel) return;
         const voice = oldState.client.distube.voices.get(oldState);
-        console.log(voice);
         if (voice && isVoiceChannelEmpty(oldState)) {
             const embed = new EmbedBuilder()
                 .setTitle(`${oldState.client.emotes.success} | No one listening, leaving the channel!`)
