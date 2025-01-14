@@ -289,11 +289,11 @@ client.distube
 			console.error(error);
 		}
 	})
-	.on('error', (error, queue) => {
+	.on('error', (e, queue, song) => {
 		try {
 			const embed = new EmbedBuilder()
 				.setTitle(`${client.emotes.error} | Error occurred!`)
-				.setDescription(`An error occurred! ${error}`)
+				.setDescription(`An error occurred! ${e}`)
 				.setFooter({
 					text: 'The Pack',
 					iconURL: client.logo
@@ -301,7 +301,7 @@ client.distube
 				.setColor('#ff006a');
 			queue.textChannel.send({ embeds: [embed] });
 		} catch (error) {
-			console.error(error);
+			console.error(e);
 		}
 	})
 	.on('finish', queue => {
@@ -362,8 +362,6 @@ client.distube
 		} catch (error) {
 			console.error(error);
 		}
-	})
-	.on('debug', console.log)
-	.on('ffmpegDebug', console.log);
+	});
 
 client.login(process.env.TOKEN);
