@@ -10,7 +10,7 @@
     "type": "git",
     "url": "git+https://github.com/OlliePCK/PackBot.git"
   },
-  "author": "",
+  "author": "OlliePCK",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/OlliePCK/PackBot/issues"
@@ -18,20 +18,20 @@
   "homepage": "https://github.com/OlliePCK/PackBot#readme",
   "dependencies": {
     "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.18.0",
     "@distube/direct-link": "^1.0.1",
     "@distube/file": "^1.0.1",
-    "@distube/soundcloud": "^2.0.3",
+    "@distube/soundcloud": "^2.0.4",
     "@distube/spotify": "^2.0.2",
     "@distube/youtube": "^1.0.4",
     "@distube/yt-dlp": "^2.0.1",
-    "discord.js": "^14.14.1",
-    "distube": "^5.0.2",
-    "dotenv": "^16.4.5",
-    "mysql2": "^3.11.0",
-    "node-fetch": "^3.3.2",
-    "sodium-native": "^4.1.1"
-  },
-  "devDependencies": {
-    "eslint": "^9.9.0"
+    "@distube/ytdl-core": "^4.16.0",
+    "axios": "^1.7.9",
+    "discord.js": "^14.17.3",
+    "distube": "^5.0.4",
+    "dotenv": "^16.4.7",
+    "https-proxy-agent": "^7.0.6",
+    "mysql2": "^3.12.0",
+    "sodium-native": "^4.3.1"
   }
 }
