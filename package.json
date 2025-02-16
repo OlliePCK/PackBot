@@ -18,6 +18,8 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.18.0",
     "@distube/direct-link": "^1.0.1",
     "@distube/file": "^1.0.1",
     "@distube/soundcloud": "^2.0.4",
@@ -28,6 +30,8 @@
     "discord.js": "^14.18.0",
     "distube": "^5.0.4",
     "dotenv": "^16.4.7",
-    "mysql2": "^3.12.0"
+    "https-proxy-agent": "^7.0.6",
+    "mysql2": "^3.12.0",
+    "sodium-native": "^4.3.2"
   }
 }
