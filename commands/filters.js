@@ -1,33 +1,17 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { defaultFilters } = require('distube');
 
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('filters')
 		.setDescription('Apply/turn off filters for the music.')
-		.addStringOption(option => option.setName('filter').setDescription('Select from the valid filters above.').setRequired(true)
-			.addChoices(
-				{ name: 'off', value: 'off' },
-				{ name: '3d', value: '3d' },
-				{ name: '8D', value: '8D' },
-				{ name: 'lowbass', value: 'lowbass' },
-				{ name: 'clear', value: 'clear' },
-				{ name: 'bassboost', value: 'bassboost' },
-				{ name: 'echo', value: 'echo' },
-				{ name: 'karaoke', value: 'karaoke' },
-				{ name: 'nightcore', value: 'nightcore' },
-				{ name: 'vaporwave', value: 'vaporwave' },
-				{ name: 'flanger', value: 'flanger' },
-				{ name: 'gate', value: 'gate' },
-				{ name: 'haas', value: 'haas' },
-				{ name: 'reverse', value: 'reverse' },
-				{ name: 'surround', value: 'surround' },
-				{ name: 'mcompand', value: 'mcompand' },
-				{ name: 'phaser', value: 'phaser' },
-				{ name: 'tremolo', value: 'tremolo' },
-				{ name: 'off', value: 'off' },
-				{ name: 'earwax', value: 'earwax' }
-			)
-		),
+		.addStringOption(option =>
+			option
+			  .setName("filter")
+			  .setDescription("The filter to set")
+			  .setRequired(true)
+			  .addChoices(...Object.keys(defaultFilters).map(k => ({ name: k, value: k })), { name: 'off', value: 'off' }),
+		  ),
 	async execute(interaction) {
 		const queue = interaction.client.distube.getQueue(interaction);
 		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
