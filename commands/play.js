@@ -1,82 +1,83 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
+const ALLOWED_HOSTNAMES = new Set([
+	'youtube.com',
+	'www.youtube.com',
+	'youtu.be',
+	'open.spotify.com',
+	'spotify.com',
+	'soundcloud.com',
+	'www.soundcloud.com',
+	'discord.com',
+	'cdn.discordapp.com',
+]);
+
+function isAllowedLink(link) {
+	try {
+		const url = new URL(link);
+		return ALLOWED_HOSTNAMES.has(url.hostname.toLowerCase());
+	} catch {
+		return false; // not a valid URL at all
+	}
+}
+
 module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('play')
 		.setDescription('Play a song from YouTube, Soundcloud or Spotify')
-		.addStringOption(option => option.setName('song').setDescription('Takes a playlist, search terms or song link.')),
-	async execute(interaction) {
+		.addStringOption(opt => opt
+			.setName('song')
+			.setDescription('Playlist URL, song URL, or search terms')
+			.setRequired(false)
+		),
+	async execute(interaction, guildProfile) {
 		const voiceChannel = interaction.member.voice.channel;
 		if (!voiceChannel) {
-			await interaction.editReply({ content: 'You are not in a voice channel!' });
-			await interaction.deleteReply();
-			return;
+			return interaction.editReply('🚫 You need to be in a voice channel first!');
 		}
+
+		let query = interaction.options.getString('song');
 		const queue = interaction.client.distube.getQueue(interaction);
-		let song = interaction.options.getString('song');
-		if (!song) {
+
+		// No argument: either resume or error
+		if (!query) {
 			if (!queue) {
-				await interaction.editReply({ content: 'There is nothing in the queue right now!' });
-				await interaction.deleteReply();
-				return;
+				return interaction.editReply('❌ There’s nothing in queue right now.');
 			}
 			if (queue.paused) {
-				try {
-					queue.resume();
-				}
-				catch (e) {
-					console.log(e);
-					const embed = new EmbedBuilder()
-						.setTitle(`${interaction.client.emotes.error} | An error occurred!`)
-						.setDescription('Please try again.')
-						.setFooter({
-							text: 'The Pack',
-							iconURL: interaction.client.logo
-						})
-						.setColor('#ff006a');
-					return interaction.editReply({ embeds: [embed] });
-				}
-				const embed = new EmbedBuilder()
-					.setTitle(`${interaction.client.emotes.success} | The song has been resumed!`)
-					.addFields(
-						{ name: 'Requested by', value: `${interaction.user}`, inline: true },
-					)
-					.setFooter({
-						text: 'The Pack',
-						iconURL: interaction.client.logo
-					})
-					.setColor('#ff006a');
-				return interaction.editReply({ embeds: [embed] });
+				queue.resume();
+				return interaction.editReply('▶️ Resumed playback!');
 			}
-			else {
-				await interaction.editReply({ content: 'You need to provide a song to play!' });
-				await interaction.deleteReply();
-				return;
-			}
+			return interaction.editReply('⚠️ You must specify what to play or resume a paused song.');
 		}
+
+		// If it looks like a URL, enforce allowlist
+		const isUrl = /^https?:\/\//i.test(query);
+		if (isUrl && !isAllowedLink(query)) {
+			const errEmbed = new EmbedBuilder()
+				.setTitle('🚫 Invalid link')
+				.setDescription('I only support YouTube, Spotify, SoundCloud or Discord URLs.')
+				.setColor('#ff006a')
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+			return interaction.editReply({ embeds: [errEmbed] });
+		}
+
+		// Play (URL or search term)
 		try {
-			if (song.startsWith("https://") || song.startsWith("http://")) {
-				interaction.client.distube.play(voiceChannel, song, { member: interaction.member, textChannel: interaction.channel });
-				await interaction.editReply({ content: 'Song has been added!' });
-				await interaction.deleteReply();
-			}
-			else {
-				interaction.client.distube.play(voiceChannel, song, { member: interaction.member, textChannel: interaction.channel });
-				await interaction.editReply({ content: 'Song has been added!' });
-				await interaction.deleteReply();
-			}
-		}
-		catch (e) {
-			console.log(e);
-			const embed = new EmbedBuilder()
-				.setTitle(`${interaction.client.emotes.error} | An error occurred!`)
-				.setDescription('Please try again.')
-				.setFooter({
-					text: 'The Pack',
-					iconURL: interaction.client.logo
-				})
-				.setColor('#ff006a');
-			return interaction.editReply({ embeds: [embed] });
+			await interaction.client.distube.play(
+				voiceChannel,
+				query,
+				{ member: interaction.member, textChannel: interaction.channel }
+			);
+			return interaction.editReply('✅ Added to queue!');
+		} catch (e) {
+			console.error(e);
+			const errEmbed = new EmbedBuilder()
+				.setTitle('❌ Could not play that')
+				.setDescription('Something went wrong—please try again.')
+				.setColor('#ff006a')
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+			return interaction.editReply({ embeds: [errEmbed] });
 		}
 	},
 };

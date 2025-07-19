@@ -36,7 +36,6 @@ client.distube = new DisTube(client, {
 		}),
 		new DirectLinkPlugin(),
 		new FilePlugin(),
-		new YtDlpPlugin({ update: true }),
 	],
 	emitAddListWhenCreatingQueue: true,
 	emitAddSongWhenCreatingQueue: true,

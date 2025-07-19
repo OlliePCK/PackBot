@@ -4,9 +4,9 @@ module.exports = {
 	data: new SlashCommandBuilder()
 		.setName('autoplay')
 		.setDescription('Toggles the autoplay of music after the queue finishes.'),
-	async execute(interaction) {
+	async execute(interaction, guildProfile) {
 		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) return interaction.editReply(`${interaction.client.emotes.error} | There is nothing in the queue right now!`);
+		if (!queue) return interaction.editReply({ content: `${interaction.client.emotes.error} | There is nothing in the queue right now!` });
 		try {
 			const autoplay = queue.toggleAutoplay();
 			const embed = new EmbedBuilder()
@@ -19,7 +19,7 @@ module.exports = {
 					iconURL: interaction.client.logo
 				})
 				.setColor('#ff006a');
-			interaction.editReply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 		catch (e) {
 			console.log(e);
@@ -31,7 +31,7 @@ module.exports = {
 					iconURL: interaction.client.logo
 				})
 				.setColor('#ff006a');
-			interaction.editReply({ embeds: [embed] });
+			return interaction.editReply({ embeds: [embed] });
 		}
 	},
 };

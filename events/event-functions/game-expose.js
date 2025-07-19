@@ -1,45 +1,63 @@
+// events/presenceUpdate.js
 const db = require('../../database/db.js');
 
 module.exports = client => {
-	client.on('presenceUpdate', async (oldPresence, newPresence) => {
-		const Guild = newPresence.guild;
+	// In‑memory cache of guild → generalChannelID
+	const guildChannels = new Map();
 
-		if (Guild == undefined | Guild == null) {
+	// Helper to load & cache a guild’s channel
+	async function getGeneralChannel(guildId) {
+		if (guildChannels.has(guildId)) return guildChannels.get(guildId);
+		const [rows] = await db.pool.query(
+			'SELECT generalChannelID FROM Guilds WHERE guildId = ?',
+			[guildId]
+		);
+		const channelId = rows[0]?.generalChannelID ?? null;
+		guildChannels.set(guildId, channelId);
+		return channelId;
+	}
+
+	// Track when someone started an “activity with timestamps”
+	const startTimes = new Map(); // key = userId + activityName, value = Date
+
+	client.on('presenceUpdate', (oldP, newP) => {
+		// 1) Must have both presences and a guild
+		if (!oldP?.guild || !newP?.guild) return;
+
+		// 2) Find any activity that has a `timestamps.start`
+		const oldAct = oldP.activities.find(a => a.timestamps?.start);
+		const newAct = newP.activities.find(a => a.name === oldAct?.name);
+
+		// 3) If they *started* playing it, record the time
+		if (!oldAct && newAct) {
+			startTimes.set(
+				`${newP.userId}|${newAct.name}`,
+				newAct.timestamps.start
+			);
 			return;
 		}
 
-		try {
-			if (newPresence == undefined || oldPresence == undefined) {
-				return;
-			}
-			const oldAct = oldPresence.activities.find(activity => activity.timestamps != null);
-			if (oldAct) {
-				const newAct = newPresence.activities.find(activity => activity.name == oldAct.name);
-				if (oldAct.name == '@everyone' || oldAct.name == '@here') {
-					return;
-				}
-				if (newAct == undefined) {
-					const n = new Date();
-					const g = oldAct.timestamps.start;
-					if (g <= 0) {
-						return;
-					}
-					const hours = Math.abs(n - g) / 36e5;
-					if (hours >= 6) {
-						const [rows] = await db.pool.query('SELECT * FROM Guilds WHERE guildId = ?', [Guild.id]);
-						const guildProfile = rows[0];
-						if (!guildProfile) return;
+		// 4) If they *stopped* playing it, see how long
+		if (oldAct && !newAct) {
+			const key = `${newP.userId}|${oldAct.name}`;
+			const start = startTimes.get(key);
+			if (!start) return startTimes.delete(key);
 
-						if (!guildProfile.generalChannelID) return;
-						const general = guildProfile.generalChannelID;
-						console.log(`${oldPresence.user.username} has been playing ${oldAct.name} for ${Math.round(hours)} hours.`);
-						return client.channels.cache.get(general).send(`${oldPresence.user.username} has been playing ${oldAct.name} for ${Math.round((hours) * 100) / 100} hours.`);
-					}
+			const hours = (Date.now() - start) / 36e5;
+			startTimes.delete(key);
+
+			if (hours < 6) return;
+
+			// 5) Lookup the general channel once & send
+			getGeneralChannel(newP.guild.id).then(chId => {
+				if (!chId) return;
+				const chan = client.channels.cache.get(chId);
+				if (chan?.isText()) {
+					chan.send(
+						`${newP.user.tag} played **${oldAct.name}** for ${hours.toFixed(2)} hours!`
+					).catch(console.error);
 				}
-				else { return; }
-			}
-		} catch (error) {
-			return console.error(error);
+			}).catch(console.error);
 		}
 	});
 };

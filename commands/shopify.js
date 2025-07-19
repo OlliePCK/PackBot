@@ -1,131 +1,80 @@
-/* eslint-disable no-undef */
-/* eslint-disable no-inline-comments */
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const fetch = require('node-fetch');
 
 module.exports = {
+	isEphemeral: true,
 	data: new SlashCommandBuilder()
 		.setName('shopify')
-		.setDescription('Provides info on a Shopify product such as stock numbers and add to cart links.')
-		.addStringOption(option => option.setName('link').setDescription('A link to a Shopify product').setRequired(true)),
-	execute: async (interaction) => {
-		const fetch = require('node-fetch');
-		const validURL = (str) => {
-			const pattern = new RegExp(
-				'^(https?:\\/\\/)?' + // protocol
-                    '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|' + // domain name
-                    '((\\d{1,3}\\.){3}\\d{1,3}))' + // OR ip (v4) address
-                    '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // port and path
-                    '(\\?[;&a-z\\d%_.~+=-]*)?' + // query string
-                    '(\\#[-a-z\\d_]*)?$',
-				'i',
-			); // fragment locator
-			return !!pattern.test(str);
-		};
-		const sendVariants = (json, atcBase) => {
-			if (json.product) {
-				const { product } = json;
-				const { title: name, variants } = product;
-				const fieldList = [];
-				for (const variant of variants) {
-					const variantNames = [];
-					for (let i = 1; i < 4; i++) {
-						const key = `option${i}`;
-						if (
-							variant[key] &&
-                            variant[key] != 'Default Title' &&
-                            variant[key] != '-'
-						) {
-							variantNames.push(variant[key]);
-						}
-					}
-					const variant_id = variant.id.toString();
-					const variant_name = variantNames.join(' ').trim();
-					const variant_stock = variant.inventory_quantity;
-					const atc =
-                        atcBase.protocol +
-                        '//' +
-                        atcBase.hostname +
-                        '/cart/' +
-                        variant_id +
-                        ':1';
-					if (variant_name == '') {
-						const entry = {
-							name: '**Stock #: ' + variant_stock + '**',
-							value: '[Add to Cart](' + atc + ')',
-							inline: true,
-						};
-						fieldList.push(entry);
-					}
-					else if (variant_stock == undefined) {
-						const entry = {
-							name: '**' + variant_name + '**',
-							value: '[Stock #: N/A](' + atc + ')',
-							inline: true,
-						};
-						fieldList.push(entry);
-					}
-					else {
-						const entry = {
-							name: '**' + variant_name + '**',
-							value: '[Stock #: ' + variant_stock + '](' + atc + ')',
-							inline: true,
-						};
-						fieldList.push(entry);
-					}
-				}
-				const VariantsEmbed = {
-					author: {
-						name: name,
-					},
-					title: atcBase.hostname.toString(),
-					url: interaction.options.getString('link'),
-					color: 0xff006a,
-					fields: fieldList,
-					footer: {
-						text: 'Developed by @OlliePCK',
-						icon_url: 'https://i.imgur.com/c3z97p3.png',
-					},
-				};
-				return interaction.editReply({ embeds: [VariantsEmbed] });
-			}
-			else {
-				return interaction.editReply('That is not a Shopify link!');
-			}
+		.setDescription('Provides info on a Shopify product such as stock numbers and add‑to‑cart links.')
+		.addStringOption(opt =>
+			opt
+				.setName('link')
+				.setDescription('A link to a Shopify product')
+				.setRequired(true)
+		),
+
+	/**
+	 * @param {import('discord.js').CommandInteraction} interaction
+	 * @param {object} guildProfile
+	 */
+	async execute(interaction, guildProfile) {
+		const link = interaction.options.getString('link');
+		let url;
+
+		// 1) Validate URL
+		try {
+			url = new URL(link);
+		} catch {
+			return interaction.editReply('🚫 That is not a valid URL!');
 		}
-		if (!validURL(interaction.options.getString('link'))) {
-			return interaction.editReply('That is not a Shopify link!');
+
+		// 2) Ensure it looks like a Shopify product path
+		if (!url.pathname.includes('/products/')) {
+			return interaction.editReply('🚫 Please provide a valid Shopify product URL (must contain `/products/`).');
 		}
-		else if (validURL(interaction.options.getString('link'))) {
-			const atcBase = new URL(interaction.options.getString('link'));
-			const base_url = interaction.options.getString('link');
-			const url = base_url + '.json';
-			const settings = { method: 'Get' };
-			fetch(url, settings)
-				.then((res) => {
-					if (res.ok) {
-						return res.text();
-					}
-					else {
-						return;
-					}
-				})
-				.then(resAsBodyText => {
-					try {
-						const bodyAsJson = JSON.parse(resAsBodyText);
-						if (typeof bodyAsJson == 'object') {
-							return sendVariants(bodyAsJson, atcBase);
-						}
-						else {
-							return interaction.editReply('That is not a valid Shopify link!');
-						}
-					}
-					catch (error) {
-						return interaction.editReply('That is not a valid Shopify link!');
-					}
-				})
-				.catch(() => {
-					return interaction.editReply('That is not a valid Shopify link!');
-				});
+
+		// 3) Fetch the .json endpoint
+		let json;
+		try {
+			const res = await fetch(`${url.origin}${url.pathname}.json`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			json = await res.json();
+		} catch (e) {
+			console.error('Shopify fetch error:', e);
+			return interaction.editReply('🚫 Couldn’t fetch product data. Is that a Shopify product link?');
 		}
+
+		const product = json.product;
+		if (!product || !Array.isArray(product.variants)) {
+			return interaction.editReply('🚫 No product data found at that URL.');
+		}
+
+		// 4) Build variant fields
+		const fields = product.variants.map(variant => {
+			// build a friendly name
+			const opts = [variant.option1, variant.option2, variant.option3]
+				.filter(o => o && o !== 'Default Title' && o !== '-');
+			const name = opts.join(' ') || `Stock: ${variant.inventory_quantity ?? 'N/A'}`;
+
+			// add‑to‑cart link
+			const atc = `${url.origin}/cart/${variant.id}:1`;
+			const stock = variant.inventory_quantity;
+			return {
+				name,
+				value: `[Add to Cart](${atc}) – Stock: ${stock != null ? stock : 'N/A'}`,
+				inline: true
+			};
+		});
+
+		// 5) Send embed
+		const embed = new EmbedBuilder()
+			.setAuthor({ name: product.title })
+			.setTitle(url.hostname)
+			.setURL(link)
+			.setColor('#ff006a')
+			.addFields(fields)
+			.setFooter({ text: 'Developed by @OlliePCK', iconURL: 'https://i.imgur.com/c3z97p3.png' });
+
+		return interaction.editReply({ embeds: [embed] });
 	},
 };
