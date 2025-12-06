@@ -1,116 +1,200 @@
 # PackBot
 
-PackBot is a versatile Discord bot designed to enhance your server with music playback, Shopify data scraping, and customizable settings. Additionally, it features event functions to notify when users are streaming or playing games for extended periods.
+PackBot is a versatile Discord bot designed to enhance your server with music playback, playtime tracking, YouTube notifications, streaming alerts, and more. Built with Discord.js v14 and a custom yt-dlp audio system.
 
 ## Features
 
-### Music Bot Commands
-- **play**: Plays a song from a URL or search query.
-- **pause**: Pauses the current song.
-- **stop**: Stops the music and clears the queue.
-- **push**: Adds a song to the top of the queue.
-- **queue**: Displays the current song queue.
-- **repeat**: Repeats the current song or queue.
-- **seek**: Jumps to a specific timestamp in the current song.
-- **skip**: Skips to the next song in the queue.
-- **shuffle**: Shuffles the current queue.
-- **undo**: Reverts the last action.
-- **volume**: Adjusts the playback volume.
-- **filter**: Applies audio filters to the playback.
-- **swap**: Swaps the positions of two songs in the queue.
-- **previous**: Plays the previous song.
-- **leave**: Disconnects the bot from the voice channel.
-- **jump**: Jumps to a specific song in the queue.
+### 🎵 Music System
+Full-featured music playback using yt-dlp and @discordjs/voice.
 
-### Shopify Scraping
-- **shopify**: Scrapes data from a Shopify store.
+| Command | Description |
+|---------|-------------|
+| `/play <query>` | Play a song from YouTube, Spotify, or direct URL |
+| `/pause` | Pause/resume playback |
+| `/stop` | Stop playback and clear queue |
+| `/skip` | Skip to the next track |
+| `/previous` | Play the previous track from history |
+| `/queue` | View the current queue (paginated) |
+| `/shuffle` | Shuffle the queue |
+| `/repeat <off\|song\|queue>` | Set repeat mode |
+| `/autoplay` | Toggle autoplay related songs |
+| `/volume <0-200>` | Adjust playback volume |
+| `/seek <time>` | Seek to a timestamp (e.g., 1:30) |
+| `/jump <position>` | Jump to a specific queue position |
+| `/swap <pos1> <pos2>` | Swap two tracks in the queue |
+| `/push <position>` | Move a track to the front |
+| `/undo` | Restore the last removed track |
+| `/filters [filter]` | Apply audio filters (bassboost, nightcore, etc.) |
+| `/leave` | Disconnect from voice channel |
 
-### Bot Settings
-- **settings info**: Displays current bot settings.
-- **settings set-live-channel**: Sets the channel for live notifications.
-- **settings set-general-channel**: Sets the general announcement channel.
-- **settings set-live-role**: Sets the role to be mentioned in live notifications.
+**Supported Sources:**
+- YouTube (videos, playlists, search)
+- Spotify (tracks, albums, playlists - converted via YouTube)
+- Direct URLs (any yt-dlp supported source)
 
-### Event Functions
-- **game_expose**: Notifies when users have been playing a game for too long.
-- **live_noti**: Sends a notification when a guild member starts a livestream on Twitch/YouTube.
+### 📊 Playtime Tracking & Leaderboards
+Track how long members play games and compete on leaderboards.
+
+| Command | Description |
+|---------|-------------|
+| `/leaderboard total` | Top players by total playtime |
+| `/leaderboard game <name>` | Top players for a specific game |
+| `/leaderboard user [member]` | A user's most played games |
+| `/leaderboard games` | Most played games in the server |
+
+### 📺 YouTube Notifications
+Automatic notifications when subscribed YouTube channels upload new videos.
+
+| Command | Description |
+|---------|-------------|
+| `/youtube add <handle>` | Subscribe to a YouTube channel |
+| `/youtube remove <handle>` | Unsubscribe from a channel |
+| `/youtube list` | List all subscriptions |
+
+### 🎮 Event Functions
+Automatic notifications and tracking:
+
+- **Game Expose**: Announces when someone plays a game for 6+ hours
+- **Live Notifications**: Alerts when members start streaming on Discord
+
+### 🛒 Shopify Integration
+| Command | Description |
+|---------|-------------|
+| `/shopify <url>` | Scrape product data from Shopify stores |
+
+### ⚙️ Server Settings
+| Command | Description |
+|---------|-------------|
+| `/settings info` | View current bot settings |
+| `/settings set-live-channel` | Set channel for stream notifications |
+| `/settings set-general-channel` | Set general announcement channel |
+| `/settings set-live-role` | Set role for stream mentions |
+| `/settings set-youtube-channel` | Set channel for YouTube notifications |
+
+### 🛠️ Utility
+| Command | Description |
+|---------|-------------|
+| `/ping` | Check bot latency |
+| `/purge <amount>` | Bulk delete messages |
 
 ## Getting Started
 
 ### Prerequisites
-
-- Node.js
-- npm (Node Package Manager)
-- A Discord bot token
-- A MySQL database
+- Node.js v22+
+- npm
+- Discord bot token
+- MySQL/MariaDB database
+- yt-dlp (installed automatically in Docker)
+- ffmpeg
 
 ### Installation
 
-1. Clone the repository:
-
+1. **Clone the repository:**
    ```sh
-   git clone https://github.com/your-username/packbot.git
-   cd packbot
+   git clone https://github.com/OlliePCK/PackBot.git
+   cd PackBot
    ```
 
-2. Install dependencies:
-
+2. **Install dependencies:**
    ```sh
    npm install
    ```
 
-3. Set up your `.env` file:
-
-   Create a file named `.env` in the root directory of your project and add the following variables:
-
+3. **Configure environment variables:**
+   
+   Create a `.env` file:
    ```env
-   TOKEN=<your_discord_bot_token>
-   CLIENT_ID=<your_client_id>
-   MYSQL_HOST=<your_mysql_host>
-   MYSQL_PORT=<your_mysql_port>
-   MYSQL_USER=<your_mysql_user>
-   MYSQL_PASSWORD=<your_mysql_password>
-   MYSQL_DB=<your_mysql_database>
+   # Discord
+   TOKEN=your_discord_bot_token
+   CLIENT_ID=your_client_id
+   
+   # Database
+   MYSQL_HOST=your_mysql_host
+   MYSQL_PORT=3306
+   MYSQL_USER=your_mysql_user
+   MYSQL_PASSWORD=your_mysql_password
+   MYSQL_DB=your_mysql_database
+   
+   # Optional: Logging
+   LOG_LEVEL=info          # debug, info, warn, error
+   LOG_FORMAT=text         # text, json
+   LOG_COLORS=false        # true/false
+   LOG_DIR=logs
+   LOG_MAX_SIZE_MB=5
+   LOG_MAX_FILES=5
    ```
 
-4. Set up the database connection pool in `database.js`:
+4. **Set up the database:**
+   
+   Run the migrations in `database/migrations/` or create tables manually.
 
-   ```js
-   const mysql = require('mysql2/promise');
-   require('dotenv').config();
-
-   const pool = mysql.createPool({
-       host: process.env.MYSQL_HOST,
-       user: process.env.MYSQL_USER,
-       port: process.env.MYSQL_PORT,
-       password: process.env.MYSQL_PASSWORD,
-       database: process.env.MYSQL_DB,
-       waitForConnections: true,
-       connectionLimit: 10,
-       maxIdle: 10,
-       idleTimeout: 60000,
-       queueLimit: 0,
-       enableKeepAlive: true,
-       keepAliveInitialDelay: 0,
-   });
-
-   exports.pool = pool;
+5. **Deploy slash commands:**
+   ```sh
+   node deploy-commands.js
    ```
 
-5. Start the bot:
-
+6. **Start the bot:**
    ```sh
    node index.js
    ```
 
-## Usage
+## Docker Deployment
 
-Once the bot is running, you can invite it to your Discord server using the OAuth2 URL generated from the Discord Developer Portal. Use the commands listed above to interact with the bot.
+### Build and run locally:
+```sh
+docker build -t packbot .
+docker run --env-file .env packbot
+```
+
+### Pull from Docker Hub:
+```sh
+docker pull olliepck/packbot:latest
+```
+
+### Docker Compose example:
+```yaml
+version: '3.8'
+services:
+  packbot:
+    image: olliepck/packbot:latest
+    restart: unless-stopped
+    environment:
+      - TOKEN=${TOKEN}
+      - CLIENT_ID=${CLIENT_ID}
+      - MYSQL_HOST=${MYSQL_HOST}
+      - MYSQL_PORT=${MYSQL_PORT}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DB=${MYSQL_DB}
+    volumes:
+      - ./logs:/usr/src/app/logs
+      - ./cookies.json:/usr/src/app/cookies.json:ro
+```
+
+### Unraid Setup:
+1. Add container from Docker Hub: `olliepck/packbot:latest`
+2. Add environment variables in container settings
+3. Mount `/usr/src/app/logs` for persistent logs
+4. Mount `cookies.json` if needed for age-restricted videos
+
+## Project Structure
+```
+PackBot/
+├── commands/           # Slash command handlers
+├── database/           # Database connection and migrations
+├── events/
+│   ├── client/         # Discord.js event handlers
+│   └── event-functions/ # Background services (game-expose, live-noti)
+├── music/              # Music system (Subscription, Track, QueryResolver)
+├── scripts/            # Background scripts (YouTube notifications)
+├── logs/               # Log files (auto-created)
+├── index.js            # Main entry point
+├── logger.js           # Structured logging system
+└── Dockerfile          # Docker configuration
+```
 
 ## Contributing
-
 Contributions are welcome! Please fork the repository and create a pull request with your changes.
 
 ## License
-
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
