@@ -1,38 +1,32 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
-	data: new SlashCommandBuilder()
-		.setName('shuffle')
-		.setDescription('Shuffles all songs in the queue.'),
+    data: new SlashCommandBuilder()
+        .setName('shuffle')
+        .setDescription('Shuffles all songs in the queue.'),
+    async execute(interaction) {
+        // Defer reply if not already deferred
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferReply();
+        }
 
-	async execute(interaction, guildProfile) {
-		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) {
-			return interaction.editReply({
-				content: `${interaction.client.emotes.error} | There is nothing in the queue right now!`
-			});
-		}
+        const subscription = interaction.client.subscriptions.get(interaction.guildId);
+        if (!subscription || subscription.queue.length === 0) {
+            return interaction.editReply('❌ Queue is empty!');
+        }
 
-		try {
-			await queue.shuffle();
+        // Fisher-Yates shuffle
+        for (let i = subscription.queue.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [subscription.queue[i], subscription.queue[j]] = [subscription.queue[j], subscription.queue[i]];
+        }
 
-			const embed = new EmbedBuilder()
-				.setTitle(`${interaction.client.emotes.success} | Queue shuffled!`)
-				.addFields({ name: 'Requested by', value: `${interaction.user}`, inline: true })
-				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-				.setColor('#ff006a');
+        // Clear prefetched URLs since queue order changed, then prefetch the new next track
+        subscription.prefetchedUrls.clear();
+        if (subscription.queue.length > 0) {
+            subscription.prefetchTrack(subscription.queue[0]);
+        }
 
-			return interaction.editReply({ embeds: [embed] });
-		} catch (e) {
-			console.error('Shuffle error:', e);
-
-			const errEmbed = new EmbedBuilder()
-				.setTitle(`${interaction.client.emotes.error} | Couldn’t shuffle`)
-				.setDescription('There was a problem shuffling the queue—please try again shortly.')
-				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-				.setColor('#ff006a');
-
-			return interaction.editReply({ embeds: [errEmbed] });
-		}
-	},
+        interaction.editReply('🔀 Queue shuffled!');
+    },
 };

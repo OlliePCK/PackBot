@@ -1,15 +1,14 @@
 const youtubeNotifications = require('../../scripts/youtube-notifications');
-const gameExpose = require('../event-functions/game-expose');
-const liveNoti = require('../event-functions/live-noti');
+const logger = require('../../logger').child('core');
 
 module.exports = {
-	name: 'ready',
+	name: 'clientReady',
 	once: true,
 	/**
 	 * @param {import('discord.js').Client} client
 	 */
 	async execute(client) {
-		console.log(`✅ Ready! Logged in as ${client.user.tag}`);
+		logger.info(`Ready - logged in as ${client.user.tag}`);
 
 		// 1) Set presence
 		try {
@@ -18,19 +17,15 @@ module.exports = {
 				status: 'online'
 			});
 		} catch (e) {
-			console.error('Failed to set presence:', e);
+			logger.error('Failed to set presence', { error: e.message });
 		}
 
-		// 2) Initialize all subsystems in parallel
+		// 2) Initialize YouTube notifications (event functions are loaded in index.js)
 		try {
-			await Promise.all([
-				require('../event-functions/game-expose')(client),
-				require('../event-functions/live-noti')(client),
-				require('../../scripts/youtube-notifications')(client)
-			]);
-			console.log('🚀 All features initialized.');
+			await youtubeNotifications(client);
+			logger.info('All features initialized');
 		} catch (e) {
-			console.error('Error initializing features:', e);
+			logger.error('Error initializing features', { error: e.message });
 		}
 	}
 };

@@ -1,7 +1,9 @@
 // events/interactionCreate.js
 const db = require('../../database/db.js');
+const { MessageFlags } = require('discord.js');
+const logger = require('../../logger').child('commands');
 
-// Simple in‑memory cache (you can swap this out for Redis or similar later)
+// Simple in‑memory cache (you can swap this out for Redis later)
 const guildCache = new Map();
 
 module.exports = {
@@ -15,38 +17,55 @@ module.exports = {
 		const command = interaction.client.commands.get(interaction.commandName);
 		if (!command) return;
 
-		// Defer the reply once, with the correct ephemeral flag
-		await interaction.deferReply({ ephemeral: !!command.isEphemeral });
-
-		// 1) Load from cache or 2) Upsert + fetch
-		let guildProfile = guildCache.get(interaction.guildId);
-		if (!guildProfile) {
-			// UPSERT style insert (MySQL syntax) — assumes `guildId` is UNIQUE
-			await db.pool.query(
-				`INSERT INTO Guilds (guildId) 
-           VALUES (?) 
-           ON DUPLICATE KEY UPDATE guildId = guildId`,
-				[interaction.guildId]
-			);
-			const [rows] = await db.pool.query(
-				'SELECT * FROM Guilds WHERE guildId = ?',
-				[interaction.guildId]
-			);
-			guildProfile = rows[0];
-			guildCache.set(interaction.guildId, guildProfile);
-		}
-
 		try {
-			// Pass guildProfile into your command handler
+			// Defer the reply FIRST within 3 seconds
+			await interaction.deferReply({ 
+				flags: command.isEphemeral ? MessageFlags.Ephemeral : undefined 
+			});
+
+			// Load or upsert + fetch the guild profile
+			let guildProfile = guildCache.get(interaction.guildId);
+			if (!guildProfile) {
+				await db.pool.query(
+					`INSERT INTO Guilds (guildId)
+			VALUES (?)
+	         ON DUPLICATE KEY UPDATE guildId = guildId`,
+					[interaction.guildId]
+				);
+				const [rows] = await db.pool.query(
+					'SELECT * FROM Guilds WHERE guildId = ?',
+					[interaction.guildId]
+				);
+				guildProfile = rows[0];
+				guildCache.set(interaction.guildId, guildProfile);
+			}
+
+			// Execute the command, passing in the profile
+			logger.command(interaction.commandName, interaction.user.tag, interaction.guild?.name || interaction.guildId);
 			await command.execute(interaction, guildProfile);
 		} catch (err) {
-			console.error('Command error:', err);
-			// If you already replied, use editReply; else fallback to reply
-			const method = interaction.deferred ? 'editReply' : 'reply';
-			await interaction[method]({
-				content: '❌ There was an error while executing this command.',
-				ephemeral: true
+			logger.error('Command execution failed', {
+				command: interaction.commandName,
+				user: interaction.user.tag,
+				guild: interaction.guild?.name || interaction.guildId,
+				error: err.message
 			});
+
+			// Try to respond to the user
+			try {
+				if (interaction.deferred || interaction.replied) {
+					await interaction.editReply({
+						content: '❌ There was an error while executing this command.',
+					});
+				} else {
+					await interaction.reply({
+						content: '❌ There was an error while executing this command.',
+						flags: MessageFlags.Ephemeral
+					});
+				}
+			} catch (replyErr) {
+				logger.error('Failed to send error message', { error: replyErr.message });
+			}
 		}
 	},
 };

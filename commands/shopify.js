@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const logger = require('../logger');
 const fetch = require('node-fetch');
 
 module.exports = {
@@ -40,7 +41,7 @@ module.exports = {
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
 			json = await res.json();
 		} catch (e) {
-			console.error('Shopify fetch error:', e);
+			logger.error('Shopify fetch error: ' + (e.stack || e));
 			return interaction.editReply('🚫 Couldn’t fetch product data. Is that a Shopify product link?');
 		}
 

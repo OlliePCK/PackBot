@@ -1,19 +1,41 @@
-// scripts/youtube-notifications.js
+// scripts/youtube-notifications.js (rewritten with single-latest polling & backoff)
 const db = require('../database/db.js');
 const axios = require('axios');
 const pLimit = require('p-limit').default;
 const cron = require('node-cron');
 const { EmbedBuilder } = require('discord.js');
 const { HttpsProxyAgent } = require('https-proxy-agent');
+const logger = require('../logger').child('youtube');
 
 module.exports = client => {
+    // Base interval is cron every 30m; per-channel exponential backoff skips cycles.
+    const BASE_CRON = '*/30 * * * *';
+    const BASE_INTERVAL_MINUTES = 30; // matches cron
+    const MAX_BACKOFF_MULTIPLIER = parseInt(process.env.YT_MAX_BACKOFF_MULTIPLIER || '8', 10); // up to 4h (30*8)
     const CONCURRENCY = 5;
     const limit = pLimit(CONCURRENCY);
 
-    // 1) Load all channels & guilds to notify, plus their Discord channel IDs
+    // In‑memory per channel backoff state: channelId -> { missCount, skipsRemaining }
+    const backoffState = new Map();
+    // Cross-cycle notification suppression: notifyChannelId:videoId -> lastSentDate
+    const lastNotified = new Map();
+
+    function nextSkips(missCount) {
+        // missCount starts at 0 when we have a hit (new video). When there is no new video we increment first.
+        const mult = Math.min(2 ** missCount, MAX_BACKOFF_MULTIPLIER); // 1,2,4,8,... capped
+        // We already spent one cycle checking; skipsRemaining is mult-1 additional cycles to skip.
+        return mult - 1;
+    }
+
+    // Build an update row (without lastChecked, which is handled via NOW() in SQL)
+    function buildUpdateRow(handle, channelId, guildId, videoId, initializedFlag) {
+        return [handle, channelId, guildId, videoId, initializedFlag];
+    }
+
     async function loadWatchList() {
         const [rows] = await db.pool.query(`
-      SELECT y.channelId,
+    SELECT y.handle,
+         y.channelId,
              y.guildId,
              y.lastCheckedVideo,
              y.initialized,
@@ -22,121 +44,171 @@ module.exports = client => {
         JOIN Guilds  g ON g.guildId = y.guildId
        WHERE g.youtubeChannelID IS NOT NULL
     `);
-        // group by channelId
-        return rows.reduce((map, row) => {
-            (map[row.channelId] ||= []).push(row);
-            return map;
-        }, {});
+        // Collapse accidental duplicate rows (e.g., if table lacks UNIQUE constraint) per (channelId,guildId)
+        const grouped = {};
+        for (const row of rows) {
+            const list = (grouped[row.channelId] ||= []);
+            const existingIndex = list.findIndex(r => r.guildId === row.guildId);
+            if (existingIndex === -1) {
+                list.push(row);
+            } else {
+                const existing = list[existingIndex];
+                // Prefer row with a lastCheckedVideo (non-null) and initialized flag
+                const preferNew = (
+                    (!existing.lastCheckedVideo && row.lastCheckedVideo) ||
+                    (existing.initialized === 0 && row.initialized === 1)
+                );
+                if (preferNew) list[existingIndex] = row; // replace
+            }
+        }
+        return grouped;
     }
 
-    // 2) Fetch latest videos for a channel
-    async function fetchLatestVideos(channelId, maxResults = 15) {
+    async function fetchLatestVideo(channelId) {
         const proxyUrl = process.env.PROXY_URL;
         const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
-        const url = `https://www.googleapis.com/youtube/v3/search`
-            + `?part=snippet&channelId=${channelId}`
-            + `&order=date&type=video&maxResults=${maxResults}`
-            + `&key=${process.env.YOUTUBE_API_KEY}`;
-
-        const res = await axios.get(url, { httpsAgent: agent });
-        if (!Array.isArray(res.data.items)) return [];
-
-        return res.data.items
-            .map(item => ({
+        const url = `https://www.googleapis.com/youtube/v3/search`+
+            `?part=snippet&channelId=${channelId}`+
+            `&order=date&type=video&maxResults=1`+
+            `&key=${process.env.YOUTUBE_API_KEY}`;
+        try {
+            const res = await axios.get(url, { httpsAgent: agent });
+            const item = res.data.items && res.data.items[0];
+            if (!item) return null;
+            return {
                 videoId: item.id.videoId,
                 snippet: item.snippet,
                 publishedAt: new Date(item.snippet.publishedAt),
-            }))
-            .sort((a, b) => b.publishedAt - a.publishedAt);
+            };
+        } catch (err) {
+            if (err.response?.status === 403) record403(channelId, err);
+            else logger.error(`YouTube fetch error for ${channelId}: ${err.message}`);
+            return null;
+        }
     }
 
-    // 3) Send notification embed to a Discord channel
-    async function sendNotification(client, notifyChannelId, video) {
-        const channel = await client.channels.fetch(notifyChannelId).catch(() => null);
+    async function sendNotification(discordClient, notifyChannelId, video) {
+        const channel = await discordClient.channels.fetch(notifyChannelId).catch(() => null);
         if (!channel?.isTextBased()) return;
-
         const embed = new EmbedBuilder()
             .setTitle(video.snippet.title)
             .setURL(`https://www.youtube.com/watch?v=${video.videoId}`)
-            .setThumbnail(video.snippet.thumbnails.high.url)
+            .setThumbnail(video.snippet.thumbnails?.high?.url || video.snippet.thumbnails?.default?.url)
             .setDescription(`**${video.snippet.channelTitle}** uploaded a new video!`)
             .setColor('#ff006a')
             .setFooter({ text: 'The Pack', iconURL: client.logo });
-
         await channel.send({ content: `🔔 New video: https://www.youtube.com/watch?v=${video.videoId}`, embeds: [embed] });
     }
 
-    // 4) For each group of guilds tracking the same channel, notify & prepare DB updates
-    async function notifyAndCollectUpdates(client, channelId, group, latest) {
-        const updates = [];
-        for (const { guildId, lastCheckedVideo, initialized, notifyChannel } of group) {
-            // If not initialized, seed and skip notifications
-            if (!initialized) {
-                updates.push([channelId, guildId, latest[0].videoId, 1]);
-                continue;
-            }
-            // If no lastCheckedVideo, seed it
-            if (!lastCheckedVideo) {
-                updates.push([channelId, guildId, latest[0].videoId, 1]);
-                continue;
-            }
-            // Find index of stored video
-            const idx = latest.findIndex(v => v.videoId === lastCheckedVideo);
-            if (idx <= 0) continue; // no new videos
-            const newVideos = latest.slice(0, idx).reverse(); // oldest first
+    // 403 aggregation
+    const forbiddenStats = { total: 0, channels: new Map(), first: null, timer: null };
+    function record403(channelId) {
+        forbiddenStats.total++;
+        forbiddenStats.channels.set(channelId, (forbiddenStats.channels.get(channelId) || 0) + 1);
+        if (!forbiddenStats.first) forbiddenStats.first = new Date();
+        if (forbiddenStats.total % 25 === 0) flush403('intermediate');
+        if (!forbiddenStats.timer) forbiddenStats.timer = setTimeout(() => flush403('timeout'), 5 * 60_000).unref();
+    }
+    function flush403(reason) {
+        if (!forbiddenStats.total) return;
+        const chanSummary = [...forbiddenStats.channels.entries()].map(([id, c]) => `${id}:${c}`).join(', ');
+        logger.warn(`YouTube 403 summary (${reason}) total=${forbiddenStats.total} since=${forbiddenStats.first.toISOString()} channels=[${chanSummary}]`);
+        forbiddenStats.total = 0; forbiddenStats.channels.clear(); forbiddenStats.first = null;
+        if (forbiddenStats.timer) { clearTimeout(forbiddenStats.timer); forbiddenStats.timer = null; }
+    }
+    process.on('beforeExit', () => flush403('exit'));
 
-            for (const video of newVideos) {
-                try {
-                    await sendNotification(client, notifyChannel, video);
-                } catch (err) {
-                    console.error(`Failed to notify guild ${guildId}:`, err);
-                }
-                updates.push([channelId, guildId, video.videoId, 1]);
-            }
+    async function processChannel(channelId, group) {
+        // Respect backoff
+        const state = backoffState.get(channelId) || { missCount: 0, skipsRemaining: 0 };
+        if (state.skipsRemaining > 0) {
+            state.skipsRemaining--;
+            backoffState.set(channelId, state);
+            return []; // skip API call this cycle
         }
+
+        const latest = await fetchLatestVideo(channelId);
+        if (!latest) {
+            // treat as miss to gradually back off if persistent failures
+            state.missCount = Math.min(state.missCount + 1, 10);
+            state.skipsRemaining = nextSkips(state.missCount);
+            backoffState.set(channelId, state);
+            return [];
+        }
+
+        const updates = [];
+        let anyNew = false;
+        // Per-channel cycle dedupe to avoid sending same video multiple times if duplicates slipped through
+        const cycleNotified = new Set();
+        for (const row of group) {
+            const { handle, guildId, lastCheckedVideo, initialized, notifyChannel } = row;
+            // Seed without notifying: set initialized=0 so we know first real notification hasn't occurred yet
+            if (!initialized || !lastCheckedVideo) {
+                updates.push(buildUpdateRow(handle, channelId, guildId, latest.videoId, 0));
+                continue;
+            }
+            if (lastCheckedVideo === latest.videoId) continue; // nothing new
+            // New video detected -> notify and mark initialized=1
+            const dedupeKey = `${notifyChannel}:${latest.videoId}`;
+            if (lastNotified.get(dedupeKey) === latest.videoId || cycleNotified.has(dedupeKey)) {
+                // Already sent; just update DB
+                logger.debug(`Duplicate notification suppressed for video ${latest.videoId} notifyChannel ${notifyChannel}`);
+            } else {
+                try {
+                    await sendNotification(client, notifyChannel, latest);
+                    lastNotified.set(dedupeKey, latest.videoId);
+                    cycleNotified.add(dedupeKey);
+                } catch (e) {
+                    logger.error(`Notify failed guild=${guildId} channel=${channelId}: ${e.message}`);
+                }
+            }
+            updates.push(buildUpdateRow(handle, channelId, guildId, latest.videoId, 1));
+            anyNew = true;
+        }
+
+        if (anyNew) {
+            state.missCount = 0;
+            state.skipsRemaining = 0;
+        } else {
+            state.missCount = Math.min(state.missCount + 1, 10);
+            state.skipsRemaining = nextSkips(state.missCount);
+        }
+        backoffState.set(channelId, state);
         return updates;
     }
 
-    // 5) Main check loop
-    async function checkChannels() {
-        console.log('🔍 Starting YouTube channel check...');
+    async function checkAll() {
+        logger.info('🔍 YouTube check cycle start');
         const watchList = await loadWatchList();
-        const tasks = Object.entries(watchList).map(([channelId, group]) =>
-            limit(async () => {
-                try {
-                    const latest = await fetchLatestVideos(channelId);
-                    if (latest.length === 0) return [];
-                    return await notifyAndCollectUpdates(client, channelId, group, latest);
-                } catch (err) {
-                    console.error(`Error processing channel ${channelId}:`, err);
-                    return [];
-                }
-            })
-        );
-
+        const tasks = Object.entries(watchList).map(([channelId, group]) => limit(() => processChannel(channelId, group)));
         const results = await Promise.all(tasks);
-        // flatten and batch‑write updates
         const updates = results.flat();
         if (updates.length) {
-            await db.pool.query(`
-        INSERT INTO Youtube
-          (channelId, guildId, lastCheckedVideo, initialized, lastChecked)
-        VALUES ?
-        ON DUPLICATE KEY UPDATE
-          lastCheckedVideo = VALUES(lastCheckedVideo),
-          initialized       = VALUES(initialized),
-          lastChecked       = VALUES(lastChecked)
-      `, [updates]);
-            console.log(`✅ Applied ${updates.length} update(s) to DB.`);
+            try {
+                // Build VALUES clause using NOW() for lastChecked
+                const valuesSql = updates.map(() => '(?,?,?,?,?,NOW())').join(',');
+                const flat = updates.flat(); // each row has 5 params
+                await db.pool.query(
+                    `INSERT INTO Youtube (handle, channelId, guildId, lastCheckedVideo, initialized, lastChecked)
+                     VALUES ${valuesSql}
+                     ON DUPLICATE KEY UPDATE
+                       lastCheckedVideo = VALUES(lastCheckedVideo),
+                       initialized      = VALUES(initialized),
+                       lastChecked      = NOW()`,
+                    flat
+                );
+                logger.info(`✅ Updated ${updates.length} row(s).`);
+            } catch (e) {
+                logger.error('❌ DB upsert failed (YouTube): ' + e.message);
+            }
         } else {
-            console.log('✅ No new videos found.');
+            logger.debug('No DB updates this cycle.');
         }
+        logger.info('✅ YouTube check cycle end');
     }
 
-    // 6) Schedule every 30 minutes on the dot
-    cron.schedule('*/30 * * * *', () => {
-        checkChannels().catch(err => console.error('YouTube notifier error:', err));
+    cron.schedule(BASE_CRON, () => {
+        checkAll().catch(e => logger.error('Cycle error: ' + e.message));
     });
-
-    console.log('🗓️ Scheduled YouTube notifications every 30 minutes.');
+    logger.info(`🗓️ Scheduled YouTube checks every ${BASE_INTERVAL_MINUTES} minutes with backoff up to ${BASE_INTERVAL_MINUTES * MAX_BACKOFF_MULTIPLIER} minutes.`);
 };

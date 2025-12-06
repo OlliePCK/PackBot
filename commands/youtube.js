@@ -66,7 +66,7 @@ module.exports = {
                     if (err.code === 'ER_DUP_ENTRY') {
                         return interaction.editReply({ content: '🚫 That channel is already in the notification list.' });
                     }
-                    console.error('DB insert error:', err);
+            logger.error('DB insert error: ' + (err.stack || err));
                     return interaction.editReply({ content: '🚫 Database error—please try again later.' });
                 }
 
@@ -153,7 +153,7 @@ module.exports = {
                 return interaction.editReply({ embeds: [embed] });
             }
         } catch (err) {
-            console.error('YouTube command error:', err);
+        logger.error('YouTube command error: ' + (err.stack || err));
             return interaction.editReply({ content: '🚫 An unexpected error occurred—please try again.' });
         }
     }
@@ -174,7 +174,7 @@ async function fetchYouTubeChannel(handle) {
         const { snippet, statistics, id } = body.items[0];
         return { snippet, statistics, id };
     } catch (e) {
-        console.error('YouTube API error:', e);
+    logger.error('YouTube API error: ' + (e.stack || e));
         return null;
     }
 }

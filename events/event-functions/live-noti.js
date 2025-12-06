@@ -1,5 +1,6 @@
 // events/live-streaming.js
 const db = require('../../database/db.js');
+const logger = require('../../logger').child('streaming');
 const { EmbedBuilder, ChannelType } = require('discord.js');
 
 module.exports = client => {
@@ -61,7 +62,7 @@ module.exports = client => {
 				.setTitle(`🔴 ${name} is now live!`)
 				.setURL(activity.url)
 				.setDescription(`Watch here: ${activity.url}`);
-			textChan?.send({ embeds: [embed] }).catch(console.error);
+			textChan?.send({ embeds: [embed] }).catch(e => logger.error('Live-noti send error: ' + (e.stack || e)));
 
 			// If they’re in voice, remember that channel and set status
 			const vc = member.voice.channel;
@@ -116,7 +117,7 @@ module.exports = client => {
 				await channel.edit({ name: statusText ? `${channel.name} 🔴 LIVE` : channel.name.replace(/ 🔴 LIVE$/, '') });
 			}
 		} catch (err) {
-			console.error(`Failed updating voice channel ${channel.id}:`, err);
+			logger.error(`Failed updating voice channel ${channel.id}: ${err.stack || err}`);
 		}
 	}
 };

@@ -1,37 +1,39 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const logger = require('../logger');
 
 module.exports = {
-	data: new SlashCommandBuilder()
-		.setName('previous')
-		.setDescription('Plays the previous song.'),
+    data: new SlashCommandBuilder()
+        .setName('previous')
+        .setDescription('Plays the previous song.'),
 
-	async execute(interaction, guildProfile) {
-		const queue = interaction.client.distube.getQueue(interaction);
-		if (!queue) {
-			return interaction.editReply({
-				content: `${interaction.client.emotes.error} | There is nothing in the queue right now!`
-			});
-		}
+    async execute(interaction, guildProfile) {
+        const subscription = interaction.client.subscriptions.get(interaction.guildId);
+        if (!subscription) {
+            return interaction.editReply({
+                content: `${interaction.client.emotes.error} | There is nothing in the queue right now!`
+            });
+        }
 
-		try {
-			const song = await queue.previous();
-			const embed = new EmbedBuilder()
-				.setTitle(`${interaction.client.emotes.success} | Playing previous:`)
-				.setDescription(`▶️ Now playing **${song.name}**`)
-				.addFields({ name: 'Requested by', value: `${interaction.user}`, inline: true })
-				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-				.setColor('#ff006a');
+        if (subscription.history.length === 0) {
+            return interaction.editReply({
+                content: `${interaction.client.emotes.error} | There is no previous song available!`
+            });
+        }
 
-			return interaction.editReply({ embeds: [embed] });
-		} catch (e) {
-			console.error('Previous error:', e);
-			const embed = new EmbedBuilder()
-				.setTitle(`${interaction.client.emotes.error} | Couldn’t play previous song`)
-				.setDescription('There is no previous song available.')
-				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-				.setColor('#ff006a');
+        try {
+            const previousTrack = await subscription.previous();
+            
+            // Delete the slash command reply since playSong event will show an embed
+            await interaction.deleteReply().catch(() => {});
+        } catch (e) {
+            logger.error('Previous error: ' + (e.stack || e));
+            const embed = new EmbedBuilder()
+                .setTitle(`${interaction.client.emotes.error} | Couldn't play previous song`)
+                .setDescription('There is no previous song available.')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
+                .setColor('#ff006a');
 
-			return interaction.editReply({ embeds: [embed] });
-		}
-	},
+            return interaction.editReply({ embeds: [embed] });
+        }
+    },
 };

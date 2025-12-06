@@ -1,6 +1,8 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField, MessageFlags } = require('discord.js');
+const logger = require('../logger');
 
 module.exports = {
+	isEphemeral: true,
 	data: new SlashCommandBuilder()
 		.setName('purge')
 		.setDescription('Mass deletes messages (max 100).')
@@ -12,21 +14,21 @@ module.exports = {
 		),
 
 	async execute(interaction, guildProfile) {
-		const amount = interaction.options.getInteger('amount');
-
-		if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-			return interaction.editReply({
-				content: `${interaction.client.emotes.error} | You need Administrator permissions to do that.`
-			});
-		}
-
-		if (amount < 1 || amount > 100) {
-			return interaction.editReply({
-				content: `${interaction.client.emotes.error} | Please specify a number between 1 and 100.`
-			});
-		}
-
 		try {
+			const amount = interaction.options.getInteger('amount');
+
+			if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+				return interaction.editReply({
+					content: `${interaction.client.emotes.error} | You need Administrator permissions to do that.`
+				});
+			}
+
+			if (amount < 1 || amount > 100) {
+				return interaction.editReply({
+					content: `${interaction.client.emotes.error} | Please specify a number between 1 and 100.`
+				});
+			}
+
 			const deleted = await interaction.channel.bulkDelete(amount + 1, true);
 			const count = deleted.size - 1;
 			const embed = new EmbedBuilder()
@@ -37,11 +39,23 @@ module.exports = {
 
 			return interaction.editReply({ embeds: [embed] });
 		} catch (e) {
-			console.error('Purge error:', e);
-			return interaction.editReply({
-				content: `${interaction.client.emotes.error} | I couldn't delete those messages. ` +
-					`Make sure I have the Manage Messages permission and the messages are under 14 days old.`
-			});
+			logger.error('Purge error: ' + (e.stack || e));
+			try {
+				await interaction.editReply({
+					content: `${interaction.client.emotes.error} | I couldn't delete those messages. ` +
+						`Make sure I have the Manage Messages permission and the messages are under 14 days old.`
+				});
+			} catch (editErr) {
+				// Fallback if editReply fails (e.g., interaction expired)
+				try {
+					await interaction.followUp({
+						content: `${interaction.client.emotes.error} | An unexpected error occurred while purging messages.`,
+						flags: MessageFlags.Ephemeral
+					});
+				} catch (followErr) {
+					logger.error('followUp also failed: ' + (followErr.stack || followErr));
+				}
+			}
 		}
 	},
 };
