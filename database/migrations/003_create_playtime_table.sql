@@ -1,4 +1,6 @@
--- Create Playtime table to track user gaming sessions
+-- Migration: Create Playtime table
+-- This table tracks user gaming sessions for leaderboards
+
 CREATE TABLE IF NOT EXISTS Playtime (
     id INT AUTO_INCREMENT PRIMARY KEY,
     guildId VARCHAR(32) NOT NULL,
@@ -8,5 +10,7 @@ CREATE TABLE IF NOT EXISTS Playtime (
     totalSeconds BIGINT DEFAULT 0,
     lastPlayed TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_user_game (guildId, odUserId, gameName),
-    INDEX idx_guild_time (guildId, totalSeconds DESC)
+    INDEX idx_guild_time (guildId, totalSeconds DESC),
+    INDEX idx_user (odUserId),
+    INDEX idx_game (gameName)
 );

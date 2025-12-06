@@ -126,7 +126,20 @@ Automatic notifications and tracking:
 
 4. **Set up the database:**
    
-   Run the migrations in `database/migrations/` or create tables manually.
+   Option A - Run the migration script:
+   ```sh
+   node database/migrate.js
+   ```
+   
+   Option B - Run the full schema manually:
+   ```sh
+   mysql -u your_user -p your_database < database/schema.sql
+   ```
+   
+   This creates the following tables:
+   - `Guilds` - Server settings (channels, roles)
+   - `Youtube` - YouTube channel subscriptions
+   - `Playtime` - User gaming session tracking
 
 5. **Deploy slash commands:**
    ```sh
