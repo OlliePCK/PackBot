@@ -173,18 +173,25 @@ class QueryResolver {
             return tracks;
         }
 
-        // For single tracks, get full metadata
-        const info = await this.getYtDlpInfo(url, false);
-        if (!info) return [];
+        // For single tracks, get full metadata AND direct stream URL for fast playback
+        const result = await this.getSearchWithStreamUrl(url);
+        if (!result) return [];
 
-        return [new Track({
-            title: info.title || info.fulltitle || 'Unknown Title',
-            url: info.webpage_url || info.url,
-            thumbnail: info.thumbnail || info.thumbnails?.[0]?.url,
-            duration: info.duration,
-            artist: info.uploader || info.artist || info.creator || info.channel || 'Unknown Artist',
+        const track = new Track({
+            title: result.title || result.fulltitle || 'Unknown Title',
+            url: result.webpage_url || result.url,
+            thumbnail: result.thumbnail || result.thumbnails?.[0]?.url,
+            duration: result.duration,
+            artist: result.uploader || result.artist || result.creator || result.channel || 'Unknown Artist',
             requestedBy
-        })];
+        });
+        
+        // Attach direct stream URL if we got it
+        if (result.directUrl) {
+            track.directUrl = result.directUrl;
+        }
+        
+        return [track];
     }
 
     async handleSearch(query, requestedBy) {

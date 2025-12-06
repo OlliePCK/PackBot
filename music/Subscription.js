@@ -2,6 +2,23 @@ const { AudioPlayerStatus, createAudioPlayer, createAudioResource, entersState, 
 const { spawn, execFile } = require('child_process');
 const { EventEmitter } = require('events');
 const logger = require('../logger').child('music');
+const fs = require('fs');
+
+// Get FFmpeg path - prefer system ffmpeg in Docker, fallback to ffmpeg-static
+function getFFmpegPath() {
+    // Check for system ffmpeg first (Docker/Linux)
+    const systemPaths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
+    for (const p of systemPaths) {
+        if (fs.existsSync(p)) {
+            return p;
+        }
+    }
+    // Fallback to ffmpeg-static (Windows/dev)
+    return require('ffmpeg-static');
+}
+
+const FFMPEG_PATH = getFFmpegPath();
+logger.info(`Using FFmpeg from: ${FFMPEG_PATH}`);
 
 class Subscription extends EventEmitter {
     constructor(voiceConnection) {
@@ -63,7 +80,11 @@ class Subscription extends EventEmitter {
         });
 
         this.audioPlayer.on('stateChange', (oldState, newState) => {
+            logger.debug(`AudioPlayer state change: ${oldState.status} -> ${newState.status}`);
+            
             if (newState.status === AudioPlayerStatus.Idle && oldState.status !== AudioPlayerStatus.Idle) {
+                logger.info(`AudioPlayer went Idle from ${oldState.status} (destroying: ${this._destroying}, stopping: ${this._stopping})`);
+                
                 // Don't emit events if we're being destroyed or explicitly stopping
                 if (this._destroying || this._stopping) return;
                 
@@ -76,7 +97,7 @@ class Subscription extends EventEmitter {
         });
 
         this.audioPlayer.on('error', (error) => {
-            logger.error(`Audio player error: ${error.message}`);
+            logger.error(`Audio player error: ${error.message} | Resource: ${error.resource?.metadata?.title || 'unknown'}`);
             this.processQueue();
         });
 
@@ -288,8 +309,7 @@ class Subscription extends EventEmitter {
     // Create audio resource with a seek offset
     createAudioResourceWithSeek(directUrl, seekSeconds) {
         return new Promise((resolve, reject) => {
-            const ffmpegPath = require('ffmpeg-static');
-            const child = spawn(ffmpegPath, [
+            const child = spawn(FFMPEG_PATH, [
                 '-reconnect', '1',
                 '-reconnect_streamed', '1',
                 '-reconnect_delay_max', '5',
@@ -316,8 +336,6 @@ class Subscription extends EventEmitter {
     // Create audio resource with filters and optional seek
     createAudioResourceWithFilters(directUrl, seekSeconds = 0, filters = []) {
         return new Promise((resolve, reject) => {
-            const ffmpegPath = require('ffmpeg-static');
-            
             const ffmpegArgs = [
                 '-reconnect', '1',
                 '-reconnect_streamed', '1',
@@ -350,7 +368,7 @@ class Subscription extends EventEmitter {
                 'pipe:1'
             );
             
-            const child = spawn(ffmpegPath, ffmpegArgs);
+            const child = spawn(FFMPEG_PATH, ffmpegArgs);
             
             child.on('error', reject);
             
@@ -460,9 +478,14 @@ class Subscription extends EventEmitter {
             // Emit playSong event AFTER metadata is resolved
             this.emit('playSong', track);
 
+            // Log track state before creating resource
+            logger.info(`Playing track: "${track.title}" | URL: ${track.url} | DirectURL: ${track.directUrl ? 'yes' : 'no'}`);
+
             // Create resource and play
             const resource = await this.createAudioResource(track.url, track.directUrl);
+            logger.info(`Audio resource created, playing...`);
             this.audioPlayer.play(resource);
+            logger.info(`audioPlayer.play() called, state: ${this.audioPlayer.state.status}`);
             this.playbackStartTime = Date.now(); // Track when playback started
             
             this.queueLock = false;
@@ -509,24 +532,29 @@ class Subscription extends EventEmitter {
             // Use filters from parameter or from subscription
             const activeFilters = filters || this.filters || [];
             
-            logger.info(`createAudioResource called with ${activeFilters.length} filters: [${activeFilters.join(', ')}]`);
+            logger.info(`createAudioResource called for URL: ${url}, directUrlFromTrack: ${directUrlFromTrack ? 'yes' : 'no'}, prefetched: ${this.prefetchedUrls.has(url) ? 'yes' : 'no'}`);
+            logger.info(`Active filters (${activeFilters.length}): [${activeFilters.join(', ')}]`);
             
             // Check if we have a direct URL (from search or prefetch)
             const directUrl = directUrlFromTrack || this.prefetchedUrls.get(url);
             
-            if (directUrl) {
+            // Validate direct URL
+            if (directUrl && (!directUrl.startsWith('http') || directUrl.length < 20)) {
+                logger.warn(`Invalid direct URL detected, falling back to yt-dlp: ${directUrl}`);
+            } else if (directUrl) {
                 // Use ffmpeg directly with the direct URL - much faster!
-                logger.info(`Using direct URL for faster playback`);
+                logger.info(`Using direct URL for faster playback: ${directUrl.substring(0, 100)}...`);
                 this.prefetchedUrls.delete(url); // Clean up
                 
-                const ffmpegPath = require('ffmpeg-static');
                 const startTime = Date.now();
                 
+                // Build args - note: spawn passes args directly without shell interpretation
+                // so special characters in URL are safe
                 const ffmpegArgs = [
                     '-reconnect', '1',
                     '-reconnect_streamed', '1', 
                     '-reconnect_delay_max', '5',
-                    '-i', directUrl
+                    '-i', directUrl  // URL with & characters is safe in spawn args array
                 ];
                 
                 // Add audio filters if any are active
@@ -545,15 +573,52 @@ class Subscription extends EventEmitter {
                     '-f', 's16le',
                     '-ar', '48000',
                     '-ac', '2',
-                    '-loglevel', 'error',
+                    '-loglevel', 'warning',
                     'pipe:1'
                 );
                 
-                const child = spawn(ffmpegPath, ffmpegArgs);
+                logger.info(`Spawning FFmpeg for direct URL playback`);
                 
-                child.on('error', reject);
+                const child = spawn(FFMPEG_PATH, ffmpegArgs, {
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    windowsHide: true
+                });
+                
+                child.on('error', (err) => {
+                    logger.error(`FFmpeg spawn error: ${err.message}`);
+                    reject(err);
+                });
+                
+                // Capture stderr for debugging
+                let stderrData = '';
+                child.stderr.on('data', (data) => {
+                    const msg = data.toString();
+                    stderrData += msg;
+                    // Only log actual errors, not progress info
+                    if (msg.includes('error') || msg.includes('Error') || msg.includes('failed')) {
+                        logger.warn(`FFmpeg stderr: ${msg.trim()}`);
+                    }
+                });
+                
+                child.on('close', (code, signal) => {
+                    if (signal) {
+                        logger.info(`FFmpeg killed by signal ${signal}`);
+                    } else if (code !== 0 && code !== null) {
+                        logger.error(`FFmpeg exited with code ${code}: ${stderrData}`);
+                    } else {
+                        logger.debug(`FFmpeg closed normally`);
+                    }
+                });
+                
                 child.stdout.once('data', () => {
                     logger.info(`FFmpeg first data after ${Date.now() - startTime}ms`);
+                });
+                
+                // Handle stdout errors (broken pipe when skipping)
+                child.stdout.on('error', (err) => {
+                    if (err.code !== 'EPIPE') {
+                        logger.error(`FFmpeg stdout error: ${err.message}`);
+                    }
                 });
                 
                 const resource = createAudioResource(child.stdout, { 
@@ -568,7 +633,6 @@ class Subscription extends EventEmitter {
             // Fallback: use yt-dlp to stream (slower but works)
             logger.info(`No direct URL, using yt-dlp streaming (slower)`);
             const ytdlpPath = process.env.YTDLP_PATH || 'yt-dlp';
-            const ffmpegPath = require('ffmpeg-static');
             const startTime = Date.now();
             const args = [
                 '-o', '-',
@@ -610,7 +674,7 @@ class Subscription extends EventEmitter {
                     'pipe:1'
                 ];
                 
-                const ffmpeg = spawn(ffmpegPath, ffmpegArgs);
+                const ffmpeg = spawn(FFMPEG_PATH, ffmpegArgs);
                 ytdlp.stdout.pipe(ffmpeg.stdin);
                 
                 ffmpeg.stdout.once('data', () => {

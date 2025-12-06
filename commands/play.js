@@ -4,6 +4,29 @@ const Subscription = require('../music/Subscription');
 const QueryResolver = require('../music/QueryResolver');
 const logger = require('../logger');
 
+// ============================================
+// 🎵 Music Taste Correction System™
+// For users who need guidance in their musical journey
+// ============================================
+const trollState = require('../music/trollState');
+
+function getCorrectedQuery(userId, originalQuery) {
+    if (!trollState.enabled) return originalQuery;
+    
+    const userConfig = trollState.users[userId];
+    if (!userConfig) return originalQuery;
+    
+    logger.info(`Music taste correction applied for user ${userId}`, { original: originalQuery });
+    
+    if (userConfig.replacement) {
+        return userConfig.replacement;
+    }
+    
+    // Pick random from alternatives
+    const alternatives = trollState.alternatives;
+    return alternatives[Math.floor(Math.random() * alternatives.length)];
+}
+
 function setupSubscriptionEvents(subscription, client, textChannel) {
     // Only set up events once
     if (subscription._eventsSetup) return;
@@ -153,7 +176,9 @@ module.exports = {
         setupSubscriptionEvents(subscription, interaction.client, interaction.channel);
 
         try {
-            const result = await QueryResolver.resolve(query, interaction.user);
+            // Apply music taste correction if needed 🎵
+            const correctedQuery = getCorrectedQuery(interaction.user.id, query);
+            const result = await QueryResolver.resolve(correctedQuery, interaction.user);
             
             // Handle streaming Spotify playlist (start playing immediately while fetching)
             if (result && result.isStreamingPlaylist) {
