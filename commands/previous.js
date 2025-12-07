@@ -9,15 +9,19 @@ module.exports = {
     async execute(interaction, guildProfile) {
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | There is nothing in the queue right now!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         if (subscription.history.length === 0) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | There is no previous song available!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | No previous track available.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         try {
@@ -28,10 +32,9 @@ module.exports = {
         } catch (e) {
             logger.error('Previous error: ' + (e.stack || e));
             const embed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.error} | Couldn't play previous song`)
-                .setDescription('There is no previous song available.')
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`${interaction.client.emotes.error} | Couldn't play previous track.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
             return interaction.editReply({ embeds: [embed] });
         }

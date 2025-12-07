@@ -21,9 +21,11 @@ module.exports = {
     async execute(interaction, guildProfile) {
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | There is nothing in the queue right now!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         const pos1 = interaction.options.getInteger('position_1');
@@ -31,21 +33,27 @@ module.exports = {
         const len = subscription.queue.length;
 
         if (len < 2) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | Need at least 2 songs in the queue to swap!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Need at least 2 songs in the queue to swap.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         // Validate positions (1-based)
         if (pos1 < 1 || pos1 > len || pos2 < 1 || pos2 > len) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | Please enter valid positions between 1 and ${len}!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Please enter valid positions between 1 and ${len}.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
         if (pos1 === pos2) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | Both positions are the samenothing to swap.`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Both positions are the same.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         try {
@@ -62,20 +70,17 @@ module.exports = {
             }
 
             const embed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.success} | Swapped songs!`)
-                .setDescription(`Positions **${pos1}** and **${pos2}** have been swapped.`)
-                .addFields({ name: 'Requested by', value: `${interaction.user}`, inline: true })
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`🔀 Swapped positions **${pos1}** and **${pos2}**.`)
+                .setColor('#00ff00')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
             return interaction.editReply({ embeds: [embed] });
         } catch (e) {
             logger.error('Swap command error: ' + (e.stack || e));
             const errEmbed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.error} | Couldn't swap songs`)
-                .setDescription('Something went wrongplease try again.')
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`${interaction.client.emotes.error} | Couldn't swap songs.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             return interaction.editReply({ embeds: [errEmbed] });
         }
     },

@@ -26,12 +26,20 @@ module.exports = {
 		try {
 			url = new URL(link);
 		} catch {
-			return interaction.editReply('🚫 That is not a valid URL!');
+			const embed = new EmbedBuilder()
+				.setDescription(`${interaction.client.emotes.error} | That is not a valid URL!`)
+				.setColor('#ff0000')
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+			return interaction.editReply({ embeds: [embed] });
 		}
 
 		// 2) Ensure it looks like a Shopify product path
 		if (!url.pathname.includes('/products/')) {
-			return interaction.editReply('🚫 Please provide a valid Shopify product URL (must contain `/products/`).');
+			const embed = new EmbedBuilder()
+				.setDescription(`${interaction.client.emotes.error} | Please provide a valid Shopify product URL (must contain \`/products/\`).`)
+				.setColor('#ff0000')
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+			return interaction.editReply({ embeds: [embed] });
 		}
 
 		// 3) Fetch the .json endpoint
@@ -42,12 +50,20 @@ module.exports = {
 			json = await res.json();
 		} catch (e) {
 			logger.error('Shopify fetch error: ' + (e.stack || e));
-			return interaction.editReply('🚫 Couldn’t fetch product data. Is that a Shopify product link?');
+			const embed = new EmbedBuilder()
+				.setDescription(`${interaction.client.emotes.error} | Couldn't fetch product data. Is that a Shopify product link?`)
+				.setColor('#ff0000')
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+			return interaction.editReply({ embeds: [embed] });
 		}
 
 		const product = json.product;
 		if (!product || !Array.isArray(product.variants)) {
-			return interaction.editReply('🚫 No product data found at that URL.');
+			const embed = new EmbedBuilder()
+				.setDescription(`${interaction.client.emotes.error} | No product data found at that URL.`)
+				.setColor('#ff0000')
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+			return interaction.editReply({ embeds: [embed] });
 		}
 
 		// 4) Build variant fields

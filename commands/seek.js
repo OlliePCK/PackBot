@@ -16,9 +16,11 @@ module.exports = {
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         
         if (!subscription || !subscription.currentTrack) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | There is nothing playing right now!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         const time = interaction.options.getInteger('time');
@@ -26,9 +28,11 @@ module.exports = {
         
         // Validate within song duration
         if (time < 0 || (currentTrack.duration && time > currentTrack.duration)) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | Please enter a time between 0 and ${currentTrack.duration || '?'} seconds.`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Please enter a time between 0 and ${currentTrack.duration || '?'} seconds.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         try {
@@ -42,20 +46,18 @@ module.exports = {
             };
 
             const embed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.success} | Seeked to ${formatTime(time)}!`)
-                .addFields(
-                    { name: 'Song', value: currentTrack.title, inline: true },
-                    { name: 'Position', value: `\`${formatTime(time)}\``, inline: true },
-                )
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`⏩ Seeked to **${formatTime(time)}** in **${currentTrack.title}**`)
+                .setColor('#00ff00')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
             return interaction.editReply({ embeds: [embed] });
         } catch (e) {
             logger.error('Seek error: ' + (e.stack || e));
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | An error occurred while seeking—please try again!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Couldn't seek to that position.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
     },
 };

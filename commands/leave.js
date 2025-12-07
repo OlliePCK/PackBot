@@ -19,13 +19,16 @@ module.exports = {
             interaction.client.subscriptions.delete(interaction.guildId);
             
             const embed = new EmbedBuilder()
-                .setTitle(`👋 | Left the voice channel`)
-                .setDescription(`Disconnected by ${interaction.user}`)
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`👋 Left the voice channel.`)
+                .setColor('#ff006a')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             interaction.editReply({ embeds: [embed] });
         } else {
-            interaction.editReply('❌ Not in a channel!');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not in a voice channel.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            interaction.editReply({ embeds: [embed] });
         }
     },
 };

@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const db = require('../database/db.js');
 const { request } = require('undici');
+const logger = require('../logger');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -46,14 +47,20 @@ module.exports = {
                 const handle = handleRaw.replace(/^@/, '');
 
                 if (!guildProfile.youtubeChannelID) {
-                    return interaction.editReply({
-                        content: `🚫 You haven't set a YouTube notifications channel. Run \`/settings set-youtube-channel\` first.`
-                    });
+                    const embed = new EmbedBuilder()
+                        .setDescription(`${interaction.client.emotes.error} | You haven't set a YouTube notifications channel. Run \`/settings set-youtube-channel\` first.`)
+                        .setColor('#ff0000')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 const channelData = await fetchYouTubeChannel(handle);
                 if (!channelData) {
-                    return interaction.editReply({ content: '🚫 Invalid YouTube handle—please try again.' });
+                    const embed = new EmbedBuilder()
+                        .setDescription(`${interaction.client.emotes.error} | Invalid YouTube handle—please try again.`)
+                        .setColor('#ff0000')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 const { snippet, statistics, id: channelId } = channelData;
@@ -64,10 +71,18 @@ module.exports = {
                     );
                 } catch (err) {
                     if (err.code === 'ER_DUP_ENTRY') {
-                        return interaction.editReply({ content: '🚫 That channel is already in the notification list.' });
+                        const embed = new EmbedBuilder()
+                            .setDescription(`${interaction.client.emotes.error} | That channel is already in the notification list.`)
+                            .setColor('#ff0000')
+                            .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                        return interaction.editReply({ embeds: [embed] });
                     }
-            logger.error('DB insert error: ' + (err.stack || err));
-                    return interaction.editReply({ content: '🚫 Database error—please try again later.' });
+                    logger.error('DB insert error: ' + (err.stack || err));
+                    const errEmbed = new EmbedBuilder()
+                        .setDescription(`${interaction.client.emotes.error} | Database error—please try again later.`)
+                        .setColor('#ff0000')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [errEmbed] });
                 }
 
                 const embed = new EmbedBuilder()
@@ -95,7 +110,11 @@ module.exports = {
                     [handle, interaction.guildId]
                 );
                 if (!exists.length) {
-                    return interaction.editReply({ content: '🚫 That channel isn’t in the notification list.' });
+                    const embed = new EmbedBuilder()
+                        .setDescription(`${interaction.client.emotes.error} | That channel isn't in the notification list.`)
+                        .setColor('#ff0000')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 await db.pool.query(
@@ -127,7 +146,11 @@ module.exports = {
                     [interaction.guildId]
                 );
                 if (!rows.length) {
-                    return interaction.editReply({ content: 'ℹ️ No YouTube channels configured.' });
+                    const embed = new EmbedBuilder()
+                        .setDescription(`ℹ️ No YouTube channels configured.`)
+                        .setColor('#ff006a')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 const fields = [];
@@ -153,8 +176,12 @@ module.exports = {
                 return interaction.editReply({ embeds: [embed] });
             }
         } catch (err) {
-        logger.error('YouTube command error: ' + (err.stack || err));
-            return interaction.editReply({ content: '🚫 An unexpected error occurred—please try again.' });
+            logger.error('YouTube command error: ' + (err.stack || err));
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | An unexpected error occurred—please try again.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
     }
 };

@@ -9,9 +9,11 @@ module.exports = {
     async execute(interaction, guildProfile) {
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | There is nothing in the queue right now!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | There is nothing in the queue right now!`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         try {
@@ -36,13 +38,9 @@ module.exports = {
         } catch (error) {
             logger.error(error.stack || error);
             const embed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.error} | An error occurred!`)
-                .setDescription('Please try again.')
-                .setFooter({
-                    text: 'The Pack',
-                    iconURL: interaction.client.logo
-                })
-                .setColor('#ff006a');
+                .setDescription(`${interaction.client.emotes.error} | An error occurred. Please try again.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             return interaction.editReply({ embeds: [embed] });
         }
     },

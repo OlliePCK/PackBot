@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { AudioPlayerStatus } = require('@discordjs/voice');
 
 module.exports = {
@@ -13,17 +13,33 @@ module.exports = {
 
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription) {
-            return interaction.editReply('❌ Not playing!');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         if (subscription.audioPlayer.state.status === AudioPlayerStatus.Paused) {
             subscription.audioPlayer.unpause();
-            interaction.editReply('▶️ Resumed!');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.play} | Resumed playback.`)
+                .setColor('#00ff00')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         } else if (subscription.audioPlayer.state.status === AudioPlayerStatus.Playing) {
             subscription.audioPlayer.pause();
-            interaction.editReply('⏸️ Paused!');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.pause} | Paused playback.`)
+                .setColor('#ffaa00')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         } else {
-            interaction.editReply('❌ Not playing!');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
     },
 };

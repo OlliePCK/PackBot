@@ -15,18 +15,22 @@ module.exports = {
     async execute(interaction, guildProfile) {
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | There is nothing in the queue right now!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         const pos = interaction.options.getInteger('position');
         const len = subscription.queue.length;
         
         if (len === 0) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | The queue is empty!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Queue is empty.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
         
         // Convert position to 0-based index
@@ -36,10 +40,9 @@ module.exports = {
 
         if (index < 0 || index >= len) {
             const errEmbed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.error} | Invalid position`)
-                .setDescription(`Please specify a number between 1 and ${len}, or -1 and -${len}.`)
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`${interaction.client.emotes.error} | Invalid position. Use 1-${len} or -1 to -${len}.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             return interaction.editReply({ embeds: [errEmbed] });
         }
 
@@ -51,10 +54,9 @@ module.exports = {
         } catch (e) {
             logger.error('Jump error: ' + (e.stack || e));
             const errEmbed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.error} | Couldn't jump`)
-                .setDescription('Something went wrongplease try a different position.')
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`${interaction.client.emotes.error} | Couldn't jump to that position.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             return interaction.editReply({ embeds: [errEmbed] });
         }
     },

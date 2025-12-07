@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -19,15 +19,27 @@ module.exports = {
 
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription) {
-            return interaction.editReply('❌ Not playing!');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         const vol = interaction.options.getInteger('volume');
         if (vol < 0 || vol > 100) {
-            return interaction.editReply('❌ Please enter a number between 0 and 100.');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Please enter a number between 0 and 100.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         subscription.setVolume(vol);
-        interaction.editReply(`🔊 Volume set to ${vol}%`);
+        const embed = new EmbedBuilder()
+            .setDescription(`🔊 Volume set to **${vol}%**`)
+            .setColor('#00ff00')
+            .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+        return interaction.editReply({ embeds: [embed] });
     },
 };

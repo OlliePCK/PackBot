@@ -112,7 +112,11 @@ module.exports = {
 
 		// validation
 		if (!cfg.validate(target)) {
-			return interaction.editReply({ content: cfg.error });
+			const embed = new EmbedBuilder()
+				.setDescription(`${interaction.client.emotes.error} | ${cfg.error.replace('🚫 ', '')}`)
+				.setColor('#ff0000')
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+			return interaction.editReply({ embeds: [embed] });
 		}
 
 		// perform the DB update

@@ -20,9 +20,11 @@ module.exports = {
     async execute(interaction, guildProfile) {
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | There is nothing in the queue right now!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         try {
@@ -39,19 +41,17 @@ module.exports = {
                     : 'Repeat queue';
 
             const embed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.success} | Set repeat mode: \`${modeText}\``)
-                .addFields({ name: 'Requested by', value: `${interaction.user}`, inline: true })
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`${interaction.client.emotes.repeat} Repeat mode set to **${modeText}**`)
+                .setColor('#00ff00')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
             return interaction.editReply({ embeds: [embed] });
         } catch (e) {
             logger.error('Repeat command error: ' + (e.stack || e));
             const errEmbed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.error} | Couldn't set repeat mode`)
-                .setDescription('Something went wrongplease try again.')
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`${interaction.client.emotes.error} | Couldn't set repeat mode.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             return interaction.editReply({ embeds: [errEmbed] });
         }
     },

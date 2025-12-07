@@ -87,9 +87,11 @@ module.exports = {
                 `, [interaction.guildId]);
 
                 if (rows.length === 0) {
-                    return interaction.editReply({
-                        content: '📊 No playtime data recorded yet!'
-                    });
+                    const embed = new EmbedBuilder()
+                        .setDescription('📊 No playtime data recorded yet!')
+                        .setColor('#ff006a')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 const leaderboard = rows.map((row, i) => {
@@ -118,9 +120,11 @@ module.exports = {
                 `, [interaction.guildId, gameName]);
 
                 if (rows.length === 0) {
-                    return interaction.editReply({
-                        content: `📊 No playtime data for **${gameName}** yet!`
-                    });
+                    const embed = new EmbedBuilder()
+                        .setDescription(`📊 No playtime data for **${gameName}** yet!`)
+                        .setColor('#ff006a')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 const leaderboard = rows.map((row, i) => {
@@ -149,9 +153,11 @@ module.exports = {
                 `, [interaction.guildId, user.id]);
 
                 if (rows.length === 0) {
-                    return interaction.editReply({
-                        content: `📊 No playtime data for ${user.tag} yet!`
-                    });
+                    const embed = new EmbedBuilder()
+                        .setDescription(`📊 No playtime data for ${user.tag} yet!`)
+                        .setColor('#ff006a')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 // Calculate total time
@@ -187,9 +193,11 @@ module.exports = {
                 `, [interaction.guildId]);
 
                 if (rows.length === 0) {
-                    return interaction.editReply({
-                        content: '📊 No playtime data recorded yet!'
-                    });
+                    const embed = new EmbedBuilder()
+                        .setDescription('📊 No playtime data recorded yet!')
+                        .setColor('#ff006a')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 const gameList = rows.map((row, i) => {
@@ -211,14 +219,18 @@ module.exports = {
             logger.error('Leaderboard error: ' + (e.stack || e));
             
             if (e.code === 'ER_NO_SUCH_TABLE') {
-                return interaction.editReply({
-                    content: '📊 Playtime tracking is being set up. Please try again later!'
-                });
+                const embed = new EmbedBuilder()
+                    .setDescription('📊 Playtime tracking is being set up. Please try again later!')
+                    .setColor('#ffaa00')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                return interaction.editReply({ embeds: [embed] });
             }
             
-            return interaction.editReply({
-                content: '❌ An error occurred while fetching the leaderboard.'
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | An error occurred while fetching the leaderboard.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
     },
 };

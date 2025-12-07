@@ -63,6 +63,11 @@ class Subscription extends EventEmitter {
                 this.currentTrack = null;
                 this.prefetchedUrls.clear();
                 this.audioPlayer.stop(true);
+                // Clean up voice command listener if active
+                if (this.voiceCommandListener) {
+                    this.voiceCommandListener.destroy();
+                    this.voiceCommandListener = null;
+                }
                 this.queueLock = false;
             } else if (
                 !this.readyLock &&
@@ -715,6 +720,55 @@ class Subscription extends EventEmitter {
             }
         }
         this.volume = volume;
+    }
+    
+    /**
+     * Enable voice commands for this subscription
+     * @param {TextChannel} textChannel - Channel to send feedback messages
+     * @param {Client} client - Discord client for user lookups
+     * @returns {Promise<boolean>} - Whether voice commands were enabled successfully
+     */
+    async enableVoiceCommands(textChannel, client) {
+        if (this.voiceCommandListener) {
+            logger.info('Voice commands already enabled');
+            return true;
+        }
+        
+        try {
+            const VoiceCommandListener = require('./VoiceCommandListener');
+            this.voiceCommandListener = new VoiceCommandListener(this, textChannel, client);
+            const success = await this.voiceCommandListener.start();
+            
+            if (!success) {
+                this.voiceCommandListener = null;
+                return false;
+            }
+            
+            logger.info('Voice commands enabled for subscription');
+            return true;
+        } catch (e) {
+            logger.error(`Failed to enable voice commands: ${e.message}`);
+            this.voiceCommandListener = null;
+            return false;
+        }
+    }
+    
+    /**
+     * Disable voice commands for this subscription
+     */
+    disableVoiceCommands() {
+        if (this.voiceCommandListener) {
+            this.voiceCommandListener.stop();
+            this.voiceCommandListener = null;
+            logger.info('Voice commands disabled for subscription');
+        }
+    }
+    
+    /**
+     * Check if voice commands are enabled
+     */
+    get voiceCommandsEnabled() {
+        return this.voiceCommandListener?.enabled ?? false;
     }
 }
 

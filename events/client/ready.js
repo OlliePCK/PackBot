@@ -1,4 +1,5 @@
 const youtubeNotifications = require('../../scripts/youtube-notifications');
+const PageMonitorService = require('../../services/PageMonitorService');
 const logger = require('../../logger').child('core');
 
 module.exports = {
@@ -23,10 +24,20 @@ module.exports = {
 		// 2) Initialize YouTube notifications (event functions are loaded in index.js)
 		try {
 			await youtubeNotifications(client);
-			logger.info('All features initialized');
 		} catch (e) {
-			logger.error('Error initializing features', { error: e.message });
+			logger.error('Error initializing YouTube notifications', { error: e.message });
 		}
+
+		// 3) Initialize Page Monitor Service
+		try {
+			client.pageMonitor = new PageMonitorService(client);
+			await client.pageMonitor.start();
+			logger.info('Page Monitor Service initialized');
+		} catch (e) {
+			logger.error('Error initializing Page Monitor Service', { error: e.message });
+		}
+
+		logger.info('All features initialized');
 	}
 };
 

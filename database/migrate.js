@@ -24,20 +24,24 @@ async function migrate() {
 
     for (const file of files) {
         const filePath = path.join(MIGRATIONS_DIR, file);
-        const sql = fs.readFileSync(filePath, 'utf8');
+        let sql = fs.readFileSync(filePath, 'utf8');
 
+        // Remove single-line comments (-- ...)
+        sql = sql.replace(/--.*$/gm, '');
+        
         // Split by semicolon for multiple statements, filter empty
         const statements = sql
             .split(';')
             .map(s => s.trim())
-            .filter(s => s.length > 0 && !s.startsWith('--'));
+            .filter(s => s.length > 0);
 
-        console.log(`📄 ${file}`);
+        console.log(`📄 ${file} (${statements.length} statement(s))`);
 
         for (const statement of statements) {
             try {
                 await db.pool.query(statement);
                 success++;
+                console.log(`   ✅ Statement executed successfully`);
             } catch (err) {
                 if (err.code === 'ER_TABLE_EXISTS_ERROR') {
                     skipped++;
@@ -45,9 +49,16 @@ async function migrate() {
                 } else if (err.code === 'ER_DUP_KEYNAME') {
                     skipped++;
                     console.log(`   ⏭️  Index already exists, skipped`);
+                } else if (err.code === 'ER_DUP_FIELDNAME') {
+                    skipped++;
+                    console.log(`   ⏭️  Column already exists, skipped`);
+                } else if (err.code === 'ER_DUP_ENTRY') {
+                    skipped++;
+                    console.log(`   ⏭️  Entry already exists, skipped`);
                 } else {
                     failed++;
                     console.error(`   ❌ Error: ${err.message}`);
+                    console.error(`   Statement: ${statement.substring(0, 100)}...`);
                 }
             }
         }

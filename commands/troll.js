@@ -115,7 +115,11 @@ module.exports = {
                 
                 return interaction.editReply({ embeds: [embed] });
             } else {
-                return interaction.editReply('❌ User is not in the troll list.');
+                const embed = new EmbedBuilder()
+                    .setDescription(`${interaction.client.emotes.error} | User is not in the troll list.`)
+                    .setColor('#ff0000')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                return interaction.editReply({ embeds: [embed] });
             }
         }
     }

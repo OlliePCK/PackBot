@@ -53,3 +53,42 @@ CREATE TABLE IF NOT EXISTS Playtime (
     INDEX idx_user (odUserId),
     INDEX idx_game (gameName)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================
+-- VoiceWhitelist Table
+-- Stores guilds allowed to use voice commands (Deepgram API)
+-- ============================================
+CREATE TABLE IF NOT EXISTS VoiceWhitelist (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    guildId VARCHAR(32) NOT NULL UNIQUE,
+    addedBy VARCHAR(32) NOT NULL,
+    guildName VARCHAR(100) DEFAULT NULL,
+    addedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_guild (guildId)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================
+-- PageMonitors Table
+-- Stores page monitors for detecting website changes
+-- ============================================
+CREATE TABLE IF NOT EXISTS PageMonitors (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    guildId VARCHAR(32) NOT NULL,
+    channelId VARCHAR(32) NOT NULL,
+    createdBy VARCHAR(32) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    url TEXT NOT NULL,
+    keywords TEXT DEFAULT NULL COMMENT 'Comma-separated keywords to trigger on (NULL = any change)',
+    checkInterval INT DEFAULT 60 COMMENT 'Check interval in seconds',
+    lastHash VARCHAR(64) DEFAULT NULL COMMENT 'MD5 hash of last content',
+    lastChecked DATETIME DEFAULT NULL,
+    lastChanged DATETIME DEFAULT NULL,
+    roleToMention VARCHAR(32) DEFAULT NULL COMMENT 'Role ID to ping on change',
+    isActive BOOLEAN DEFAULT TRUE,
+    errorCount INT DEFAULT 0,
+    lastError TEXT DEFAULT NULL,
+    createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_guild (guildId),
+    INDEX idx_active (isActive),
+    INDEX idx_next_check (isActive, lastChecked)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

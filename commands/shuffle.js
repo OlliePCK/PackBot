@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -12,7 +12,11 @@ module.exports = {
 
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription || subscription.queue.length === 0) {
-            return interaction.editReply('❌ Queue is empty!');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Queue is empty.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         // Fisher-Yates shuffle
@@ -27,6 +31,10 @@ module.exports = {
             subscription.prefetchTrack(subscription.queue[0]);
         }
 
-        interaction.editReply('🔀 Queue shuffled!');
+        const embed = new EmbedBuilder()
+            .setDescription(`🔀 Shuffled **${subscription.queue.length}** songs in the queue.`)
+            .setColor('#00ff00')
+            .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+        return interaction.editReply({ embeds: [embed] });
     },
 };

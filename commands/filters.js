@@ -66,9 +66,11 @@ module.exports = {
     async execute(interaction, guildProfile) {
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | There is nothing playing right now!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         const subcommand = interaction.options.getSubcommand();
@@ -84,9 +86,11 @@ module.exports = {
                 const filter = FILTERS[filterKey];
 
                 if (subscription.filters.includes(filterKey)) {
-                    return interaction.editReply({
-                        content: `${interaction.client.emotes.error} | The **${filter.name}** filter is already active!`
-                    });
+                    const embed = new EmbedBuilder()
+                        .setDescription(`${interaction.client.emotes.error} | The **${filter.name}** filter is already active!`)
+                        .setColor('#ff0000')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 subscription.filters.push(filterKey);
@@ -109,42 +113,42 @@ module.exports = {
                 const filter = FILTERS[filterKey];
 
                 if (!subscription.filters.includes(filterKey)) {
-                    return interaction.editReply({
-                        content: `${interaction.client.emotes.error} | The **${filter.name}** filter is not active!`
-                    });
+                    const embed = new EmbedBuilder()
+                        .setDescription(`${interaction.client.emotes.error} | **${filter.name}** is not active.`)
+                        .setColor('#ff0000')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 subscription.filters = subscription.filters.filter(f => f !== filterKey);
                 await restartWithFilters(subscription);
 
                 const embed = new EmbedBuilder()
-                    .setTitle(`${interaction.client.emotes.success} | Filter Removed`)
-                    .setDescription(`🎛️ **${filter.name}** has been removed.`)
+                    .setDescription(`🎛️ **${filter.name}** filter removed.`)
                     .addFields(
-                        { name: 'Active Filters', value: subscription.filters.map(f => FILTERS[f].name).join(', ') || 'None', inline: true },
-                        { name: 'Requested by', value: `${interaction.user}`, inline: true }
+                        { name: 'Active Filters', value: subscription.filters.map(f => FILTERS[f].name).join(', ') || 'None', inline: true }
                     )
-                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                    .setColor('#ff006a');
+                    .setColor('#00ff00')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
                 return interaction.editReply({ embeds: [embed] });
 
             } else if (subcommand === 'clear') {
                 if (subscription.filters.length === 0) {
-                    return interaction.editReply({
-                        content: `${interaction.client.emotes.error} | There are no active filters to clear!`
-                    });
+                    const embed = new EmbedBuilder()
+                        .setDescription(`${interaction.client.emotes.error} | No active filters to clear.`)
+                        .setColor('#ff0000')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
                 }
 
                 subscription.filters = [];
                 await restartWithFilters(subscription);
 
                 const embed = new EmbedBuilder()
-                    .setTitle(`${interaction.client.emotes.success} | Filters Cleared`)
-                    .setDescription('🎛️ All audio filters have been removed.')
-                    .addFields({ name: 'Requested by', value: `${interaction.user}`, inline: true })
-                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                    .setColor('#ff006a');
+                    .setDescription('🏛️ All filters cleared.')
+                    .setColor('#00ff00')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
                 return interaction.editReply({ embeds: [embed] });
 
@@ -165,10 +169,9 @@ module.exports = {
         } catch (error) {
             logger.error(`Filters command error: ${error.stack || error}`);
             const errEmbed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.error} | Couldn't apply filter`)
-                .setDescription('Something went wrong—please try again.')
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`${interaction.client.emotes.error} | Couldn't apply filter. Please try again.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             return interaction.editReply({ embeds: [errEmbed] });
         }
     },

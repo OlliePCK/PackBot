@@ -1,6 +1,6 @@
 # PackBot
 
-PackBot is a versatile Discord bot designed to enhance your server with music playback, playtime tracking, YouTube notifications, streaming alerts, and more. Built with Discord.js v14 and a custom yt-dlp audio system.
+PackBot is a versatile Discord bot designed to enhance your server with music playback, voice commands, page monitoring, playtime tracking, YouTube notifications, streaming alerts, and more. Built with Discord.js v14 and a custom yt-dlp audio system.
 
 ## Features
 
@@ -23,14 +23,56 @@ Full-featured music playback using yt-dlp and @discordjs/voice.
 | `/jump <position>` | Jump to a specific queue position |
 | `/swap <pos1> <pos2>` | Swap two tracks in the queue |
 | `/push <position>` | Move a track to the front |
-| `/undo` | Restore the last removed track |
+| `/undo` | Remove the last added track |
 | `/filters [filter]` | Apply audio filters (bassboost, nightcore, etc.) |
+| `/join` | Join your voice channel |
 | `/leave` | Disconnect from voice channel |
 
 **Supported Sources:**
 - YouTube (videos, playlists, search)
 - Spotify (tracks, albums, playlists - converted via YouTube)
 - Direct URLs (any yt-dlp supported source)
+
+### 🎤 Voice Commands
+Control the music bot hands-free using voice commands powered by Deepgram speech recognition.
+
+| Command | Description |
+|---------|-------------|
+| `/voice enable` | Enable voice commands in your channel |
+| `/voice disable` | Disable voice commands |
+| `/voice status` | Check voice command status |
+| `/voice autoenable <on\|off>` | Auto-enable voice commands when bot joins (Admin) |
+
+**Voice Commands (say "Pack Bot" followed by):**
+- `play [song name]` - Queue a song
+- `skip` / `next` - Skip current track
+- `stop` - Stop playback and clear queue
+- `pause` / `resume` - Pause/resume playback
+- `volume [0-200]` - Set volume level
+- `previous` - Play previous track
+- `shuffle` - Shuffle the queue
+
+> **Note:** Voice commands require server whitelisting (paid Deepgram API). Contact the bot owner to enable for your server.
+
+### 🔍 Page Monitor
+Monitor websites for changes and get notified when specific content appears. Perfect for tracking restocks, ticket drops, or any webpage updates.
+
+| Command | Description |
+|---------|-------------|
+| `/monitor add <url> <name>` | Add a new page monitor |
+| `/monitor remove <name>` | Remove a monitor |
+| `/monitor list` | List all monitors in this server |
+| `/monitor pause <name>` | Pause a monitor |
+| `/monitor resume <name>` | Resume a paused monitor |
+| `/monitor test <name>` | Test a monitor immediately |
+| `/monitor info <name>` | View detailed monitor info |
+| `/monitor help` | Show usage guide |
+
+**Monitor Options:**
+- `interval` - Check frequency (60-3600 seconds, default: 300)
+- `keywords` - Only alert when these words appear (comma-separated)
+- `role` - Role to ping on changes
+- `channel` - Channel for notifications (defaults to current)
 
 ### 📊 Playtime Tracking & Leaderboards
 Track how long members play games and compete on leaderboards.
@@ -115,7 +157,13 @@ Automatic notifications and tracking:
    MYSQL_PASSWORD=your_mysql_password
    MYSQL_DB=your_mysql_database
    
-   # Optional: Logging
+   # APIs (Optional)
+   YOUTUBE_API_KEY=your_youtube_api_key      # For YouTube notifications
+   DEEPGRAM_API_KEY=your_deepgram_api_key    # For voice commands
+   SPOTIFY_CLIENT_ID=your_spotify_client_id  # For Spotify support
+   SPOTIFY_CLIENT_SECRET=your_spotify_secret
+   
+   # Logging (Optional)
    LOG_LEVEL=info          # debug, info, warn, error
    LOG_FORMAT=text         # text, json
    LOG_COLORS=false        # true/false
@@ -137,9 +185,11 @@ Automatic notifications and tracking:
    ```
    
    This creates the following tables:
-   - `Guilds` - Server settings (channels, roles)
+   - `Guilds` - Server settings (channels, roles, voice command preferences)
    - `Youtube` - YouTube channel subscriptions
    - `Playtime` - User gaming session tracking
+   - `VoiceWhitelist` - Servers enabled for voice commands
+   - `PageMonitors` - Page monitor configurations
 
 5. **Deploy slash commands:**
    ```sh
@@ -195,10 +245,19 @@ services:
 PackBot/
 ├── commands/           # Slash command handlers
 ├── database/           # Database connection and migrations
+│   ├── db.js           # Connection pool
+│   ├── schema.sql      # Full database schema
+│   └── migrations/     # Incremental migrations
 ├── events/
 │   ├── client/         # Discord.js event handlers
 │   └── event-functions/ # Background services (game-expose, live-noti)
-├── music/              # Music system (Subscription, Track, QueryResolver)
+├── music/              # Music system
+│   ├── Subscription.js # Audio player and queue management
+│   ├── Track.js        # Track model
+│   ├── QueryResolver.js # YouTube/Spotify/URL resolution
+│   └── VoiceCommandListener.js # Deepgram voice recognition
+├── services/           # Background services
+│   └── PageMonitorService.js # Website change detection
 ├── scripts/            # Background scripts (YouTube notifications)
 ├── logs/               # Log files (auto-created)
 ├── index.js            # Main entry point

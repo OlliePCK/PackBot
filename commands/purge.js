@@ -18,33 +18,37 @@ module.exports = {
 			const amount = interaction.options.getInteger('amount');
 
 			if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-				return interaction.editReply({
-					content: `${interaction.client.emotes.error} | You need Administrator permissions to do that.`
-				});
+				const embed = new EmbedBuilder()
+					.setDescription(`${interaction.client.emotes.error} | You need Administrator permissions to do that.`)
+					.setColor('#ff0000')
+					.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+				return interaction.editReply({ embeds: [embed] });
 			}
 
 			if (amount < 1 || amount > 100) {
-				return interaction.editReply({
-					content: `${interaction.client.emotes.error} | Please specify a number between 1 and 100.`
-				});
+				const embed = new EmbedBuilder()
+					.setDescription(`${interaction.client.emotes.error} | Please specify a number between 1 and 100.`)
+					.setColor('#ff0000')
+					.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+				return interaction.editReply({ embeds: [embed] });
 			}
 
 			const deleted = await interaction.channel.bulkDelete(amount + 1, true);
 			const count = deleted.size - 1;
 			const embed = new EmbedBuilder()
-				.setTitle(`${interaction.client.emotes.success} | Purged Messages`)
-				.setDescription(`Successfully deleted **${count}** message${count !== 1 ? 's' : ''}.`)
-				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-				.setColor('#ff006a');
+				.setDescription(`🗑️ Deleted **${count}** message${count !== 1 ? 's' : ''}.`)
+				.setColor('#00ff00')
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
 			return interaction.editReply({ embeds: [embed] });
 		} catch (e) {
 			logger.error('Purge error: ' + (e.stack || e));
 			try {
-				await interaction.editReply({
-					content: `${interaction.client.emotes.error} | I couldn't delete those messages. ` +
-						`Make sure I have the Manage Messages permission and the messages are under 14 days old.`
-				});
+				const embed = new EmbedBuilder()
+					.setDescription(`${interaction.client.emotes.error} | Couldn't delete messages. Make sure I have permissions and messages are under 14 days old.`)
+					.setColor('#ff0000')
+					.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+				await interaction.editReply({ embeds: [embed] });
 			} catch (editErr) {
 				// Fallback if editReply fails (e.g., interaction expired)
 				try {

@@ -15,30 +15,38 @@ module.exports = {
     async execute(interaction, guildProfile) {
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | There is nothing in the queue right now!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         const pos = interaction.options.getInteger('position');
         const len = subscription.queue.length;
         
         if (len === 0) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | The queue is empty!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Queue is empty.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
         
         if (pos < 1 || pos > len) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | Please enter a valid position between 1 and ${len}!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Please enter a valid position between 1 and ${len}.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         if (pos === 1) {
-            return interaction.editReply({
-                content: `${interaction.client.emotes.error} | That song is already next!`
-            });
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | That song is already next.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         try {
@@ -51,20 +59,17 @@ module.exports = {
             subscription.prefetchTrack(movedSong);
 
             const embed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.success} | Moved to next`)
-                .setDescription(` **${movedSong.title || 'Unknown track'}** will play next.`)
-                .addFields({ name: 'Requested by', value: `${interaction.user}`, inline: true })
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`⏫ **${movedSong.title || 'Track'}** moved to play next.`)
+                .setColor('#00ff00')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
             return interaction.editReply({ embeds: [embed] });
         } catch (e) {
             logger.error('Push command error: ' + (e.stack || e));
             const errEmbed = new EmbedBuilder()
-                .setTitle(`${interaction.client.emotes.error} | Couldn't move that song`)
-                .setDescription('Something went wrongplease try again.')
-                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
-                .setColor('#ff006a');
+                .setDescription(`${interaction.client.emotes.error} | Couldn't move that song.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             return interaction.editReply({ embeds: [errEmbed] });
         }
     },

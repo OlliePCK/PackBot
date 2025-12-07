@@ -26,4 +26,6 @@ ENV LOG_DIR=logs
 ENV LOG_MAX_SIZE_MB=5
 ENV LOG_MAX_FILES=5
 
+# Voice commands use Deepgram API (set DEEPGRAM_API_KEY in environment)
+
 CMD ["node", "index.js"]

@@ -1,4 +1,4 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,7 +11,11 @@ module.exports = {
             // Delete the deferred reply - the event embed will be the response
             await interaction.deleteReply();
         } else {
-            interaction.editReply('❌ Not playing!');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            interaction.editReply({ embeds: [embed] });
         }
     },
 };

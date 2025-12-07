@@ -18,7 +18,11 @@ module.exports = {
 
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
         if (!subscription || (subscription.queue.length === 0 && !subscription.currentTrack)) {
-            return interaction.editReply('❌ Queue is empty.');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Queue is empty.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         const queue = subscription.queue;

@@ -3,6 +3,7 @@ const { joinVoiceChannel } = require('@discordjs/voice');
 const Subscription = require('../music/Subscription');
 const QueryResolver = require('../music/QueryResolver');
 const logger = require('../logger');
+const { isGuildWhitelisted } = require('./voice');
 
 // ============================================
 // 🎵 Music Taste Correction System™
@@ -137,7 +138,7 @@ module.exports = {
             .setDescription('Playlist URL, song URL, or search terms')
             .setRequired(false)
         ),
-    async execute(interaction) {
+    async execute(interaction, guildProfile) {
         // Defer reply if not already deferred
         if (!interaction.deferred && !interaction.replied) {
             await interaction.deferReply();
@@ -147,7 +148,11 @@ module.exports = {
         const voiceChannel = interaction.member.voice.channel;
 
         if (!voiceChannel) {
-            return interaction.editReply('🚫 You need to be in a voice channel first!');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | You need to be in a voice channel first!`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         let subscription = interaction.client.subscriptions.get(interaction.guildId);
@@ -156,20 +161,47 @@ module.exports = {
         if (!query) {
             if (subscription && subscription.audioPlayer.state.status === 'paused') {
                 subscription.audioPlayer.unpause();
-                return interaction.editReply('▶️ Resumed playback!');
+                const embed = new EmbedBuilder()
+                    .setDescription(`▶️ Resumed playback!`)
+                    .setColor('#00ff00')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                return interaction.editReply({ embeds: [embed] });
             }
-            return interaction.editReply('⚠️ You must specify what to play.');
+            const embed = new EmbedBuilder()
+                .setDescription(`⚠️ You must specify what to play.`)
+                .setColor('#ffaa00')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
         }
 
         // Create subscription if needed
+        const createdNew = !subscription;
         if (!subscription) {
             const connection = joinVoiceChannel({
                 channelId: voiceChannel.id,
                 guildId: interaction.guildId,
                 adapterCreator: interaction.guild.voiceAdapterCreator,
+                selfDeaf: false, // Required for voice commands
             });
             subscription = new Subscription(connection);
             interaction.client.subscriptions.set(interaction.guildId, subscription);
+            
+            // Auto-enable voice commands if guild has opted in AND is whitelisted
+            if (guildProfile?.voiceCommandsEnabled) {
+                isGuildWhitelisted(interaction.guildId).then(whitelisted => {
+                    if (whitelisted) {
+                        subscription.enableVoiceCommands(interaction.channel, interaction.client)
+                            .then(success => {
+                                if (success) {
+                                    logger.info('Voice commands auto-enabled on play', { 
+                                        guild: interaction.guild.name 
+                                    });
+                                }
+                            })
+                            .catch(err => logger.error('Failed to auto-enable voice commands', { error: err.message }));
+                    }
+                });
+            }
         }
 
         // Set up event listeners
@@ -228,21 +260,24 @@ module.exports = {
             // Handle regular tracks array
             const tracks = result;
             if (!tracks || tracks.length === 0) {
-                return interaction.editReply('❌ No results found.');
+                const embed = new EmbedBuilder()
+                    .setDescription(`${interaction.client.emotes.error} | No results found.`)
+                    .setColor('#ff0000')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                return interaction.editReply({ embeds: [embed] });
             }
 
-            // Suppress addSong events for playlist items
+            // Suppress addSong events - we show our own detailed embeds
             const isPlaylist = tracks.length > 1;
-            if (isPlaylist) {
-                subscription._suppressAddSong = true;
-            }
+            subscription._suppressAddSong = true;
 
             for (const track of tracks) {
                 subscription.enqueue(track);
             }
 
+            subscription._suppressAddSong = false;
+
             if (isPlaylist) {
-                subscription._suppressAddSong = false;
                 
                 // Use playlist info if available
                 const playlistInfo = tracks.playlistInfo;
@@ -268,12 +303,33 @@ module.exports = {
 
                 await interaction.editReply({ embeds: [embed] });
             } else {
-                await interaction.editReply('✅ Added to queue!');
+                // Single song - show detailed info (suppress addSong event since we show it here)
+                const track = tracks[0];
+                const addedEmbed = new EmbedBuilder()
+                    .setTitle(`${interaction.client.emotes.success} | Song added: ${track.title}`)
+                    .setURL(track.url || '')
+                    .addFields(
+                        { name: 'Duration', value: `\`${track.formattedDuration}\``, inline: true },
+                        { name: 'Requested by', value: `${track.requestedBy}`, inline: true },
+                        { name: 'Position in queue', value: `${subscription.queue.length}`, inline: true },
+                    )
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
+                    .setColor('#ff006a');
+                
+                if (track.thumbnail) {
+                    addedEmbed.setThumbnail(track.thumbnail);
+                }
+                
+                await interaction.editReply({ embeds: [addedEmbed] });
             }
 
         } catch (error) {
             logger.error(error);
-            await interaction.editReply('❌ An error occurred while processing your request.');
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | An error occurred while processing your request.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            await interaction.editReply({ embeds: [embed] });
         }
     }
 };
