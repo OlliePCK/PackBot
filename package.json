@@ -21,7 +21,7 @@
     "@deepgram/sdk": "^4.11.2",
     "@discordjs/opus": "^0.10.0",
     "@discordjs/voice": "^0.18.0",
-    "axios": "^1.10.0",
+    "axios": "^1.13.2",
     "cors": "^2.8.5",
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",
