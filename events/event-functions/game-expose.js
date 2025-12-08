@@ -53,9 +53,11 @@ module.exports = client => {
         for (const newAct of newActivities) {
             const key = `${newP.userId}|${newAct.name}`;
             // If we're not already tracking this activity, start tracking
+            // IMPORTANT: Use Date.now() as our tracking start, NOT the activity's timestamps.start
+            // The activity start time could be from days ago if user was already playing before bot saw them
             if (!startTimes.has(key)) {
                 startTimes.set(key, {
-                    start: newAct.timestamps.start,
+                    start: Date.now(), // Use current time, not newAct.timestamps.start
                     guildId: newP.guild.id,
                     odUsername: newP.user?.tag || newP.user?.username || 'Unknown'
                 });

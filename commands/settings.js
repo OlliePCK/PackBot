@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const db = require('../database/db.js');
+const { guildCache } = require('../events/client/interactionCreate.js');
 
 const SETTERS = {
 	'set-live-role': {
@@ -40,6 +41,12 @@ const SETTERS = {
 		error: '🚫 That is not a text channel!',
 		format: ch => `<#${ch.id}>`,
 		fieldName: 'Channel'
+	},
+	'toggle-247': {
+		column: 'twentyFourSevenMode',
+		type: 'toggle',
+		title: '24/7 Mode toggled!',
+		fieldName: 'Status'
 	}
 };
 
@@ -77,6 +84,11 @@ module.exports = {
 			sc
 				.setName('info')
 				.setDescription('View current settings')
+		)
+		.addSubcommand(sc =>
+			sc
+				.setName('toggle-247')
+				.setDescription('Toggle 24/7 mode (bot stays in voice channel when alone)')
 		),
 
 	/**
@@ -93,6 +105,7 @@ module.exports = {
 				{ name: 'Live Channel', value: guildProfile.liveChannelID ? `<#${guildProfile.liveChannelID}>` : '`Not set`', inline: true },
 				{ name: 'General Chan', value: guildProfile.generalChannelID ? `<#${guildProfile.generalChannelID}>` : '`Not set`', inline: true },
 				{ name: 'YouTube Chan', value: guildProfile.youtubeChannelID ? `<#${guildProfile.youtubeChannelID}>` : '`Not set`', inline: true },
+				{ name: '24/7 Mode', value: guildProfile.twentyFourSevenMode ? '`Enabled`' : '`Disabled`', inline: true },
 			];
 			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.guild.name} Settings`)
@@ -105,6 +118,32 @@ module.exports = {
 
 		// ---- 2) One of the setter subcommands ----
 		const cfg = SETTERS[sub];
+		
+		// Handle toggle type (24/7 mode)
+		if (cfg.type === 'toggle') {
+			const currentValue = guildProfile[cfg.column] ? 1 : 0;
+			const newValue = currentValue ? 0 : 1;
+			
+			await db.pool.query(
+				`UPDATE Guilds SET ${cfg.column} = ? WHERE guildId = ?`,
+				[newValue, interaction.guildId]
+			);
+			
+			guildCache.delete(interaction.guildId);
+			guildProfile[cfg.column] = newValue;
+			
+			const embed = new EmbedBuilder()
+				.setTitle(`${interaction.client.emotes.success} | ${cfg.title}`)
+				.addFields(
+					{ name: cfg.fieldName, value: newValue ? '`Enabled`' : '`Disabled`', inline: true },
+					{ name: 'Set by', value: `${interaction.user}`, inline: true }
+				)
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
+				.setColor('#ff006a');
+			
+			return interaction.editReply({ embeds: [embed] });
+		}
+		
 		// pull the raw option (Role or Channel)
 		const target = cfg.type === 'role'
 			? interaction.options.getRole(cfg.option)
@@ -124,6 +163,9 @@ module.exports = {
 			`UPDATE Guilds SET ${cfg.column} = ? WHERE guildId = ?`,
 			[target.id, interaction.guildId]
 		);
+
+		// Clear the guild cache so the new setting takes effect immediately
+		guildCache.delete(interaction.guildId);
 
 		// sync your cache object in memory
 		guildProfile[cfg.column] = target.id;

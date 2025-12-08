@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const logger = require('../logger');
+const { detectSiteType, getSupportedSiteTypes } = require('../utils/siteParsers');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -21,8 +22,22 @@ module.exports = {
                         .setRequired(true)
                 )
                 .addStringOption(opt =>
+                    opt.setName('type')
+                        .setDescription('Site type (auto-detected if not specified)')
+                        .setRequired(false)
+                        .addChoices(
+                            { name: '🔄 Auto-detect', value: 'auto' },
+                            { name: '🛒 Shopify (stock, price, variants)', value: 'shopify' },
+                            { name: '🎟️ Ticketmaster / Live Nation', value: 'ticketmaster' },
+                            { name: '🎫 Ticketek (AU/NZ)', value: 'ticketek' },
+                            { name: '🎪 AXS Tickets', value: 'axs' },
+                            { name: '📅 Eventbrite', value: 'eventbrite' },
+                            { name: '📄 Generic (any website)', value: 'generic' }
+                        )
+                )
+                .addStringOption(opt =>
                     opt.setName('keywords')
-                        .setDescription('Keywords to trigger on (comma-separated). Leave empty for any change.')
+                        .setDescription('Keywords to trigger on (comma-separated). Leave empty for smart detection.')
                         .setRequired(false)
                 )
                 .addIntegerOption(opt =>
@@ -115,30 +130,43 @@ module.exports = {
         if (sub === 'help') {
             const embed = new EmbedBuilder()
                 .setTitle('📖 Page Monitor Guide')
-                .setDescription('Monitor any webpage for changes and get instant Discord alerts when something updates — perfect for drops, restocks, ticket sales, and more!')
+                .setDescription('Monitor any webpage for changes and get instant Discord alerts — perfect for drops, restocks, ticket sales, and more!')
                 .addFields(
                     {
                         name: '🚀 Quick Start',
-                        value: '```/monitor add name:Nike Drop url:https://nike.com/launch```\nThis creates a monitor that checks every 60 seconds and alerts on ANY change.',
+                        value: '```/monitor add name:Nike Drop url:https://nike.com/launch```\nThe bot auto-detects the site type and uses smart monitoring!',
                     },
                     {
-                        name: '🔑 Keyword Filtering',
-                        value: '```/monitor add name:Tickets url:https://site.com keywords:available,buy now```\nOnly alerts when "available" OR "buy now" appears on the page. Great for filtering out noise!',
+                        name: '🎯 Supported Site Types',
+                        value: [
+                            '🛒 **Shopify** — Tracks stock, prices, variants, restocks',
+                            '🎟️ **Ticketmaster** — On-sale, presale, sold out detection',
+                            '🎫 **Ticketek** — Australian/NZ ticketing',
+                            '🎪 **AXS** — Concert/event tickets',
+                            '📅 **Eventbrite** — Event registration',
+                            '📄 **Generic** — Any webpage (keyword monitoring)',
+                        ].join('\n'),
                     },
                     {
-                        name: '⚡ Faster Checks',
-                        value: '```/monitor add name:Supreme url:https://supremenewyork.com interval:30```\nCheck every 30 seconds (minimum). Default is 60s, max is 3600s (1 hour).',
+                        name: '🛒 Shopify Examples',
+                        value: [
+                            '```/monitor add name:Supreme Drop url:https://supremenewyork.com/products/jacket```',
+                            'Alerts on: Stock changes, price drops, new variants, sold out/back in stock',
+                        ].join('\n'),
                     },
                     {
-                        name: '🔔 Role Pings',
-                        value: '```/monitor add name:PS5 Restock url:https://store.com ping_role:@Drops```\nPing a role when changes are detected so no one misses it.',
+                        name: '🎟️ Ticket Examples',
+                        value: [
+                            '```/monitor add name:Concert Tickets url:https://ticketmaster.com/event/xxx type:ticketmaster```',
+                            'Alerts on: Tickets available, presale live, sold out',
+                        ].join('\n'),
                     },
                     {
                         name: '📋 Management Commands',
                         value: [
                             '`/monitor list` — View all monitors',
-                            '`/monitor info <id>` — Detailed monitor stats',
-                            '`/monitor test <id>` — Test fetch a page now',
+                            '`/monitor info <id>` — Detailed stats & detected type',
+                            '`/monitor test <id>` — Test fetch with parsed data',
                             '`/monitor pause <id>` — Pause monitoring',
                             '`/monitor resume <id>` — Resume monitoring',
                             '`/monitor remove <id>` — Delete a monitor',
@@ -147,20 +175,11 @@ module.exports = {
                     {
                         name: '💡 Tips',
                         value: [
-                            '• Use keywords to avoid spam from dynamic content',
-                            '• Monitor password pages — alert when they go live',
-                            '• Shorter intervals = faster alerts but more load',
-                            '• Monitors auto-pause after 5 consecutive errors',
+                            '• Auto-detect usually works — only set type if needed',
+                            '• Shopify monitors track per-variant stock levels',
+                            '• Ticket monitors detect presale & general sale',
+                            '• Use keywords for generic sites to filter noise',
                             '• Max 10 monitors per server',
-                        ].join('\n'),
-                    },
-                    {
-                        name: '📝 Example Use Cases',
-                        value: [
-                            '**Sneaker drops:** Monitor Nike SNKRS, Shopify stores',
-                            '**Tickets:** Concert/event pages for "on sale" keywords',
-                            '**Restocks:** PS5, GPUs, limited items',
-                            '**Password pages:** Know when a site goes live',
                         ].join('\n'),
                     }
                 )
@@ -176,14 +195,16 @@ module.exports = {
         if (sub === 'add') {
             const name = interaction.options.getString('name');
             const url = interaction.options.getString('url');
+            const monitorType = interaction.options.getString('type') || 'auto';
             const keywords = interaction.options.getString('keywords');
             const interval = interaction.options.getInteger('interval') || 60;
             const pingRole = interaction.options.getRole('ping_role');
             const channel = interaction.options.getChannel('channel') || interaction.channel;
 
             // Validate URL
+            let parsedUrl;
             try {
-                new URL(url);
+                parsedUrl = new URL(url);
             } catch {
                 const errorEmbed = new EmbedBuilder()
                     .setDescription('❌ Invalid URL format.')
@@ -202,6 +223,17 @@ module.exports = {
                 return interaction.editReply({ embeds: [errorEmbed] });
             }
 
+            // Auto-detect site type for display
+            const detectedType = monitorType === 'auto' ? detectSiteType(url) : monitorType;
+            const typeEmoji = {
+                shopify: '🛒',
+                ticketmaster: '🎟️',
+                ticketek: '🎫',
+                axs: '🎪',
+                eventbrite: '📅',
+                generic: '📄',
+            }[detectedType] || '📄';
+
             try {
                 const monitor = await pageMonitor.addMonitor({
                     guildId: interaction.guild.id,
@@ -212,6 +244,7 @@ module.exports = {
                     keywords,
                     checkInterval: interval,
                     roleToMention: pingRole?.id || null,
+                    monitorType,
                 });
 
                 const embed = new EmbedBuilder()
@@ -219,12 +252,27 @@ module.exports = {
                     .setDescription(`Now monitoring **${name}**`)
                     .addFields(
                         { name: 'ID', value: `\`${monitor.id}\``, inline: true },
+                        { name: 'Type', value: `${typeEmoji} ${detectedType}`, inline: true },
                         { name: 'Interval', value: `${interval}s`, inline: true },
                         { name: 'Alert Channel', value: `<#${channel.id}>`, inline: true },
                         { name: 'URL', value: url.length > 1024 ? url.slice(0, 1021) + '...' : url }
                     )
                     .setColor('#00ff00')
                     .setFooter({ text: 'The Pack • Page Monitor', iconURL: interaction.client.logo });
+
+                // Add smart detection info based on type
+                const smartFeatures = {
+                    shopify: '📊 Tracking: Stock levels, price changes, variant availability',
+                    ticketmaster: '🎫 Tracking: On-sale status, presales, availability',
+                    ticketek: '🎫 Tracking: Ticket availability, presales',
+                    axs: '🎫 Tracking: Ticket availability, presales',
+                    eventbrite: '📅 Tracking: Registration status, availability',
+                    generic: '📄 Tracking: Content changes' + (keywords ? ', keyword matches' : ''),
+                }[detectedType];
+
+                if (smartFeatures) {
+                    embed.addFields({ name: 'Smart Detection', value: smartFeatures, inline: false });
+                }
 
                 if (keywords) {
                     embed.addFields({ name: 'Keywords', value: keywords, inline: false });
@@ -237,7 +285,8 @@ module.exports = {
                 logger.info(`Monitor created: ${name}`, { 
                     guild: interaction.guild.name, 
                     user: interaction.user.tag,
-                    url 
+                    url,
+                    type: detectedType,
                 });
 
                 return interaction.editReply({ embeds: [embed] });
@@ -297,13 +346,24 @@ module.exports = {
                 return interaction.editReply({ embeds: [infoEmbed] });
             }
 
+            const typeEmojis = {
+                shopify: '🛒',
+                ticketmaster: '🎟️',
+                ticketek: '🎫',
+                axs: '🎪',
+                eventbrite: '📅',
+                generic: '📄',
+                auto: '🔄',
+            };
+
             const monitorList = monitors.map(m => {
                 const status = m.isActive ? '🟢' : '🔴';
+                const typeEmoji = typeEmojis[m.detectedType || m.monitorType] || '📄';
                 const lastCheck = m.lastChecked 
                     ? `<t:${Math.floor(new Date(m.lastChecked).getTime() / 1000)}:R>`
                     : 'Never';
                 
-                let line = `${status} **${m.name}** (ID: \`${m.id}\`)`;
+                let line = `${status} ${typeEmoji} **${m.name}** (ID: \`${m.id}\`)`;
                 line += `\n   └ Every ${m.checkInterval}s • Last: ${lastCheck}`;
                 
                 if (m.errorCount > 0) {
@@ -400,44 +460,86 @@ module.exports = {
             }
 
             try {
-                const response = await fetch(monitor.url, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                    },
-                });
+                // Use the smart test method
+                const testResult = await pageMonitor.testMonitor(id, interaction.guild.id);
 
-                const content = await response.text();
-                const titleMatch = content.match(/<title>([^<]*)<\/title>/i);
-                const pageTitle = titleMatch ? titleMatch[1].trim() : 'No title found';
-
-                // Check for keywords if set
-                let keywordStatus = 'N/A';
-                if (monitor.keywords) {
-                    const keywords = monitor.keywords.split(',').map(k => k.trim().toLowerCase());
-                    const lowerContent = content.toLowerCase();
-                    const found = keywords.filter(k => lowerContent.includes(k));
-                    
-                    if (found.length > 0) {
-                        keywordStatus = `✅ Found: ${found.join(', ')}`;
-                    } else {
-                        keywordStatus = `❌ Not found: ${keywords.join(', ')}`;
-                    }
+                if (!testResult.success) {
+                    throw new Error(testResult.error);
                 }
+
+                const data = testResult.data;
+                const typeEmoji = {
+                    shopify: '🛒',
+                    ticketmaster: '🎟️',
+                    ticketek: '🎫',
+                    axs: '🎪',
+                    eventbrite: '📅',
+                    generic: '📄',
+                }[data.type] || '📄';
 
                 const embed = new EmbedBuilder()
                     .setTitle('🧪 Monitor Test')
                     .setDescription(`**${monitor.name}**`)
                     .addFields(
-                        { name: 'Status', value: `${response.status} ${response.statusText}`, inline: true },
-                        { name: 'Content Length', value: `${content.length.toLocaleString()} bytes`, inline: true },
-                        { name: 'Page Title', value: pageTitle.slice(0, 256) || 'None', inline: false }
+                        { name: 'Detected Type', value: `${typeEmoji} ${data.type}`, inline: true },
+                        { name: 'Parse Status', value: data.success ? '✅ Success' : '❌ Failed', inline: true }
                     )
                     .setColor('#00ff00')
                     .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
-                if (monitor.keywords) {
-                    embed.addFields({ name: 'Keywords', value: keywordStatus, inline: false });
+                // Type-specific fields
+                if (data.type === 'shopify') {
+                    embed.addFields(
+                        { name: 'Product', value: data.title || 'Unknown', inline: false },
+                        { name: 'Total Stock', value: (data.totalStock ?? 'N/A').toString(), inline: true },
+                        { name: 'Available', value: data.available ? '✅ Yes' : '❌ No', inline: true },
+                        { name: 'Variants', value: (data.variants?.length || 0).toString(), inline: true }
+                    );
+                    if (data.priceRange) {
+                        const priceStr = data.priceRange.min === data.priceRange.max 
+                            ? `$${data.priceRange.min}`
+                            : `$${data.priceRange.min} - $${data.priceRange.max}`;
+                        embed.addFields({ name: 'Price', value: priceStr, inline: true });
+                    }
+                } else if (['ticketmaster', 'ticketek', 'axs', 'eventbrite'].includes(data.type)) {
+                    embed.addFields(
+                        { name: 'Event', value: data.title || 'Unknown', inline: false }
+                    );
+                    if (data.venue) {
+                        embed.addFields({ name: 'Venue', value: data.venue, inline: true });
+                    }
+                    if (data.date) {
+                        embed.addFields({ name: 'Date', value: data.date, inline: true });
+                    }
+                    // Status indicators
+                    const statusParts = [];
+                    if (data.status?.onSale) statusParts.push('✅ On Sale');
+                    if (data.status?.presale) statusParts.push('⭐ Presale');
+                    if (data.status?.soldOut) statusParts.push('❌ Sold Out');
+                    if (statusParts.length > 0) {
+                        embed.addFields({ name: 'Status', value: statusParts.join(' • '), inline: false });
+                    }
+                } else {
+                    // Generic
+                    embed.addFields(
+                        { name: 'Page Title', value: data.title?.slice(0, 256) || 'Unknown', inline: false },
+                        { name: 'Available', value: data.available ? '✅ Yes' : '❌ No', inline: true }
+                    );
+                    if (data.prices?.length > 0) {
+                        embed.addFields({ name: 'Prices Found', value: data.prices.slice(0, 3).join(', '), inline: true });
+                    }
+                }
+
+                // Check for keywords if set
+                if (monitor.keywords && data.keywordMatches) {
+                    const found = Object.entries(data.keywordMatches).filter(([, v]) => v).map(([k]) => k);
+                    const notFound = Object.entries(data.keywordMatches).filter(([, v]) => !v).map(([k]) => k);
+                    
+                    let keywordStatus = '';
+                    if (found.length > 0) keywordStatus += `✅ Found: ${found.join(', ')}\n`;
+                    if (notFound.length > 0) keywordStatus += `❌ Not found: ${notFound.join(', ')}`;
+                    
+                    embed.addFields({ name: 'Keywords', value: keywordStatus.trim() || 'None checked', inline: false });
                 }
 
                 return interaction.editReply({ embeds: [embed] });
@@ -471,6 +573,17 @@ module.exports = {
             }
 
             const status = monitor.isActive ? '🟢 Active' : '🔴 Paused';
+            const typeEmoji = {
+                shopify: '🛒',
+                ticketmaster: '🎟️',
+                ticketek: '🎫',
+                axs: '🎪',
+                eventbrite: '📅',
+                generic: '📄',
+                auto: '🔄',
+            }[monitor.monitorType || monitor.detectedType] || '📄';
+            const monitorTypeDisplay = monitor.detectedType || monitor.monitorType || 'auto';
+            
             const lastChecked = monitor.lastChecked 
                 ? `<t:${Math.floor(new Date(monitor.lastChecked).getTime() / 1000)}:F>`
                 : 'Never';
@@ -484,11 +597,12 @@ module.exports = {
                 .addFields(
                     { name: 'ID', value: `\`${monitor.id}\``, inline: true },
                     { name: 'Status', value: status, inline: true },
+                    { name: 'Type', value: `${typeEmoji} ${monitorTypeDisplay}`, inline: true },
                     { name: 'Interval', value: `${monitor.checkInterval}s`, inline: true },
-                    { name: 'URL', value: monitor.url.length > 1024 ? monitor.url.slice(0, 1021) + '...' : monitor.url },
                     { name: 'Alert Channel', value: `<#${monitor.channelId}>`, inline: true },
-                    { name: 'Keywords', value: monitor.keywords || 'Any change', inline: true },
                     { name: 'Ping Role', value: monitor.roleToMention ? `<@&${monitor.roleToMention}>` : 'None', inline: true },
+                    { name: 'URL', value: monitor.url.length > 1024 ? monitor.url.slice(0, 1021) + '...' : monitor.url },
+                    { name: 'Keywords', value: monitor.keywords || 'Smart detection', inline: true },
                     { name: 'Last Checked', value: lastChecked, inline: true },
                     { name: 'Last Changed', value: lastChanged, inline: true },
                     { name: 'Created', value: created, inline: true }

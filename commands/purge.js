@@ -33,8 +33,9 @@ module.exports = {
 				return interaction.editReply({ embeds: [embed] });
 			}
 
-			const deleted = await interaction.channel.bulkDelete(amount + 1, true);
-			const count = deleted.size - 1;
+			// Delete the requested amount of messages (no +1 since slash command reply is ephemeral)
+			const deleted = await interaction.channel.bulkDelete(amount, true);
+			const count = deleted.size;
 			const embed = new EmbedBuilder()
 				.setDescription(`🗑️ Deleted **${count}** message${count !== 1 ? 's' : ''}.`)
 				.setColor('#00ff00')

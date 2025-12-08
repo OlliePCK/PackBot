@@ -36,12 +36,12 @@ module.exports = {
         }
 
         try {
-            // Create new connection with selfDeaf: false to enable voice commands
+            // Create new connection - default to deafened, will undeafen if voice commands enabled
             const connection = joinVoiceChannel({
                 channelId: voiceChannel.id,
                 guildId: interaction.guildId,
                 adapterCreator: interaction.guild.voiceAdapterCreator,
-                selfDeaf: false, // Important for voice commands!
+                selfDeaf: true, // Default deafened, undeafens when voice commands enabled
             });
 
             // Wait for connection to be ready

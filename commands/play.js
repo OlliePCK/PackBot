@@ -4,6 +4,7 @@ const Subscription = require('../music/Subscription');
 const QueryResolver = require('../music/QueryResolver');
 const logger = require('../logger');
 const { isGuildWhitelisted } = require('./voice');
+const db = require('../database/db');
 
 // ============================================
 // 🎵 Music Taste Correction System™
@@ -29,12 +30,14 @@ function getCorrectedQuery(userId, originalQuery) {
 }
 
 function setupSubscriptionEvents(subscription, client, textChannel) {
+    // Always update the text channel to the most recent one where commands are used
+    subscription._textChannel = textChannel;
+    
     // Only set up events once
     if (subscription._eventsSetup) return;
     subscription._eventsSetup = true;
-    subscription._textChannel = textChannel;
 
-    subscription.on('playSong', (track) => {
+    subscription.on('playSong', async (track) => {
         try {
             const embed = new EmbedBuilder()
                 .setTitle(`${client.emotes.play} | Now playing: ${track.title}`)
@@ -53,6 +56,52 @@ function setupSubscriptionEvents(subscription, client, textChannel) {
             }
             
             subscription._textChannel.send({ embeds: [embed] });
+            
+            // Log to listening history
+            try {
+                // requestedBy can be a User object, a string mention, or a string like "username"
+                let userId = null;
+                let username = 'Unknown';
+                
+                if (track.requestedBy) {
+                    if (typeof track.requestedBy === 'object' && track.requestedBy.id) {
+                        // It's a User object
+                        userId = track.requestedBy.id;
+                        username = track.requestedBy.username || track.requestedBy.displayName || 'Unknown';
+                    } else if (typeof track.requestedBy === 'string') {
+                        // Try to extract from mention format <@123456789>
+                        const userIdMatch = track.requestedBy.match(/<@!?(\d+)>/);
+                        if (userIdMatch) {
+                            userId = userIdMatch[1];
+                            const guild = client.guilds.cache.get(subscription.guildId);
+                            const member = guild?.members.cache.get(userId);
+                            username = member?.displayName || member?.user?.username || 'Unknown';
+                        }
+                    }
+                }
+                
+                if (userId) {
+                    await db.pool.query(
+                        `INSERT INTO ListeningHistory (guildId, odUserId, odUsername, trackTitle, trackArtist, trackUrl, trackThumbnail, durationSeconds)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                        [
+                            subscription.guildId,
+                            userId,
+                            username,
+                            track.title?.substring(0, 255) || 'Unknown',
+                            track.artist?.substring(0, 255) || null,
+                            track.url || null,
+                            track.thumbnail || null,
+                            Math.floor(track.duration || 0)
+                        ]
+                    );
+                    logger.debug('Logged listening history', { userId, username, track: track.title });
+                } else {
+                    logger.warn('Could not extract userId from requestedBy', { requestedBy: track.requestedBy, type: typeof track.requestedBy });
+                }
+            } catch (dbError) {
+                logger.error('Failed to log listening history: ' + (dbError.stack || dbError));
+            }
         } catch (error) {
             logger.error('playSong event error: ' + (error.stack || error));
         }
@@ -181,7 +230,7 @@ module.exports = {
                 channelId: voiceChannel.id,
                 guildId: interaction.guildId,
                 adapterCreator: interaction.guild.voiceAdapterCreator,
-                selfDeaf: false, // Required for voice commands
+                selfDeaf: true, // Default to deafened, will undeafen if voice commands enabled
             });
             subscription = new Subscription(connection);
             interaction.client.subscriptions.set(interaction.guildId, subscription);

@@ -3,8 +3,12 @@ const db = require('../../database/db.js');
 const { MessageFlags } = require('discord.js');
 const logger = require('../../logger').child('commands');
 
-// Simple in‑memory cache (you can swap this out for Redis later)
-const guildCache = new Map();
+// Guild cache with TTL (5 minutes)
+const CACHE_TTL = 5 * 60 * 1000;
+const guildCache = new Map(); // { guildId: { data, timestamp } }
+
+// Export cache for clearing from other modules (e.g., settings.js)
+module.exports.guildCache = guildCache;
 
 module.exports = {
 	name: 'interactionCreate',
@@ -12,6 +16,19 @@ module.exports = {
 	 * @param {import('discord.js').Interaction} interaction
 	 */
 	async execute(interaction) {
+		// Handle autocomplete interactions
+		if (interaction.isAutocomplete()) {
+			const command = interaction.client.commands.get(interaction.commandName);
+			if (command && typeof command.autocomplete === 'function') {
+				try {
+					await command.autocomplete(interaction);
+				} catch (err) {
+					logger.error('Autocomplete error', { command: interaction.commandName, error: err.message });
+				}
+			}
+			return;
+		}
+		
 		if (!interaction.isCommand()) return;
 
 		const command = interaction.client.commands.get(interaction.commandName);
@@ -23,8 +40,12 @@ module.exports = {
 				flags: command.isEphemeral ? MessageFlags.Ephemeral : undefined 
 			});
 
-			// Load or upsert + fetch the guild profile
-			let guildProfile = guildCache.get(interaction.guildId);
+			// Load or upsert + fetch the guild profile (with TTL check)
+			const cached = guildCache.get(interaction.guildId);
+			let guildProfile = null;
+			if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+				guildProfile = cached.data;
+			}
 			if (!guildProfile) {
 				await db.pool.query(
 					`INSERT INTO Guilds (guildId)
@@ -37,7 +58,7 @@ module.exports = {
 					[interaction.guildId]
 				);
 				guildProfile = rows[0];
-				guildCache.set(interaction.guildId, guildProfile);
+				guildCache.set(interaction.guildId, { data: guildProfile, timestamp: Date.now() });
 			}
 
 			// Execute the command, passing in the profile

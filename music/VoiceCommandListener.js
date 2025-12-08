@@ -29,7 +29,12 @@ const WAKE_PHRASES = [
     'pakbot', 'pak bot', 'back bot', 'hack bot', 'hackbot', 'pat bot', 'packed butt',
     'pack bud', 'pack about', 'pact bot', 'pack body', 'packbox', 'pack box',
     'pack bob', 'pac bot', 'pacbot', 'packed bots', 'pack bots', 'hackbox', 'hack box',
-    'back box', 'backbot', 'black bot', 'black box'
+    'back box', 'backbot', 'black bot', 'black box', 'pack butt', 'packbutt', 'pack but'
+];
+
+// False positive phrases that sound like wake phrase but aren't
+const FALSE_POSITIVES = [
+    'i bought', 'i brought', 'i bot', 'i thought'
 ];
 
 // Common speech-to-text corrections for artist/song names
@@ -69,15 +74,64 @@ function correctQuery(query) {
     return corrected;
 }
 
+// Convert word numbers to digits (for volume commands)
+const WORD_NUMBERS = {
+    'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
+    'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20,
+    'thirty': 30, 'forty': 40, 'fifty': 50, 'sixty': 60, 'seventy': 70,
+    'eighty': 80, 'ninety': 90, 'hundred': 100, 'one hundred': 100, 'two hundred': 200
+};
+
+// Parse volume from text (handles "50", "fifty", "one fifty", "one hundred fifty")
+function parseVolumeFromText(text) {
+    // First try direct number
+    const directNum = parseInt(text, 10);
+    if (!isNaN(directNum)) return directNum;
+    
+    // Try word-to-number conversion
+    const lower = text.toLowerCase().trim();
+    
+    // Handle compound numbers like "one fifty" = 150, "one hundred" = 100
+    const words = lower.split(/\s+/);
+    let total = 0;
+    
+    for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        const num = WORD_NUMBERS[word];
+        
+        if (num !== undefined) {
+            // If it's "hundred", multiply previous number or use 100
+            if (word === 'hundred') {
+                if (total > 0) {
+                    total *= 100;
+                } else {
+                    total = 100;
+                }
+            } else if (num >= 100) {
+                total += num;
+            } else if (total > 0 && total < 10 && num < 100) {
+                // Handle "one fifty" = 150 (1 * 100 + 50)
+                total = total * 100 + num;
+            } else {
+                total += num;
+            }
+        }
+    }
+    
+    return total > 0 ? total : null;
+}
+
 // Command patterns (regex) - made flexible for speech recognition variations
 // Note: Patterns should not require $ at end since punctuation may be present
 const COMMAND_PATTERNS = {
     play: /^(?:play|played|playing|plate)\s+(.+?)(?:\.|$)/i,
-    skip: /^(?:skip|skipped|next|necks?)\s*$/i,
+    skip: /^(?:skip|skipped|next|necks?|escape)\s*$/i,
     stop: /^(?:stop|stopped)\s*$/i,
     pause: /^(?:pause|paused|paws)\s*$/i,
     resume: /^(?:resume|resumed|unpause|unpaused)\s*$/i,
-    volume: /^(?:volume|volumes?)\s+(\d+)\s*$/i,
+    volume: /^(?:volume|volumes?)\s+(.+?)\s*$/i,  // Accept any text, parse later
     previous: /^(?:previous|back|go back)\s*$/i,
     shuffle: /^(?:shuffle|shuffled)\s*$/i,
     queue: /^(?:queue|que|cue)\s*$/i,
@@ -349,14 +403,25 @@ class VoiceCommandListener extends EventEmitter {
         
         if (lowerText.length < 3) return;
         
+        // Check for false positives first
+        for (const fp of FALSE_POSITIVES) {
+            if (lowerText.includes(fp)) {
+                logger.debug(`Ignoring false positive: "${fp}" in "${lowerText}"`);
+                return;
+            }
+        }
+        
         // Check for wake phrase - find the LAST occurrence to get the most recent command
         let commandText = null;
         let bestWakeIndex = -1;
+        let bestWakeLength = 0;
         
         for (const wake of WAKE_PHRASES) {
             const wakeIndex = lowerText.lastIndexOf(wake);
-            if (wakeIndex > bestWakeIndex) {
+            // Prefer longer wake phrase matches at same position, or later matches
+            if (wakeIndex >= 0 && (wakeIndex > bestWakeIndex || (wakeIndex === bestWakeIndex && wake.length > bestWakeLength))) {
                 bestWakeIndex = wakeIndex;
+                bestWakeLength = wake.length;
                 commandText = lowerText.substring(wakeIndex + wake.length).trim();
             }
         }
@@ -573,8 +638,8 @@ class VoiceCommandListener extends EventEmitter {
                 break;
             
             case 'volume': {
-                const vol = parseInt(match[1], 10);
-                if (vol >= 0 && vol <= 200) {
+                const vol = parseVolumeFromText(match[1]);
+                if (vol !== null && vol >= 0 && vol <= 200) {
                     sub.setVolume(vol);
                     this.sendFeedback({
                         title: `🔊 | Volume`,
@@ -582,10 +647,16 @@ class VoiceCommandListener extends EventEmitter {
                         user: user,
                         color: '#ff006a'
                     });
-                } else {
+                } else if (vol !== null) {
                     this.sendFeedback({
                         title: `${emotes.error || '❌'} | Error`,
                         description: 'Volume must be between 0 and 200',
+                        color: '#ff0000'
+                    });
+                } else {
+                    this.sendFeedback({
+                        title: `${emotes.error || '❌'} | Error`,
+                        description: `Could not understand volume: "${match[1]}"`,
                         color: '#ff0000'
                     });
                 }

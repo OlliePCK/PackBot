@@ -28,4 +28,8 @@ ENV LOG_MAX_FILES=5
 
 # Voice commands use Deepgram API (set DEEPGRAM_API_KEY in environment)
 
+# Web API port
+ENV API_PORT=3001
+EXPOSE 3001
+
 CMD ["node", "index.js"]

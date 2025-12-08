@@ -120,4 +120,14 @@ client.on('error', (error) => {
 	logger.error('Discord client error', { error: error?.message || String(error) });
 });
 
+// Start Web API server after client is ready
+client.once('ready', () => {
+	const apiPort = parseInt(process.env.API_PORT) || 3000;
+	if (process.env.ENABLE_API !== 'false') {
+		const WebAPI = require('./api/WebAPI');
+		client.api = new WebAPI(client);
+		client.api.start(apiPort);
+	}
+});
+
 client.login(process.env.TOKEN).then(() => logger.info('Client logged in successfully')).catch(err => logger.error('Login failed', { error: err.message }));

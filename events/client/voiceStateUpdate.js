@@ -1,5 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const logger = require('../../logger').child('music');
+const db = require('../../database/db.js');
 
 module.exports = {
     name: 'voiceStateUpdate',
@@ -14,6 +15,24 @@ module.exports = {
 
         const members = oldState.channel.members.filter(m => !m.user.bot);
         if (members.size === 0) {
+            // Check if 24/7 mode is enabled for this guild
+            try {
+                const [rows] = await db.pool.query(
+                    'SELECT twentyFourSevenMode FROM Guilds WHERE guildId = ?',
+                    [oldState.guild.id]
+                );
+                
+                if (rows.length > 0 && rows[0].twentyFourSevenMode) {
+                    logger.info('No listeners but 24/7 mode enabled, staying in channel', { 
+                        guild: oldState.guild.id, 
+                        channel: oldState.channel.name 
+                    });
+                    return; // Don't leave if 24/7 mode is on
+                }
+            } catch (err) {
+                logger.error('Failed to check 24/7 mode', { error: err.message });
+            }
+            
             logger.info('No listeners remaining, leaving channel', { guild: oldState.guild.id, channel: oldState.channel.name });
             
             const embed = new EmbedBuilder()
@@ -23,7 +42,8 @@ module.exports = {
                 .setColor('#ff006a');
 
             try {
-                const textChannel = oldState.guild.channels.cache.find(c => c.type === 0 && c.permissionsFor(client.user).has('SendMessages'));
+                // Use the channel where music commands were used, not just any text channel
+                const textChannel = subscription._textChannel;
                 if (textChannel) {
                     await textChannel.send({ embeds: [embed] });
                 }

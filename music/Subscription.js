@@ -3,6 +3,7 @@ const { spawn, execFile } = require('child_process');
 const { EventEmitter } = require('events');
 const logger = require('../logger').child('music');
 const fs = require('fs');
+const QueryResolver = require('./QueryResolver');
 
 // Get FFmpeg path - prefer system ffmpeg in Docker, fallback to ffmpeg-static
 function getFFmpegPath() {
@@ -139,8 +140,6 @@ class Subscription extends EventEmitter {
         this._prefetching.add(prefetchKey);
         
         try {
-            const QueryResolver = require('./QueryResolver');
-            
             // For Spotify tracks without URL, resolve via search first
             if (!track.url && track.searchQuery) {
                 const resolved = await QueryResolver.handleSearch(track.searchQuery, track.requestedBy);
@@ -257,7 +256,6 @@ class Subscription extends EventEmitter {
         this.currentTrack = targetTrack;
         
         // Resolve if needed
-        const QueryResolver = require('./QueryResolver');
         if (!targetTrack.url && targetTrack.searchQuery) {
             const resolved = await QueryResolver.handleSearch(targetTrack.searchQuery, targetTrack.requestedBy);
             if (resolved && resolved.length > 0) {
@@ -296,7 +294,6 @@ class Subscription extends EventEmitter {
         // Get direct URL if we don't have one
         let streamUrl = directUrl;
         if (!streamUrl) {
-            const QueryResolver = require('./QueryResolver');
             streamUrl = await QueryResolver.getDirectStreamUrl(track.url);
         }
         
@@ -420,7 +417,6 @@ class Subscription extends EventEmitter {
                 // Handle autoplay - search for related songs
                 if (this.autoplay && this.currentTrack) {
                     try {
-                        const QueryResolver = require('./QueryResolver');
                         const searchQuery = `${this.currentTrack.artist || ''} ${this.currentTrack.title || ''} related`.trim();
                         logger.info(`Autoplay: searching for "${searchQuery}"`);
                         const related = await QueryResolver.handleSearch(searchQuery, this.currentTrack.requestedBy);
@@ -450,8 +446,6 @@ class Subscription extends EventEmitter {
         }
 
         try {
-            const QueryResolver = require('./QueryResolver');
-            
             // Resolve URL if missing (Lazy Track from Spotify)
             if (!track.url && track.searchQuery) {
                 const resolved = await QueryResolver.handleSearch(track.searchQuery, track.requestedBy);
@@ -599,17 +593,26 @@ class Subscription extends EventEmitter {
                 child.stderr.on('data', (data) => {
                     const msg = data.toString();
                     stderrData += msg;
-                    // Only log actual errors, not progress info
-                    if (msg.includes('error') || msg.includes('Error') || msg.includes('failed')) {
+                    // Only log actual errors, not expected muxer errors from skip/seek
+                    const isExpectedError = msg.includes('Error submitting a packet to the muxer') ||
+                                           msg.includes('Error muxing a packet') ||
+                                           msg.includes('Error writing trailer') ||
+                                           msg.includes('Error closing file');
+                    if ((msg.includes('error') || msg.includes('Error') || msg.includes('failed')) && !isExpectedError) {
                         logger.warn(`FFmpeg stderr: ${msg.trim()}`);
                     }
                 });
                 
                 child.on('close', (code, signal) => {
                     if (signal) {
-                        logger.info(`FFmpeg killed by signal ${signal}`);
+                        logger.debug(`FFmpeg killed by signal ${signal}`);
                     } else if (code !== 0 && code !== null) {
-                        logger.error(`FFmpeg exited with code ${code}: ${stderrData}`);
+                        // Exit code 4294967274 (-22) is expected when stream is interrupted (skip/seek)
+                        const isExpectedExit = code === 4294967274 || code === -22 || 
+                                              stderrData.includes('Error submitting a packet to the muxer');
+                        if (!isExpectedExit) {
+                            logger.error(`FFmpeg exited with code ${code}: ${stderrData}`);
+                        }
                     } else {
                         logger.debug(`FFmpeg closed normally`);
                     }
@@ -621,7 +624,8 @@ class Subscription extends EventEmitter {
                 
                 // Handle stdout errors (broken pipe when skipping)
                 child.stdout.on('error', (err) => {
-                    if (err.code !== 'EPIPE') {
+                    // EPIPE and 'Premature close' are expected when skipping/seeking
+                    if (err.code !== 'EPIPE' && err.message !== 'Premature close') {
                         logger.error(`FFmpeg stdout error: ${err.message}`);
                     }
                 });
@@ -745,6 +749,21 @@ class Subscription extends EventEmitter {
             }
             
             logger.info('Voice commands enabled for subscription');
+            
+            // Undeafen so the bot can hear voice commands
+            try {
+                const { getVoiceConnection } = require('@discordjs/voice');
+                const connection = this.voiceConnection;
+                if (connection && connection.joinConfig) {
+                    connection.rejoin({
+                        ...connection.joinConfig,
+                        selfDeaf: false
+                    });
+                }
+            } catch (e) {
+                logger.debug(`Could not update deaf state: ${e.message}`);
+            }
+            
             return true;
         } catch (e) {
             logger.error(`Failed to enable voice commands: ${e.message}`);
@@ -761,6 +780,19 @@ class Subscription extends EventEmitter {
             this.voiceCommandListener.stop();
             this.voiceCommandListener = null;
             logger.info('Voice commands disabled for subscription');
+            
+            // Deafen the bot since it no longer needs to listen
+            try {
+                const connection = this.voiceConnection;
+                if (connection && connection.joinConfig) {
+                    connection.rejoin({
+                        ...connection.joinConfig,
+                        selfDeaf: true
+                    });
+                }
+            } catch (e) {
+                logger.debug(`Could not update deaf state: ${e.message}`);
+            }
         }
     }
     
