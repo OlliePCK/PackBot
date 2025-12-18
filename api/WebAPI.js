@@ -1165,6 +1165,58 @@ class WebAPI {
                 res.status(400).json({ error: error.message || 'No previous track available' });
             }
         });
+
+        /**
+         * POST /api/player/:guildId/seek
+         * Seek to a specific time in the current track
+         */
+        router.post('/player/:guildId/seek', requireAuth, async (req, res) => {
+            const { guildId } = req.params;
+            const { time } = req.body;
+            const user = req.session.user;
+            
+            if (!hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+            
+            const subscription = this.client.subscriptions?.get(guildId);
+            if (!subscription) {
+                return res.status(400).json({ error: 'No active music session' });
+            }
+            
+            if (!subscription.currentTrack) {
+                return res.status(400).json({ error: 'Nothing is playing' });
+            }
+
+            const seekTime = parseInt(time);
+            if (isNaN(seekTime) || seekTime < 0) {
+                return res.status(400).json({ error: 'Invalid seek time' });
+            }
+
+            if (subscription.currentTrack.duration && seekTime > subscription.currentTrack.duration) {
+                return res.status(400).json({ error: 'Seek time exceeds track duration' });
+            }
+            
+            try {
+                await subscription.seek(seekTime);
+                
+                logger.info('WEB_PLAYER_SEEK', {
+                    userId: user.id,
+                    username: user.username,
+                    guildId,
+                    time: seekTime,
+                    track: subscription.currentTrack.title
+                });
+                
+                // Send updated state
+                this.sendNowPlayingUpdate(guildId);
+                
+                res.json({ success: true, time: seekTime });
+            } catch (error) {
+                logger.error('Seek API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to seek' });
+            }
+        });
         
         /**
          * POST /api/player/:guildId/stop

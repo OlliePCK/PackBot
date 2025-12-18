@@ -3,11 +3,11 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('volume')
-        .setDescription('Set the volume level of the audio player (0–100).')
+        .setDescription('Set the volume level of the audio player (0–200).')
         .addIntegerOption(opt =>
             opt
                 .setName('volume')
-                .setDescription('Volume level from 0 to 100')
+                .setDescription('Volume level from 0 to 200')
                 .setRequired(true)
         ),
 
@@ -27,9 +27,9 @@ module.exports = {
         }
 
         const vol = interaction.options.getInteger('volume');
-        if (vol < 0 || vol > 100) {
+        if (vol < 0 || vol > 200) {
             const embed = new EmbedBuilder()
-                .setDescription(`${interaction.client.emotes.error} | Please enter a number between 0 and 100.`)
+                .setDescription(`${interaction.client.emotes.error} | Please enter a number between 0 and 200.`)
                 .setColor('#ff0000')
                 .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             return interaction.editReply({ embeds: [embed] });

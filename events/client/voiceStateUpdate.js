@@ -5,7 +5,9 @@ const db = require('../../database/db.js');
 module.exports = {
     name: 'voiceStateUpdate',
     async execute(oldState, newState) {
+        // Only care about users leaving a channel
         if (!oldState.channel) return;
+        // Don't care if user just switched channels within same channel (mute/deafen)
         if (oldState.channelId === newState.channelId) return;
 
         const client = oldState.client;
@@ -13,7 +15,19 @@ module.exports = {
         
         if (!subscription) return;
 
-        const members = oldState.channel.members.filter(m => !m.user.bot);
+        // Get the channel the BOT is in, not the channel the user left
+        const botChannel = subscription.voiceConnection?.joinConfig?.channelId;
+        if (!botChannel) return;
+        
+        // Only care if the user left the SAME channel the bot is in
+        if (oldState.channelId !== botChannel) return;
+
+        // Check members in the bot's channel (not oldState.channel which might be stale)
+        const guild = oldState.guild;
+        const channel = guild.channels.cache.get(botChannel);
+        if (!channel) return;
+        
+        const members = channel.members.filter(m => !m.user.bot);
         if (members.size === 0) {
             // Check if 24/7 mode is enabled for this guild
             try {

@@ -81,21 +81,25 @@ function setupSubscriptionEvents(subscription, client, textChannel) {
                 }
                 
                 if (userId) {
-                    await db.pool.query(
-                        `INSERT INTO ListeningHistory (guildId, odUserId, odUsername, trackTitle, trackArtist, trackUrl, trackThumbnail, durationSeconds)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [
-                            subscription.guildId,
-                            userId,
-                            username,
-                            track.title?.substring(0, 255) || 'Unknown',
-                            track.artist?.substring(0, 255) || null,
-                            track.url || null,
-                            track.thumbnail || null,
-                            Math.floor(track.duration || 0)
-                        ]
-                    );
-                    logger.debug('Logged listening history', { userId, username, track: track.title });
+                    if (subscription.guildId) {
+                        await db.pool.query(
+                            `INSERT INTO ListeningHistory (guildId, odUserId, odUsername, trackTitle, trackArtist, trackUrl, trackThumbnail, durationSeconds)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                            [
+                                subscription.guildId,
+                                userId,
+                                username,
+                                track.title?.substring(0, 255) || 'Unknown',
+                                track.artist?.substring(0, 255) || null,
+                                track.url || null,
+                                track.thumbnail || null,
+                                Math.floor(track.duration || 0)
+                            ]
+                        );
+                        logger.debug('Logged listening history', { userId, username, track: track.title });
+                    } else {
+                        logger.warn('Skipping listening history log: guildId is missing from subscription', { track: track.title });
+                    }
                 } else {
                     logger.warn('Could not extract userId from requestedBy', { requestedBy: track.requestedBy, type: typeof track.requestedBy });
                 }

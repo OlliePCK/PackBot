@@ -23,14 +23,29 @@ const { EventEmitter } = require('events');
 const { createClient, LiveTranscriptionEvents } = require('@deepgram/sdk');
 const logger = require('../logger').child('voice-control');
 
-// Wake phrase variations (all lowercase)
+// Wake phrase variations (all lowercase) - expanded for better recognition
 const WAKE_PHRASES = [
+    // Standard variations
     'pack bot', 'packbot', 'pack bought', 'pack but', 'packed bot', 'pack pod', 
     'pakbot', 'pak bot', 'back bot', 'hack bot', 'hackbot', 'pat bot', 'packed butt',
     'pack bud', 'pack about', 'pact bot', 'pack body', 'packbox', 'pack box',
     'pack bob', 'pac bot', 'pacbot', 'packed bots', 'pack bots', 'hackbox', 'hack box',
-    'back box', 'backbot', 'black bot', 'black box', 'pack butt', 'packbutt', 'pack but'
+    'back box', 'backbot', 'black bot', 'black box', 'pack butt', 'packbutt', 'pack but',
+    // Additional mishearings from logs
+    'packball', 'pack ball', 'pack pot', 'packpot', 'pack put', 'pick put', 
+    'pac pot', 'pacpot', 'pax bot', 'paxbot',
+    'pack buck', 'packbuck', 'parrot bot', 'parrotbot', 'pack part', 'packpart',
+    'passport', 'pack spot', 'pact pot', 'fact bot', 'factbot', 'pack putt',
+    'pick bot', 'pickbot', 'pic bot', 'picbot'
+    // Note: "pack button" removed - it cuts "volume" commands incorrectly
 ];
+
+// Regex pattern for fuzzy wake phrase matching (handles variations better)
+// Note: Removed "button" ending as it interferes with "volume" commands
+const WAKE_PHRASE_REGEX = /\b(?:p[aeiou]c?k?|b[aeiou]ck|h[aeiou]ck|bl[aeiou]ck|f[aeiou]ct|p[aeiou]x|p[aeiou]rr?ot|p[aeiou]ss?p?ort?)\s*(?:b[oua]t{1,2}|p[oua]t{1,2}|b[oua][xdlk]|b[oua]ck|b[oua]ll|b[oua]b|butt)\b/gi;
+
+// Known command words - used to find commands even when wake phrase cuts into them
+const COMMAND_KEYWORDS = ['play', 'skip', 'stop', 'pause', 'resume', 'unpause', 'volume', 'next', 'previous', 'back', 'shuffle', 'queue'];
 
 // False positive phrases that sound like wake phrase but aren't
 const FALSE_POSITIVES = [
@@ -131,7 +146,7 @@ const COMMAND_PATTERNS = {
     stop: /^(?:stop|stopped)\s*$/i,
     pause: /^(?:pause|paused|paws)\s*$/i,
     resume: /^(?:resume|resumed|unpause|unpaused)\s*$/i,
-    volume: /^(?:volume|volumes?)\s+(.+?)\s*$/i,  // Accept any text, parse later
+    volume: /^(?:on\s+)?(?:volume|volumes?)\s+(.+?)\s*$/i,  // "on volume X" or "volume X" - handles "pack button volume" -> "on volume"
     previous: /^(?:previous|back|go back)\s*$/i,
     shuffle: /^(?:shuffle|shuffled)\s*$/i,
     queue: /^(?:queue|que|cue)\s*$/i,
@@ -198,6 +213,11 @@ class VoiceCommandListener extends EventEmitter {
         this.enabled = false;
         this.lastCommandTime = new Map(); // userId -> timestamp (cooldown)
         this.commandCooldown = 2000; // 2 second cooldown
+        
+        // Pending wake phrase tracking - handles split transcripts
+        this.pendingWakePhrase = null; // { userId, timestamp }
+        this.pendingWakeTimeout = null;
+        this.wakePhraseTTL = 4000; // 4 seconds to complete command after wake phrase
         this.currentSpeakingUser = null;
         this.lastSpeakingUser = null; // Backup in case currentSpeakingUser is null
         this.lastSpeakingTime = 0;
@@ -411,11 +431,12 @@ class VoiceCommandListener extends EventEmitter {
             }
         }
         
-        // Check for wake phrase - find the LAST occurrence to get the most recent command
+        // Check for wake phrase using both exact match list AND fuzzy regex
         let commandText = null;
         let bestWakeIndex = -1;
         let bestWakeLength = 0;
         
+        // First try exact matches from the list
         for (const wake of WAKE_PHRASES) {
             const wakeIndex = lowerText.lastIndexOf(wake);
             // Prefer longer wake phrase matches at same position, or later matches
@@ -426,20 +447,71 @@ class VoiceCommandListener extends EventEmitter {
             }
         }
         
+        // Also try fuzzy regex matching for variations not in the list
+        if (bestWakeIndex < 0) {
+            WAKE_PHRASE_REGEX.lastIndex = 0; // Reset regex state
+            let match;
+            while ((match = WAKE_PHRASE_REGEX.exec(lowerText)) !== null) {
+                if (match.index > bestWakeIndex) {
+                    bestWakeIndex = match.index;
+                    bestWakeLength = match[0].length;
+                    commandText = lowerText.substring(match.index + match[0].length).trim();
+                    logger.debug(`Fuzzy wake phrase match: "${match[0]}"`);
+                }
+            }
+        }
+        
+        // If no wake phrase found, check if there's a pending wake phrase from previous transcript
         if (commandText === null) {
-            return;
+            if (this.pendingWakePhrase && (Date.now() - this.pendingWakePhrase.timestamp) < this.wakePhraseTTL) {
+                // Previous transcript had wake phrase, treat this as the command
+                commandText = lowerText.replace(/^[,.\s:]+/, '').trim();
+                userId = this.pendingWakePhrase.userId || userId;
+                logger.info(`Using pending wake phrase, command: "${commandText}"`);
+                this.clearPendingWake();
+            } else {
+                return;
+            }
         }
         
         // Remove leading punctuation and clean up
         commandText = commandText.replace(/^[,.\s:]+/, '').trim();
         
+        // Check if the command starts with a partial word that should be a command keyword
+        // e.g., "pack button volume" -> "on volume" should become "volume"
+        // Look for command keywords in the extracted text
+        if (commandText && !COMMAND_KEYWORDS.some(kw => commandText.toLowerCase().startsWith(kw))) {
+            // Command doesn't start with a known keyword - check if there's one nearby
+            for (const keyword of COMMAND_KEYWORDS) {
+                const kwIndex = commandText.toLowerCase().indexOf(keyword);
+                if (kwIndex > 0 && kwIndex <= 4) {
+                    // Found keyword within first few characters - likely partial word before it
+                    const corrected = commandText.substring(kwIndex);
+                    logger.debug(`Command corrected: "${commandText}" -> "${corrected}"`);
+                    commandText = corrected;
+                    break;
+                }
+            }
+        }
+        
         // Remove trailing punctuation for simple commands
         commandText = commandText.replace(/[.,!?]+$/, '').trim();
         
         if (!commandText) {
+            // Wake phrase at end - save it for next transcript
             logger.info('Wake phrase detected, waiting for command...');
+            this.pendingWakePhrase = { userId, timestamp: Date.now() };
+            
+            // Clear pending after TTL
+            if (this.pendingWakeTimeout) clearTimeout(this.pendingWakeTimeout);
+            this.pendingWakeTimeout = setTimeout(() => {
+                this.clearPendingWake();
+            }, this.wakePhraseTTL);
             return;
         }
+        
+        // Clear any pending wake phrase since we're executing now
+        this.clearPendingWake();
         
         // Check cooldown (use 'unknown' key if userId is null)
         const cooldownKey = userId || 'unknown';
@@ -451,6 +523,17 @@ class VoiceCommandListener extends EventEmitter {
         
         this.lastCommandTime.set(cooldownKey, Date.now());
         this.executeCommand(userId, commandText);
+    }
+    
+    /**
+     * Clear pending wake phrase state
+     */
+    clearPendingWake() {
+        this.pendingWakePhrase = null;
+        if (this.pendingWakeTimeout) {
+            clearTimeout(this.pendingWakeTimeout);
+            this.pendingWakeTimeout = null;
+        }
     }
     
     /**
@@ -799,6 +882,9 @@ class VoiceCommandListener extends EventEmitter {
      */
     stop(silent = false) {
         this.enabled = false;
+        
+        // Clear pending wake phrase
+        this.clearPendingWake();
         
         // Close Deepgram connection
         if (this.liveConnection) {

@@ -1,0 +1,7 @@
+{
+  "host": "grid",
+  "user": "root",
+  "targetPath": "/mnt/user/appdata/binhex-nginx/nginx/html/the-pack",
+  "port": 22,
+  "identityFile": ""
+}

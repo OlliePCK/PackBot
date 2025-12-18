@@ -25,6 +25,9 @@ class Subscription extends EventEmitter {
     constructor(voiceConnection) {
         super();
         this.voiceConnection = voiceConnection;
+        // Store guildId from connection if available
+        this.guildId = voiceConnection.joinConfig?.guildId;
+        
         this.audioPlayer = createAudioPlayer({
             behaviors: { noSubscriber: NoSubscriberBehavior.Play }
         });
@@ -289,50 +292,34 @@ class Subscription extends EventEmitter {
         }
         
         const track = this.currentTrack;
-        const directUrl = track.directUrl || this.prefetchedUrls.get(track.url);
+        // Always try to get a fresh URL for seeking to avoid expiration issues
+        // But fallback to existing directUrl if needed
+        let streamUrl = await QueryResolver.getDirectStreamUrl(track.url);
         
-        // Get direct URL if we don't have one
-        let streamUrl = directUrl;
         if (!streamUrl) {
-            streamUrl = await QueryResolver.getDirectStreamUrl(track.url);
+            streamUrl = track.directUrl || this.prefetchedUrls.get(track.url);
         }
         
         if (!streamUrl) {
             throw new Error('Could not get stream URL for seek');
         }
         
-        // Create new resource with seek position
-        const resource = await this.createAudioResourceWithSeek(streamUrl, timeSeconds);
+        // Create new resource with seek position and current filters
+        logger.info(`Seeking to ${timeSeconds}s with URL: ${streamUrl.substring(0, 50)}...`);
+        const resource = await this.createAudioResourceWithFilters(streamUrl, timeSeconds, this.filters);
         this.audioPlayer.play(resource);
+        
+        // Update playback start time to reflect the seek
+        // If we seek to 60s, we want (Date.now() - playbackStartTime) / 1000 = 60
+        // So playbackStartTime = Date.now() - 60000
+        this.playbackStartTime = Date.now() - (timeSeconds * 1000);
         
         logger.info(`Seeked to ${timeSeconds}s in ${track.title}`);
     }
     
     // Create audio resource with a seek offset
     createAudioResourceWithSeek(directUrl, seekSeconds) {
-        return new Promise((resolve, reject) => {
-            const child = spawn(FFMPEG_PATH, [
-                '-reconnect', '1',
-                '-reconnect_streamed', '1',
-                '-reconnect_delay_max', '5',
-                '-ss', seekSeconds.toString(), // Seek to position
-                '-i', directUrl,
-                '-f', 's16le',
-                '-ar', '48000',
-                '-ac', '2',
-                '-loglevel', 'error',
-                'pipe:1'
-            ]);
-            
-            child.on('error', reject);
-            
-            const resource = createAudioResource(child.stdout, {
-                inputType: StreamType.Raw,
-                inlineVolume: true
-            });
-            resource.volume.setVolume(this.volume / 100);
-            resolve(resource);
-        });
+        return this.createAudioResourceWithFilters(directUrl, seekSeconds, []);
     }
     
     // Create audio resource with filters and optional seek
@@ -344,7 +331,7 @@ class Subscription extends EventEmitter {
                 '-reconnect_delay_max', '5'
             ];
             
-            // Add seek if needed
+            // Add seek if needed - using input seeking (fast)
             if (seekSeconds > 0) {
                 ffmpegArgs.push('-ss', seekSeconds.toString());
             }
@@ -366,11 +353,20 @@ class Subscription extends EventEmitter {
                 '-f', 's16le',
                 '-ar', '48000',
                 '-ac', '2',
-                '-loglevel', 'error',
+                '-loglevel', 'info', // Changed to info to debug seeking
                 'pipe:1'
             );
             
+            logger.debug(`Spawning FFmpeg with args: ${ffmpegArgs.join(' ')}`);
             const child = spawn(FFMPEG_PATH, ffmpegArgs);
+            
+            child.stderr.on('data', (data) => {
+                // Only log if it looks like an error or we are debugging
+                const msg = data.toString();
+                if (msg.includes('Error') || msg.includes('Invalid')) {
+                    logger.warn(`FFmpeg stderr: ${msg}`);
+                }
+            });
             
             child.on('error', reject);
             

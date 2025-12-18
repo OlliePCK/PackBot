@@ -214,6 +214,53 @@ docker run --env-file .env packbot
 docker pull olliepck/packbot:latest
 ```
 
+### CI/CD (Automatic DockerHub builds)
+This repo includes a GitHub Actions workflow that builds and pushes the PackBot image to DockerHub on every push to `main` (`.github/workflows/build-and-push-dockerhub.yml`).
+
+1. Create a DockerHub access token (Account Settings → Security → New Access Token).
+
+## CI/CD Overview (PackBot + PackSite)
+
+You have two separate deployment processes:
+
+### 1) PackBot (Docker image → DockerHub)
+This repo builds and pushes the Docker image to DockerHub via:
+- `.github/workflows/build-and-push-dockerhub.yml`
+
+**Required GitHub secrets:**
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+
+On Unraid you can then pull/update the container using the Unraid Docker UI (or an auto-updater if you prefer).
+
+### 2) PackSite (files → nginx directory on Unraid)
+PackSite deploy is done locally (Windows) via a script that runs `vite build` and then uploads the `dist/` output via `scp` to:
+`/mnt/user/appdata/binhex-nginx/nginx/html/the-pack/`
+
+**One-time setup:**
+```powershell
+Copy-Item .\scripts\deploy.config.example.json .\scripts\deploy.config.json
+```
+Edit `scripts/deploy.config.json` and set `host`, `user`, and `targetPath`.
+
+**Deploy:**
+```powershell
+./scripts/deploy-packsite.ps1
+```
+
+Notes:
+- Requires Node.js/npm on your PC.
+- Requires `scp` (Windows OpenSSH client).
+
+
+2. In GitHub → Repo Settings → Secrets and variables → Actions, add:
+   - `DOCKERHUB_USERNAME` = your DockerHub username
+   - `DOCKERHUB_TOKEN` = your DockerHub access token
+3. Push to `main`. A new image is published as:
+   - `<username>/packbot:latest`
+   - `<username>/packbot:sha-<commit>`
+4. On Unraid, point the container to `<username>/packbot:latest` and enable automatic updates via CA Auto Update Applications or watchtower.
+
 ### Docker Compose example:
 ```yaml
 version: '3.8'
