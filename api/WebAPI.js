@@ -1120,7 +1120,8 @@ class WebAPI {
             }
             
             const skipped = subscription.currentTrack;
-            subscription.skip({ id: user.id, username: user.username, tag: user.discriminator ? `${user.username}#${user.discriminator}` : user.username });
+            // Pass user ID in Discord mention format <@id>
+            subscription.skip(`<@${user.id}>`);
             
             logger.info('WEB_PLAYER_SKIP', {
                 userId: user.id,
@@ -1235,7 +1236,8 @@ class WebAPI {
                 return res.status(400).json({ error: 'No active music session' });
             }
             
-            subscription.stop({ id: user.id, username: user.username });
+            // Pass user ID in Discord mention format <@id>
+            subscription.stop(`<@${user.id}>`);
             
             logger.info('WEB_PLAYER_STOP', {
                 userId: user.id,
