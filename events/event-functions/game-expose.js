@@ -1,5 +1,6 @@
 // events/game-expose.js - Track playtime and notify for long sessions
 const db = require('../../database/db.js');
+const { getGuildRow } = require('../../database/guilds');
 const logger = require('../../logger').child('playtime');
 const { ChannelType } = require('discord.js');
 
@@ -10,11 +11,8 @@ module.exports = client => {
     // Helper to load & cache a guild's channel
     async function getGeneralChannel(guildId) {
         if (guildChannels.has(guildId)) return guildChannels.get(guildId);
-        const [rows] = await db.pool.query(
-            'SELECT generalChannelID FROM Guilds WHERE guildId = ?',
-            [guildId]
-        );
-        const channelId = rows[0]?.generalChannelID ?? null;
+        const guildProfile = await getGuildRow(guildId);
+        const channelId = guildProfile?.generalChannelID ?? null;
         guildChannels.set(guildId, channelId);
         return channelId;
     }

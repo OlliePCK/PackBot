@@ -4,9 +4,30 @@ WORKDIR /usr/src/app
 
 COPY package*.json ./
 
-RUN apt-get -y update
-RUN apt-get -y upgrade
-RUN apt-get install -y ffmpeg python3 python3-pip
+RUN apt-get update -y \
+  && apt-get upgrade -y \
+  && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    python3 \
+    python3-pip \
+    libnspr4 \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libxshmfence1 \
+    libasound2 \
+    libxss1 \
+    fonts-liberation \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install yt-dlp via pip (installs to /usr/local/bin/yt-dlp)
 RUN pip3 install --break-system-packages yt-dlp

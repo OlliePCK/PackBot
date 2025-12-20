@@ -111,3 +111,5 @@ dist
 cookies.json
 
 PackSite/
+
+.claude/

@@ -1,5 +1,5 @@
 // events/live-streaming.js
-const db = require('../../database/db.js');
+const { getGuildRow } = require('../../database/guilds');
 const logger = require('../../logger').child('streaming');
 const { EmbedBuilder, ChannelType } = require('discord.js');
 
@@ -12,11 +12,7 @@ module.exports = client => {
 	// Load or return cached guild profile
 	async function getGuildProfile(guildId) {
 		if (guildProfiles.has(guildId)) return guildProfiles.get(guildId);
-		const [rows] = await db.pool.query(
-			'SELECT liveRoleID, liveChannelID, generalChannelID FROM Guilds WHERE guildId = ?',
-			[guildId]
-		);
-		const prof = rows[0] || {};
+		const prof = (await getGuildRow(guildId)) || {};
 		guildProfiles.set(guildId, prof);
 		return prof;
 	}

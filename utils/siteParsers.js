@@ -5,8 +5,96 @@
 
 const logger = require('../logger').child('site-parsers');
 const { HttpClient } = require('./httpClient');
+const { getBrowserClient, closeBrowserClient } = require('./browserClient');
+const { detectQueueItFromHtml } = require('./queueitDetector');
 
 const httpClient = new HttpClient({ timeout: 20000, retries: 2 });
+
+// ============================================
+// FETCH WITH BROWSER FALLBACK
+// ============================================
+
+/**
+ * Fetch page content with automatic fallback to headless browser if Queue-it is detected
+ * @param {string} url - URL to fetch
+ * @param {object} options - Options
+ * @param {boolean} options.forceBrowser - Force browser-based fetching
+ * @returns {Promise<{html: string, usedBrowser: boolean, browserReason: string|null}>}
+ */
+async function fetchWithFallback(url, options = {}) {
+    const { forceBrowser = false } = options;
+
+    // If forced to use browser, skip HTTP attempt
+    if (forceBrowser) {
+        logger.debug('Forced browser fetch', { url });
+        return await fetchWithBrowser(url, 'forced');
+    }
+
+    // Try HTTP first
+    try {
+        const response = await httpClient.get(url);
+
+        // Check if Queue-it was detected
+        if (response.requiresBrowser || response.queueItDetected) {
+            logger.info('Queue-it detected via HTTP, switching to browser', {
+                url,
+                reason: response.queueItReason
+            });
+            return await fetchWithBrowser(url, response.queueItReason || 'queue-it-redirect');
+        }
+
+        // Check if response was successful
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        // Double-check HTML content for Queue-it patterns
+        const htmlCheck = detectQueueItFromHtml(response.text);
+        if (htmlCheck.detected && htmlCheck.inWaitingRoom) {
+            logger.info('Queue-it detected in HTML content, switching to browser', {
+                url,
+                reason: htmlCheck.reason
+            });
+            return await fetchWithBrowser(url, htmlCheck.reason || 'queue-it-html');
+        }
+
+        return {
+            html: response.text,
+            usedBrowser: false,
+            browserReason: null,
+        };
+
+    } catch (error) {
+        // If HTTP fails with a network error, try browser as last resort
+        if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+            logger.warn('HTTP request failed, trying browser fallback', {
+                url,
+                error: error.message
+            });
+            return await fetchWithBrowser(url, 'http-error');
+        }
+        throw error;
+    }
+}
+
+/**
+ * Fetch page using headless browser
+ * @param {string} url - URL to fetch
+ * @param {string} reason - Reason for using browser
+ * @returns {Promise<{html: string, usedBrowser: boolean, browserReason: string}>}
+ */
+async function fetchWithBrowser(url, reason) {
+    const browserClient = getBrowserClient();
+    const result = await browserClient.getPageHtml(url);
+
+    return {
+        html: result.html,
+        usedBrowser: true,
+        browserReason: reason,
+        passedQueueIt: result.passedQueueIt,
+        finalUrl: result.finalUrl,
+    };
+}
 
 // ============================================
 // SITE TYPE DETECTION
@@ -66,72 +154,93 @@ function detectSiteType(url) {
 /**
  * Parse Shopify product data
  * @param {string} url - Product URL
+ * @param {object} options - Options
+ * @param {boolean} options.forceBrowser - Force browser-based fetching
  * @returns {Promise<object>} Parsed product data
  */
-async function parseShopify(url) {
+async function parseShopify(url, options = {}) {
+    const { forceBrowser = false } = options;
     const parsedUrl = new URL(url);
-    
-    // Try to fetch the .json endpoint
-    let jsonUrl = `${parsedUrl.origin}${parsedUrl.pathname}`;
-    if (!jsonUrl.endsWith('.json')) {
-        jsonUrl = jsonUrl.replace(/\/$/, '') + '.json';
-    }
 
-    try {
-        const data = await httpClient.getJson(jsonUrl);
-        const product = data.product;
-
-        if (!product) {
-            throw new Error('No product data found');
+    // Try to fetch the .json endpoint first (unless browser is forced)
+    if (!forceBrowser) {
+        let jsonUrl = `${parsedUrl.origin}${parsedUrl.pathname}`;
+        if (!jsonUrl.endsWith('.json')) {
+            jsonUrl = jsonUrl.replace(/\/$/, '') + '.json';
         }
 
-        // Calculate total stock
-        const totalStock = product.variants?.reduce((sum, v) => {
-            return sum + (v.inventory_quantity || 0);
-        }, 0) || 0;
+        try {
+            const data = await httpClient.getJson(jsonUrl);
+            const product = data.product;
 
-        // Find price range
-        const prices = product.variants?.map(v => parseFloat(v.price)) || [];
-        const minPrice = Math.min(...prices);
-        const maxPrice = Math.max(...prices);
+            if (!product) {
+                throw new Error('No product data found');
+            }
 
-        return {
-            type: 'shopify',
-            success: true,
-            title: product.title,
-            vendor: product.vendor,
-            productType: product.product_type,
-            handle: product.handle,
-            image: product.images?.[0]?.src,
-            totalStock,
-            available: product.variants?.some(v => v.available) || false,
-            priceRange: { min: minPrice, max: maxPrice },
-            variants: product.variants?.map(v => ({
-                id: v.id,
-                title: [v.option1, v.option2, v.option3]
-                    .filter(o => o && o !== 'Default Title' && o !== '-')
-                    .join(' / ') || 'Default',
-                price: parseFloat(v.price),
-                compareAtPrice: v.compare_at_price ? parseFloat(v.compare_at_price) : null,
-                stock: v.inventory_quantity,
-                available: v.available,
-                sku: v.sku,
-            })) || [],
-            // For change detection
-            _hash: generateShopifyHash(product),
-        };
-    } catch (error) {
-        // Fallback: try scraping the HTML page
-        return parseShopifyHtml(url);
+            // Calculate total stock
+            const totalStock = product.variants?.reduce((sum, v) => {
+                return sum + (v.inventory_quantity || 0);
+            }, 0) || 0;
+
+            // Find price range
+            const prices = product.variants?.map(v => parseFloat(v.price)) || [];
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+
+            return {
+                type: 'shopify',
+                success: true,
+                title: product.title,
+                vendor: product.vendor,
+                productType: product.product_type,
+                handle: product.handle,
+                image: product.images?.[0]?.src,
+                totalStock,
+                available: product.variants?.some(v => v.available) || false,
+                priceRange: { min: minPrice, max: maxPrice },
+                variants: product.variants?.map(v => ({
+                    id: v.id,
+                    title: [v.option1, v.option2, v.option3]
+                        .filter(o => o && o !== 'Default Title' && o !== '-')
+                        .join(' / ') || 'Default',
+                    price: parseFloat(v.price),
+                    compareAtPrice: v.compare_at_price ? parseFloat(v.compare_at_price) : null,
+                    stock: v.inventory_quantity,
+                    available: v.available,
+                    sku: v.sku,
+                })) || [],
+                // For change detection
+                _hash: generateShopifyHash(product),
+                _usedBrowser: false,
+                _browserReason: null,
+            };
+        } catch (error) {
+            // JSON endpoint failed, fall through to HTML parsing
+        }
     }
+
+    // Fallback: fetch with browser fallback and parse HTML
+    const fetchResult = await fetchWithFallback(url, { forceBrowser });
+    const result = parseShopifyHtmlContent(fetchResult.html);
+    result._usedBrowser = fetchResult.usedBrowser;
+    result._browserReason = fetchResult.browserReason;
+    return result;
 }
 
 /**
- * Fallback HTML scraping for Shopify when JSON isn't available
+ * Fallback HTML scraping for Shopify when JSON isn't available (legacy)
  */
 async function parseShopifyHtml(url) {
     const html = await httpClient.getText(url);
-    
+    return parseShopifyHtmlContent(html);
+}
+
+/**
+ * Parse Shopify HTML content
+ * @param {string} html - HTML content
+ * @returns {object} Parsed product data
+ */
+function parseShopifyHtmlContent(html) {
     // Try to find product JSON in the page
     const jsonMatch = html.match(/var\s+meta\s*=\s*({[\s\S]*?"product"[\s\S]*?});/);
     if (jsonMatch) {
@@ -192,13 +301,22 @@ function generateShopifyHash(product) {
 // ============================================
 
 /**
- * Parse Ticketmaster event page
+ * Parse Ticketmaster event page (legacy - fetches HTML internally)
  * @param {string} url - Event URL
  * @returns {Promise<object>} Parsed event data
  */
 async function parseTicketmaster(url) {
     const html = await httpClient.getText(url);
-    
+    return parseTicketmasterHtml(html, url);
+}
+
+/**
+ * Parse Ticketmaster HTML content
+ * @param {string} html - HTML content
+ * @param {string} url - Original URL
+ * @returns {object} Parsed event data
+ */
+function parseTicketmasterHtml(html, url) {
     // Try to find event JSON data embedded in the page
     const ldJsonMatches = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi) || [];
     let eventData = null;
@@ -222,7 +340,7 @@ async function parseTicketmaster(url) {
 
     // Try to extract price range
     const priceMatch = html.match(/\$[\d,]+(?:\.\d{2})?(?:\s*-\s*\$[\d,]+(?:\.\d{2})?)?/);
-    
+
     // Extract title
     const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
     const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
@@ -252,13 +370,22 @@ async function parseTicketmaster(url) {
 // ============================================
 
 /**
- * Parse Ticketek event page (Australian ticketing)
+ * Parse Ticketek event page (legacy - fetches HTML internally)
  * @param {string} url - Event URL
  * @returns {Promise<object>} Parsed event data
  */
 async function parseTicketek(url) {
     const html = await httpClient.getText(url);
-    
+    return parseTicketekHtml(html, url);
+}
+
+/**
+ * Parse Ticketek HTML content (Australian ticketing)
+ * @param {string} html - HTML content
+ * @param {string} url - Original URL
+ * @returns {object} Parsed event data
+ */
+function parseTicketekHtml(html, url) {
     // Ticketek uses various structures
     const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
     const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
@@ -297,13 +424,22 @@ async function parseTicketek(url) {
 // ============================================
 
 /**
- * Parse AXS event page
+ * Parse AXS event page (legacy - fetches HTML internally)
  * @param {string} url - Event URL
  * @returns {Promise<object>} Parsed event data
  */
 async function parseAXS(url) {
     const html = await httpClient.getText(url);
+    return parseAXSHtml(html, url);
+}
 
+/**
+ * Parse AXS HTML content
+ * @param {string} html - HTML content
+ * @param {string} url - Original URL
+ * @returns {object} Parsed event data
+ */
+function parseAXSHtml(html, url) {
     const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
     const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
 
@@ -342,13 +478,22 @@ async function parseAXS(url) {
 // ============================================
 
 /**
- * Parse Eventbrite event page
+ * Parse Eventbrite event page (legacy - fetches HTML internally)
  * @param {string} url - Event URL
  * @returns {Promise<object>} Parsed event data
  */
 async function parseEventbrite(url) {
     const html = await httpClient.getText(url);
+    return parseEventbriteHtml(html, url);
+}
 
+/**
+ * Parse Eventbrite HTML content
+ * @param {string} html - HTML content
+ * @param {string} url - Original URL
+ * @returns {object} Parsed event data
+ */
+function parseEventbriteHtml(html, url) {
     // Eventbrite embeds a lot of data in JSON-LD
     const ldJsonMatches = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi) || [];
     let eventData = null;
@@ -392,17 +537,27 @@ async function parseEventbrite(url) {
 // ============================================
 
 /**
- * Generic page parser for any website
+ * Generic page parser (legacy - fetches HTML internally)
  * @param {string} url - Page URL
  * @param {string[]} keywords - Keywords to look for
  * @returns {Promise<object>} Parsed page data
  */
 async function parseGeneric(url, keywords = []) {
     const html = await httpClient.getText(url);
-    
+    return parseGenericHtml(html, url, keywords);
+}
+
+/**
+ * Parse generic HTML content
+ * @param {string} html - HTML content
+ * @param {string} url - Original URL
+ * @param {string[]} keywords - Keywords to look for
+ * @returns {object} Parsed page data
+ */
+function parseGenericHtml(html, url, keywords = []) {
     const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
     const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-    
+
     // Check for common availability keywords
     const soldOut = /sold\s*out|out\s*of\s*stock|unavailable|no\s*longer\s*available/i.test(html);
     const available = /in\s*stock|available|add\s*to\s*cart|buy\s*now/i.test(html);
@@ -419,9 +574,73 @@ async function parseGeneric(url, keywords = []) {
     const priceMatches = html.match(/\$[\d,]+(?:\.\d{2})?/g) || [];
     const prices = [...new Set(priceMatches)].slice(0, 5); // Unique, max 5
 
-    // Create content hash for change detection
     const crypto = require('crypto');
-    const contentHash = crypto.createHash('md5').update(html).digest('hex');
+
+    const decodeEntities = (text) => {
+        if (!text) return '';
+        return text
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&')
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/&quot;/gi, '"')
+            .replace(/&#39;/g, "'");
+    };
+
+    const extractTextBlocks = (rawHtml) => {
+        if (!rawHtml) return [];
+
+        // Remove scripts/styles/heads (high churn) and comments
+        let cleaned = rawHtml
+            .replace(/<!--[\s\S]*?-->/g, ' ')
+            .replace(/<head[\s\S]*?<\/head>/gi, ' ')
+            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+            .replace(/<svg[\s\S]*?<\/svg>/gi, ' ');
+
+        // Convert common separators to newlines to preserve block boundaries
+        cleaned = cleaned
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|main)>/gi, '\n');
+
+        // Strip remaining tags
+        const text = decodeEntities(cleaned.replace(/<[^>]+>/g, ' '));
+
+        // Normalize whitespace and split into blocks
+        const blocks = text
+            .replace(/\r/g, '\n')
+            .split('\n')
+            .map(line => line.replace(/\s+/g, ' ').trim())
+            .filter(line => line.length >= 20)
+            .slice(0, 200); // avoid huge pages
+
+        // Deduplicate, keep ordering of first appearance
+        const seen = new Set();
+        const uniqueBlocks = [];
+        for (const block of blocks) {
+            const key = block.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            uniqueBlocks.push(block);
+            if (uniqueBlocks.length >= 60) break;
+        }
+
+        return uniqueBlocks;
+    };
+
+    const contentBlocksText = extractTextBlocks(html);
+    const contentBlocks = contentBlocksText.map((t) => {
+        const hash = crypto.createHash('sha1').update(t).digest('hex');
+        return {
+            hash,
+            text: t.length > 220 ? (t.slice(0, 217) + '...') : t,
+        };
+    });
+
+    // Stable signature: ignore reordering by sorting hashes before hashing
+    const contentBlockHashes = contentBlocks.map(b => b.hash).sort();
+    const contentSignature = crypto.createHash('sha1').update(contentBlockHashes.join('|')).digest('hex');
 
     return {
         type: 'generic',
@@ -436,8 +655,9 @@ async function parseGeneric(url, keywords = []) {
         prices,
         keywordMatches,
         contentLength: html.length,
-        _hash: contentHash,
-        _rawHtml: html, // For keyword checking
+        contentBlocks,
+        contentBlockHashes,
+        _hash: contentSignature,
     };
 }
 
@@ -449,32 +669,56 @@ async function parseGeneric(url, keywords = []) {
  * Parse a URL using the appropriate site-specific parser
  * @param {string} url - URL to parse
  * @param {object} options - Parser options
- * @returns {Promise<object>} Parsed data
+ * @param {string} options.type - Site type override
+ * @param {string[]} options.keywords - Keywords for generic parser
+ * @param {boolean} options.forceBrowser - Force browser-based fetching
+ * @returns {Promise<object>} Parsed data with _usedBrowser and _browserReason fields
  */
 async function parseSite(url, options = {}) {
-    const { type, keywords = [] } = options;
-    
+    const { type, keywords = [], forceBrowser = false } = options;
+
     // Auto-detect site type if not specified
     const siteType = type || detectSiteType(url);
-    
-    logger.debug(`Parsing ${url} as ${siteType}`);
+
+    logger.debug(`Parsing ${url} as ${siteType}`, { forceBrowser });
 
     try {
-        switch (siteType) {
-            case 'shopify':
-                return await parseShopify(url);
-            case 'ticketmaster':
-                return await parseTicketmaster(url);
-            case 'ticketek':
-                return await parseTicketek(url);
-            case 'axs':
-                return await parseAXS(url);
-            case 'eventbrite':
-                return await parseEventbrite(url);
-            case 'generic':
-            default:
-                return await parseGeneric(url, keywords);
+        let result;
+
+        // Shopify has its own JSON endpoint, handle specially
+        if (siteType === 'shopify') {
+            result = await parseShopify(url, { forceBrowser });
+        } else {
+            // For all other types, fetch with fallback first, then parse
+            const fetchResult = await fetchWithFallback(url, { forceBrowser });
+            const html = fetchResult.html;
+
+            switch (siteType) {
+                case 'ticketmaster':
+                    result = parseTicketmasterHtml(html, url);
+                    break;
+                case 'ticketek':
+                    result = parseTicketekHtml(html, url);
+                    break;
+                case 'axs':
+                    result = parseAXSHtml(html, url);
+                    break;
+                case 'eventbrite':
+                    result = parseEventbriteHtml(html, url);
+                    break;
+                case 'generic':
+                default:
+                    result = parseGenericHtml(html, url, keywords);
+                    break;
+            }
+
+            // Add browser usage info
+            result._usedBrowser = fetchResult.usedBrowser;
+            result._browserReason = fetchResult.browserReason;
         }
+
+        return result;
+
     } catch (error) {
         logger.error(`Failed to parse ${url}`, { error: error.message, siteType });
         return {
@@ -620,13 +864,67 @@ function detectChanges(oldData, newData) {
             });
         }
     } else {
-        // Generic: just check if hash changed
+        // Generic: diff stable text blocks if available, otherwise fall back to hash
+        const hasOldBlocks = Array.isArray(oldData.contentBlockHashes) && oldData.contentBlockHashes.length > 0;
+        const hasNewBlocks = Array.isArray(newData.contentBlockHashes) && newData.contentBlockHashes.length > 0;
+        const oldHashes = new Set(hasOldBlocks ? oldData.contentBlockHashes : []);
+        const newHashes = new Set(hasNewBlocks ? newData.contentBlockHashes : []);
+
         if (oldData._hash !== newData._hash) {
-            changes.push({
-                type: 'content',
-                field: 'content',
-                message: 'Page content has changed',
-            });
+            // If we're upgrading from an older cached format (no block hashes), don't spam a one-time diff.
+            if (!hasOldBlocks && hasNewBlocks) {
+                // no-op (still allow keyword_appeared changes below)
+            } else if (oldHashes.size > 0 || newHashes.size > 0) {
+                const added = [];
+                const removed = [];
+
+                for (const h of newHashes) {
+                    if (!oldHashes.has(h)) added.push(h);
+                }
+                for (const h of oldHashes) {
+                    if (!newHashes.has(h)) removed.push(h);
+                }
+
+                const newBlockByHash = new Map((newData.contentBlocks || []).map(b => [b.hash, b]));
+                const oldBlockByHash = new Map((oldData.contentBlocks || []).map(b => [b.hash, b]));
+
+                for (const h of added) {
+                    const snippet = newBlockByHash.get(h)?.text;
+                    changes.push({
+                        type: 'content_added',
+                        field: 'content',
+                        blockHash: h,
+                        snippet,
+                        message: `➕ [${h.slice(0, 8)}] ${snippet || 'Content added'}`,
+                    });
+                }
+
+                for (const h of removed) {
+                    const snippet = oldBlockByHash.get(h)?.text;
+                    changes.push({
+                        type: 'content_removed',
+                        field: 'content',
+                        blockHash: h,
+                        snippet,
+                        message: `➖ [${h.slice(0, 8)}] ${snippet || 'Content removed'}`,
+                    });
+                }
+
+                // If we couldn't compute a meaningful diff, keep a generic change marker
+                if (added.length === 0 && removed.length === 0) {
+                    changes.push({
+                        type: 'content',
+                        field: 'content',
+                        message: 'Page content has changed',
+                    });
+                }
+            } else {
+                changes.push({
+                    type: 'content',
+                    field: 'content',
+                    message: 'Page content has changed',
+                });
+            }
         }
 
         // Check keyword appearances
@@ -678,4 +976,7 @@ module.exports = {
     parseGeneric,
     detectChanges,
     getSupportedSiteTypes,
+    // Browser fallback utilities
+    fetchWithFallback,
+    closeBrowserClient,
 };

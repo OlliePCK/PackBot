@@ -1,5 +1,5 @@
 // events/interactionCreate.js
-const db = require('../../database/db.js');
+const { getGuildRow } = require('../../database/guilds');
 const { MessageFlags } = require('discord.js');
 const logger = require('../../logger').child('commands');
 
@@ -10,12 +10,33 @@ const guildCache = new Map(); // { guildId: { data, timestamp } }
 // Export cache for clearing from other modules (e.g., settings.js)
 module.exports.guildCache = guildCache;
 
+// Commands/subcommands that should not be deferred (e.g., modal commands)
+const NO_DEFER_COMMANDS = new Set([
+	'movie:login', // Shows a modal
+]);
+
 module.exports = {
 	name: 'interactionCreate',
 	/**
 	 * @param {import('discord.js').Interaction} interaction
 	 */
 	async execute(interaction) {
+		// Handle modal submissions
+		if (interaction.isModalSubmit()) {
+			// Try to find a command that handles this modal
+			for (const [, command] of interaction.client.commands) {
+				if (typeof command.handleModalSubmit === 'function') {
+					try {
+						const handled = await command.handleModalSubmit(interaction);
+						if (handled) return;
+					} catch (err) {
+						logger.error('Modal handler error', { customId: interaction.customId, error: err.message });
+					}
+				}
+			}
+			return;
+		}
+
 		// Handle autocomplete interactions
 		if (interaction.isAutocomplete()) {
 			const command = interaction.client.commands.get(interaction.commandName);
@@ -28,17 +49,24 @@ module.exports = {
 			}
 			return;
 		}
-		
+
 		if (!interaction.isCommand()) return;
 
 		const command = interaction.client.commands.get(interaction.commandName);
 		if (!command) return;
 
 		try {
-			// Defer the reply FIRST within 3 seconds
-			await interaction.deferReply({ 
-				flags: command.isEphemeral ? MessageFlags.Ephemeral : undefined 
-			});
+			// Check if this command should skip deferring (e.g., shows a modal)
+			const subcommand = interaction.options?.getSubcommand?.(false);
+			const commandKey = subcommand ? `${interaction.commandName}:${subcommand}` : interaction.commandName;
+			const shouldDefer = !NO_DEFER_COMMANDS.has(commandKey);
+
+			// Defer the reply FIRST within 3 seconds (unless it shows a modal)
+			if (shouldDefer) {
+				await interaction.deferReply({
+					flags: command.isEphemeral ? MessageFlags.Ephemeral : undefined
+				});
+			}
 
 			// Load or upsert + fetch the guild profile (with TTL check)
 			const cached = guildCache.get(interaction.guildId);
@@ -47,17 +75,7 @@ module.exports = {
 				guildProfile = cached.data;
 			}
 			if (!guildProfile) {
-				await db.pool.query(
-					`INSERT INTO Guilds (guildId)
-			VALUES (?)
-	         ON DUPLICATE KEY UPDATE guildId = guildId`,
-					[interaction.guildId]
-				);
-				const [rows] = await db.pool.query(
-					'SELECT * FROM Guilds WHERE guildId = ?',
-					[interaction.guildId]
-				);
-				guildProfile = rows[0];
+				guildProfile = await getGuildRow(interaction.guildId);
 				guildCache.set(interaction.guildId, { data: guildProfile, timestamp: Date.now() });
 			}
 

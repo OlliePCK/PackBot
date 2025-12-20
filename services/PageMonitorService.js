@@ -7,7 +7,7 @@ const { EmbedBuilder } = require('discord.js');
 const crypto = require('crypto');
 const logger = require('../logger').child('page-monitor');
 const db = require('../database/db');
-const { parseSite, detectChanges, detectSiteType, getSupportedSiteTypes } = require('../utils/siteParsers');
+const { parseSite, detectChanges, detectSiteType, getSupportedSiteTypes, closeBrowserClient } = require('../utils/siteParsers');
 
 class PageMonitorService {
     constructor(client) {
@@ -15,9 +15,15 @@ class PageMonitorService {
         this.monitors = new Map(); // id -> monitor data
         this.parsedData = new Map(); // id -> last parsed data (for smart comparison)
         this.checkIntervals = new Map(); // id -> interval
+        this.requiresBrowser = new Set(); // monitor IDs that need browser-based fetching
+        this.inFlightChecks = new Set(); // monitor IDs currently being checked (prevents overlap)
+        this.backoffUntil = new Map(); // id -> timestamp (ms) until next allowed check
+        this.softErrorStreak = new Map(); // id -> consecutive soft errors (e.g. anti-bot blocks)
         this.isRunning = false;
         this.minInterval = 30; // Minimum 30 seconds between checks
         this.maxErrors = 5; // Pause after 5 consecutive errors
+        this.softBackoffBaseMs = 5 * 60 * 1000; // 5 minutes
+        this.softBackoffMaxMs = 60 * 60 * 1000; // 60 minutes
     }
 
     /**
@@ -42,6 +48,10 @@ class PageMonitorService {
                         this.parsedData.set(monitor.id, JSON.parse(monitor.lastParsedData));
                     } catch {}
                 }
+                // Track monitors that require browser
+                if (monitor.requiresBrowser) {
+                    this.requiresBrowser.add(monitor.id);
+                }
                 this.scheduleMonitor(monitor);
             }
             
@@ -54,16 +64,28 @@ class PageMonitorService {
     /**
      * Stop the page monitor service
      */
-    stop() {
+    async stop() {
         this.isRunning = false;
-        
+
         for (const [id, interval] of this.checkIntervals) {
             clearInterval(interval);
         }
         this.checkIntervals.clear();
         this.monitors.clear();
         this.parsedData.clear();
-        
+        this.requiresBrowser.clear();
+        this.inFlightChecks.clear();
+        this.backoffUntil.clear();
+        this.softErrorStreak.clear();
+
+        // Close browser client if active
+        try {
+            await closeBrowserClient();
+            logger.debug('Browser client closed');
+        } catch (error) {
+            logger.error('Error closing browser client', { error: error.message });
+        }
+
         logger.info('Page Monitor Service stopped');
     }
 
@@ -103,20 +125,50 @@ class PageMonitorService {
     async checkPage(monitorId) {
         const monitor = this.monitors.get(monitorId);
         if (!monitor || !this.isRunning) return;
+        if (monitor.isActive === false) return;
+
+        if (this.inFlightChecks.has(monitorId)) {
+            logger.debug(`Skipping monitor ${monitorId} check (already in progress)`);
+            return;
+        }
+
+        const backoffUntil = this.backoffUntil.get(monitorId);
+        if (backoffUntil && Date.now() < backoffUntil) {
+            logger.debug(`Skipping monitor ${monitorId} check (backoff active)`, {
+                backoffUntil: new Date(backoffUntil).toISOString(),
+            });
+            return;
+        }
+
+        this.inFlightChecks.add(monitorId);
 
         try {
             // Determine monitor type (auto-detect if not specified)
             const monitorType = monitor.monitorType || 'auto';
             const keywords = monitor.keywords ? monitor.keywords.split(',').map(k => k.trim()) : [];
-            
+
+            // Check if this monitor requires browser-based fetching
+            const forceBrowser = this.requiresBrowser.has(monitorId);
+
             // Parse the site using appropriate parser
             const parsedData = await parseSite(monitor.url, {
                 type: monitorType === 'auto' ? null : monitorType,
                 keywords,
+                forceBrowser,
             });
 
             if (!parsedData.success) {
                 throw new Error(parsedData.error || 'Failed to parse page');
+            }
+
+            // Track if browser was needed (for future checks)
+            if (parsedData._usedBrowser && !forceBrowser) {
+                this.requiresBrowser.add(monitorId);
+                await this.updateBrowserRequirement(monitorId, true, parsedData._browserReason);
+                logger.info(`Monitor ${monitorId} now requires browser`, {
+                    reason: parsedData._browserReason,
+                    url: monitor.url,
+                });
             }
 
             // Get previous parsed data
@@ -163,6 +215,8 @@ class PageMonitorService {
             monitor.errorCount = 0;
             monitor.detectedType = parsedData.type;
             this.parsedData.set(monitorId, parsedData);
+            this.backoffUntil.delete(monitorId);
+            this.softErrorStreak.delete(monitorId);
 
             if (changeResult.hasChanges || hashChanged) {
                 monitor.lastChanged = new Date();
@@ -181,25 +235,57 @@ class PageMonitorService {
             });
 
         } catch (error) {
+            const message = error?.message || String(error);
+            const isSoftError = /queue-it/i.test(message);
+
+            if (isSoftError) {
+                const streak = (this.softErrorStreak.get(monitorId) || 0) + 1;
+                this.softErrorStreak.set(monitorId, streak);
+
+                const delayMs = Math.min(this.softBackoffBaseMs * Math.pow(2, streak - 1), this.softBackoffMaxMs);
+                const until = Date.now() + delayMs;
+                this.backoffUntil.set(monitorId, until);
+
+                await db.pool.query(
+                    'UPDATE PageMonitors SET lastChecked = NOW(), errorCount = 0, lastError = ? WHERE id = ?',
+                    [message, monitorId]
+                );
+
+                monitor.errorCount = 0;
+                monitor.lastError = message;
+                monitor.lastChecked = new Date();
+
+                logger.warn(`Monitor ${monitorId} (${monitor.name}) blocked (soft error)`, {
+                    error: message,
+                    softErrorStreak: streak,
+                    backoffSeconds: Math.round(delayMs / 1000),
+                });
+
+                return;
+            }
+
             const errorCount = (monitor.errorCount || 0) + 1;
-            
+
             await db.pool.query(
                 'UPDATE PageMonitors SET lastChecked = NOW(), errorCount = ?, lastError = ? WHERE id = ?',
-                [errorCount, error.message, monitorId]
+                [errorCount, message, monitorId]
             );
-            
-            monitor.errorCount = errorCount;
-            monitor.lastError = error.message;
 
-            logger.warn(`Monitor ${monitorId} (${monitor.name}) error`, { 
-                error: error.message,
-                errorCount 
+            monitor.errorCount = errorCount;
+            monitor.lastError = message;
+            monitor.lastChecked = new Date();
+
+            logger.warn(`Monitor ${monitorId} (${monitor.name}) error`, {
+                error: message,
+                errorCount
             });
 
             // Pause monitor if too many errors
             if (errorCount >= this.maxErrors) {
                 await this.pauseMonitor(monitorId, 'Too many consecutive errors');
             }
+        } finally {
+            this.inFlightChecks.delete(monitorId);
         }
     }
 
@@ -227,7 +313,35 @@ class PageMonitorService {
             alertOnPresale = true,
         } = settings;
 
+        const ignoreBlockHashPrefixes = Array.isArray(settings.ignoreBlockHashPrefixes) ? settings.ignoreBlockHashPrefixes : [];
+        const ignorePatterns = Array.isArray(settings.ignorePatterns) ? settings.ignorePatterns : [];
+        const compiledIgnoreRegexes = ignorePatterns.map(p => {
+            try {
+                return new RegExp(p, 'i');
+            } catch {
+                return null;
+            }
+        }).filter(Boolean);
+
+        const isIgnored = (change) => {
+            if (change?.blockHash && ignoreBlockHashPrefixes.some(p => change.blockHash.startsWith(p))) {
+                return true;
+            }
+
+            const haystacks = [
+                change?.message,
+                change?.snippet,
+                change?.keyword,
+            ].filter(Boolean);
+
+            if (haystacks.length === 0 || compiledIgnoreRegexes.length === 0) return false;
+
+            return compiledIgnoreRegexes.some(rx => haystacks.some(h => rx.test(String(h))));
+        };
+
         return changes.filter(change => {
+            if (isIgnored(change)) return false;
+
             switch (change.type) {
                 case 'stock':
                 case 'variant_restock':
@@ -751,11 +865,23 @@ class PageMonitorService {
         try {
             const monitorType = monitor.monitorType || 'auto';
             const keywords = monitor.keywords ? monitor.keywords.split(',').map(k => k.trim()) : [];
+            const forceBrowser = this.requiresBrowser.has(monitorId) || !!monitor.requiresBrowser;
             
             const parsedData = await parseSite(monitor.url, {
                 type: monitorType === 'auto' ? null : monitorType,
                 keywords,
+                forceBrowser,
             });
+
+            // Track if browser was needed (for future checks)
+            if (parsedData._usedBrowser && !forceBrowser) {
+                this.requiresBrowser.add(monitorId);
+                await this.updateBrowserRequirement(monitorId, true, parsedData._browserReason);
+                logger.info(`Monitor ${monitorId} now requires browser`, {
+                    reason: parsedData._browserReason,
+                    url: monitor.url,
+                });
+            }
 
             return {
                 success: true,
@@ -775,6 +901,22 @@ class PageMonitorService {
      */
     getSupportedTypes() {
         return getSupportedSiteTypes();
+    }
+
+    /**
+     * Update browser requirement for a monitor
+     */
+    async updateBrowserRequirement(monitorId, requiresBrowser, reason = null) {
+        await db.pool.query(
+            'UPDATE PageMonitors SET requiresBrowser = ?, lastBrowserReason = ? WHERE id = ?',
+            [requiresBrowser ? 1 : 0, reason, monitorId]
+        );
+
+        const monitor = this.monitors.get(monitorId);
+        if (monitor) {
+            monitor.requiresBrowser = requiresBrowser;
+            monitor.lastBrowserReason = reason;
+        }
     }
 }
 

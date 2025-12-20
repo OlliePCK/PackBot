@@ -3,6 +3,7 @@
  */
 
 const logger = require('../logger').child('http-client');
+const { detectQueueItFromRedirect, detectQueueItFromHtml } = require('./queueitDetector');
 
 // User agents to rotate through (desktop and mobile)
 const USER_AGENTS = {
@@ -95,7 +96,7 @@ class HttpClient {
      * Make an HTTP request with retries and error handling
      * @param {string} url - URL to fetch
      * @param {object} options - Fetch options
-     * @returns {Promise<{ok: boolean, status: number, data: any, text: string, headers: Headers}>}
+     * @returns {Promise<{ok: boolean, status: number, data: any, text: string, headers: Headers, requiresBrowser: boolean, queueItDetected: boolean}>}
      */
     async request(url, options = {}) {
         const {
@@ -108,6 +109,8 @@ class HttpClient {
             userAgent = getRandomUserAgent(this.userAgentType),
             parseJson = false,
             rateLimit = this.rateLimit,
+            followRedirects = true,
+            detectQueueIt = true,
         } = options;
 
         // Apply rate limiting
@@ -137,6 +140,7 @@ class HttpClient {
                     method,
                     headers: defaultHeaders,
                     signal: controller.signal,
+                    redirect: detectQueueIt ? 'manual' : (followRedirects ? 'follow' : 'manual'),
                 };
 
                 if (body) {
@@ -156,6 +160,34 @@ class HttpClient {
                 const response = await fetch(url, fetchOptions);
                 clearTimeout(timeoutId);
 
+                // Check for Queue-it redirect (3xx with location header)
+                if (detectQueueIt && response.status >= 300 && response.status < 400) {
+                    const location = response.headers.get('location');
+                    const queueItResult = detectQueueItFromRedirect(location);
+
+                    if (queueItResult.detected) {
+                        logger.info('Queue-it detected from redirect', { url, redirectUrl: location });
+                        return {
+                            ok: false,
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: response.headers,
+                            text: '',
+                            data: null,
+                            requiresBrowser: true,
+                            queueItDetected: true,
+                            queueItReason: queueItResult.reason,
+                            redirectUrl: location,
+                        };
+                    }
+
+                    // Not Queue-it, follow the redirect manually if needed
+                    if (followRedirects && location) {
+                        const absoluteUrl = new URL(location, url).href;
+                        return this.request(absoluteUrl, { ...options, detectQueueIt: false });
+                    }
+                }
+
                 const text = await response.text();
                 let data = text;
 
@@ -167,6 +199,21 @@ class HttpClient {
                     }
                 }
 
+                // Check HTML content for Queue-it patterns
+                let queueItDetected = false;
+                let requiresBrowser = false;
+                let queueItReason = null;
+
+                if (detectQueueIt && response.ok && text) {
+                    const htmlResult = detectQueueItFromHtml(text);
+                    if (htmlResult.detected && htmlResult.inWaitingRoom) {
+                        logger.info('Queue-it detected in HTML content', { url, reason: htmlResult.reason });
+                        queueItDetected = true;
+                        requiresBrowser = true;
+                        queueItReason = htmlResult.reason;
+                    }
+                }
+
                 return {
                     ok: response.ok,
                     status: response.status,
@@ -174,6 +221,9 @@ class HttpClient {
                     headers: response.headers,
                     text,
                     data,
+                    requiresBrowser,
+                    queueItDetected,
+                    queueItReason,
                 };
 
             } catch (error) {

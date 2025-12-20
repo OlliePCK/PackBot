@@ -110,6 +110,57 @@ module.exports = {
         .addSubcommand(sub =>
             sub.setName('help')
                 .setDescription('Learn how to use the page monitor')
+        )
+        .addSubcommand(sub =>
+            sub.setName('ignore-list')
+                .setDescription('List ignore rules for a monitor')
+                .addIntegerOption(opt =>
+                    opt.setName('id')
+                        .setDescription('The monitor ID')
+                        .setRequired(true)
+                )
+        )
+        .addSubcommand(sub =>
+            sub.setName('ignore-add')
+                .setDescription('Add an ignore rule (block hash prefix or regex pattern)')
+                .addIntegerOption(opt =>
+                    opt.setName('id')
+                        .setDescription('The monitor ID')
+                        .setRequired(true)
+                )
+                .addStringOption(opt =>
+                    opt.setName('block')
+                        .setDescription('Block hash (or prefix) to ignore, shown in alerts like [1a2b3c4d]')
+                        .setRequired(false)
+                        .setMaxLength(40)
+                )
+                .addStringOption(opt =>
+                    opt.setName('pattern')
+                        .setDescription('Regex pattern to ignore (matched against change text/snippets)')
+                        .setRequired(false)
+                        .setMaxLength(200)
+                )
+        )
+        .addSubcommand(sub =>
+            sub.setName('ignore-remove')
+                .setDescription('Remove an ignore rule (block hash prefix or regex pattern)')
+                .addIntegerOption(opt =>
+                    opt.setName('id')
+                        .setDescription('The monitor ID')
+                        .setRequired(true)
+                )
+                .addStringOption(opt =>
+                    opt.setName('block')
+                        .setDescription('Block hash (or prefix) to stop ignoring')
+                        .setRequired(false)
+                        .setMaxLength(40)
+                )
+                .addStringOption(opt =>
+                    opt.setName('pattern')
+                        .setDescription('Regex pattern to stop ignoring')
+                        .setRequired(false)
+                        .setMaxLength(200)
+                )
         ),
 
     async execute(interaction) {
@@ -368,6 +419,9 @@ module.exports = {
                 
                 if (m.errorCount > 0) {
                     line += ` • ⚠️ ${m.errorCount} error(s)`;
+                } else if (m.lastError) {
+                    const label = /queue-it/i.test(m.lastError) ? 'Queue-it' : 'Last error';
+                    line += ` • ⚠️ ${label}`;
                 }
                 
                 return line;
@@ -610,12 +664,147 @@ module.exports = {
                 .setColor('#ff006a')
                 .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
 
-            if (monitor.errorCount > 0) {
-                embed.addFields(
-                    { name: '⚠️ Errors', value: `${monitor.errorCount} consecutive error(s)`, inline: true },
-                    { name: 'Last Error', value: monitor.lastError?.slice(0, 256) || 'Unknown', inline: true }
-                );
+            if (monitor.lastError) {
+                const fields = [];
+                if (monitor.errorCount > 0) {
+                    fields.push({ name: '⚠️ Errors', value: `${monitor.errorCount} consecutive error(s)`, inline: true });
+                }
+                fields.push({ name: 'Last Error', value: monitor.lastError?.slice(0, 256) || 'Unknown', inline: true });
+                embed.addFields(...fields);
             }
+
+            return interaction.editReply({ embeds: [embed] });
+        }
+
+        // ============================================
+        // IGNORE LIST
+        // ============================================
+        if (sub === 'ignore-list') {
+            const id = interaction.options.getInteger('id');
+            const monitor = await pageMonitor.getMonitor(id, interaction.guild.id);
+
+            if (!monitor) {
+                const errorEmbed = new EmbedBuilder()
+                    .setDescription('ƒ?O Monitor not found or does not belong to this server.')
+                    .setColor('#ff0000')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                return interaction.editReply({ embeds: [errorEmbed] });
+            }
+
+            let settings = {};
+            if (monitor.alertSettings) {
+                try { settings = JSON.parse(monitor.alertSettings); } catch {}
+            }
+
+            const ignoreBlockHashPrefixes = Array.isArray(settings.ignoreBlockHashPrefixes) ? settings.ignoreBlockHashPrefixes : [];
+            const ignorePatterns = Array.isArray(settings.ignorePatterns) ? settings.ignorePatterns : [];
+
+            const embed = new EmbedBuilder()
+                .setTitle('dY"Q Ignore Rules')
+                .setDescription(`**${monitor.name}** (ID: \`${monitor.id}\`)`)
+                .setColor('#ff006a')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
+                .addFields(
+                    { name: 'Ignored Block Hash Prefixes', value: ignoreBlockHashPrefixes.length ? ignoreBlockHashPrefixes.map(p => `\`${p}\``).join(', ') : 'None', inline: false },
+                    { name: 'Ignored Patterns', value: ignorePatterns.length ? ignorePatterns.map(p => `\`${p}\``).join('\n') : 'None', inline: false },
+                );
+
+            return interaction.editReply({ embeds: [embed] });
+        }
+
+        // ============================================
+        // IGNORE ADD/REMOVE
+        // ============================================
+        if (sub === 'ignore-add' || sub === 'ignore-remove') {
+            const id = interaction.options.getInteger('id');
+            const block = interaction.options.getString('block');
+            const pattern = interaction.options.getString('pattern');
+
+            if (!block && !pattern) {
+                const errorEmbed = new EmbedBuilder()
+                    .setDescription('ƒ?O Provide either `block` or `pattern`.')
+                    .setColor('#ff0000')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                return interaction.editReply({ embeds: [errorEmbed] });
+            }
+
+            if (block && pattern) {
+                const errorEmbed = new EmbedBuilder()
+                    .setDescription('ƒ?O Provide only one of `block` or `pattern` (not both).')
+                    .setColor('#ff0000')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                return interaction.editReply({ embeds: [errorEmbed] });
+            }
+
+            const monitor = await pageMonitor.getMonitor(id, interaction.guild.id);
+            if (!monitor) {
+                const errorEmbed = new EmbedBuilder()
+                    .setDescription('ƒ?O Monitor not found or does not belong to this server.')
+                    .setColor('#ff0000')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                return interaction.editReply({ embeds: [errorEmbed] });
+            }
+
+            let settings = {};
+            if (monitor.alertSettings) {
+                try { settings = JSON.parse(monitor.alertSettings); } catch {}
+            }
+
+            const ignoreBlockHashPrefixes = Array.isArray(settings.ignoreBlockHashPrefixes) ? settings.ignoreBlockHashPrefixes : [];
+            const ignorePatterns = Array.isArray(settings.ignorePatterns) ? settings.ignorePatterns : [];
+
+            const normalizePrefix = (s) => (s || '').trim().toLowerCase().replace(/[^a-f0-9]/g, '').slice(0, 40);
+
+            if (block) {
+                const prefix = normalizePrefix(block);
+                if (!prefix || prefix.length < 6) {
+                    const errorEmbed = new EmbedBuilder()
+                        .setDescription('ƒ?O `block` should be a hex hash/prefix (at least 6 chars), e.g. `1a2b3c4d`.')
+                        .setColor('#ff0000')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [errorEmbed] });
+                }
+
+                let updatedPrefixes = [...ignoreBlockHashPrefixes];
+                if (sub === 'ignore-add') {
+                    if (!updatedPrefixes.includes(prefix)) updatedPrefixes.push(prefix);
+                } else {
+                    updatedPrefixes = updatedPrefixes.filter(p => p !== prefix);
+                }
+
+                settings.ignoreBlockHashPrefixes = updatedPrefixes;
+            }
+
+            if (pattern) {
+                const p = pattern.trim();
+                try { new RegExp(p, 'i'); } catch {
+                    const errorEmbed = new EmbedBuilder()
+                        .setDescription('ƒ?O Invalid regex pattern.')
+                        .setColor('#ff0000')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [errorEmbed] });
+                }
+
+                let updatedPatterns = [...ignorePatterns];
+                if (sub === 'ignore-add') {
+                    if (!updatedPatterns.includes(p)) updatedPatterns.push(p);
+                } else {
+                    updatedPatterns = updatedPatterns.filter(x => x !== p);
+                }
+
+                settings.ignorePatterns = updatedPatterns;
+            }
+
+            await pageMonitor.updateMonitor(id, interaction.guild.id, { alertSettings: settings });
+
+            const embed = new EmbedBuilder()
+                .setTitle(sub === 'ignore-add' ? 'dY"Q Ignore Rule Added' : 'dY"Q Ignore Rule Removed')
+                .setDescription(`**${monitor.name}** (ID: \`${monitor.id}\`)`)
+                .setColor('#00ff00')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+
+            if (block) embed.addFields({ name: 'Block Prefix', value: `\`${normalizePrefix(block)}\``, inline: false });
+            if (pattern) embed.addFields({ name: 'Pattern', value: `\`${pattern.trim()}\``, inline: false });
 
             return interaction.editReply({ embeds: [embed] });
         }

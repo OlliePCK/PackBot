@@ -1,5 +1,6 @@
 const youtubeNotifications = require('../../scripts/youtube-notifications');
 const PageMonitorService = require('../../services/PageMonitorService');
+const { getImaxScannerService } = require('../../services/ImaxScannerService');
 const logger = require('../../logger').child('core');
 
 module.exports = {
@@ -37,7 +38,66 @@ module.exports = {
 			logger.error('Error initializing Page Monitor Service', { error: e.message });
 		}
 
+		// 4) Initialize IMAX Scanner Service
+		try {
+			client.imaxScanner = getImaxScannerService(client);
+			logger.info('IMAX Scanner Service initialized');
+		} catch (e) {
+			logger.error('Error initializing IMAX Scanner Service', { error: e.message });
+		}
+
+		// 5) Setup graceful shutdown handlers
+		setupShutdownHandlers(client);
+
 		logger.info('All features initialized');
 	}
 };
+
+/**
+ * Setup graceful shutdown handlers for the bot
+ * @param {import('discord.js').Client} client
+ */
+function setupShutdownHandlers(client) {
+	let isShuttingDown = false;
+
+	const shutdown = async (signal) => {
+		if (isShuttingDown) return;
+		isShuttingDown = true;
+
+		logger.info(`Received ${signal}, shutting down gracefully...`);
+
+		try {
+			// Stop page monitor service (also closes browser client)
+			if (client.pageMonitor) {
+				await client.pageMonitor.stop();
+				logger.info('Page Monitor Service stopped');
+			}
+
+			// Destroy the Discord client
+			client.destroy();
+			logger.info('Discord client destroyed');
+
+			process.exit(0);
+		} catch (error) {
+			logger.error('Error during shutdown', { error: error.message });
+			process.exit(1);
+		}
+	};
+
+	// Handle various termination signals
+	process.on('SIGINT', () => shutdown('SIGINT'));
+	process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+	// Handle uncaught exceptions gracefully
+	process.on('uncaughtException', (error) => {
+		logger.error('Uncaught exception', { error: error.message, stack: error.stack });
+		shutdown('uncaughtException');
+	});
+
+	process.on('unhandledRejection', (reason, promise) => {
+		logger.error('Unhandled rejection', { reason: String(reason) });
+	});
+
+	logger.debug('Shutdown handlers registered');
+}
 

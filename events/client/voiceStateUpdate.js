@@ -1,6 +1,6 @@
 const { EmbedBuilder } = require('discord.js');
 const logger = require('../../logger').child('music');
-const db = require('../../database/db.js');
+const { getGuildRow } = require('../../database/guilds');
 
 module.exports = {
     name: 'voiceStateUpdate',
@@ -31,12 +31,8 @@ module.exports = {
         if (members.size === 0) {
             // Check if 24/7 mode is enabled for this guild
             try {
-                const [rows] = await db.pool.query(
-                    'SELECT twentyFourSevenMode FROM Guilds WHERE guildId = ?',
-                    [oldState.guild.id]
-                );
-                
-                if (rows.length > 0 && rows[0].twentyFourSevenMode) {
+                const guildProfile = await getGuildRow(oldState.guild.id);
+                if (guildProfile?.twentyFourSevenMode) {
                     logger.info('No listeners but 24/7 mode enabled, staying in channel', { 
                         guild: oldState.guild.id, 
                         channel: oldState.channel.name 

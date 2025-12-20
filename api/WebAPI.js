@@ -10,6 +10,8 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const logger = require('../logger').child('api');
 const db = require('../database/db');
+const { getGuildRow } = require('../database/guilds');
+const { fetchWithFallback, parseSite, detectChanges } = require('../utils/siteParsers');
 
 class WebAPI {
     constructor(client) {
@@ -1472,12 +1474,8 @@ class WebAPI {
                 const { snippet, statistics, id: channelId } = channelData;
                 
                 // Check if guild has YouTube channel configured
-                const [guildRows] = await db.pool.query(
-                    'SELECT youtubeChannelID FROM Guilds WHERE guildId = ?',
-                    [guildId]
-                );
-                
-                if (!guildRows.length || !guildRows[0].youtubeChannelID) {
+                const guildRow = await getGuildRow(guildId);
+                if (!guildRow?.youtubeChannelID) {
                     return res.status(400).json({ 
                         error: 'YouTube notification channel not configured. Set it in Server Settings first.' 
                     });
@@ -1594,7 +1592,8 @@ class WebAPI {
                         lastError: m.lastError,
                         lastChecked: m.lastChecked,
                         lastChanged: m.lastChanged,
-                        createdAt: m.createdAt
+                        createdAt: m.createdAt,
+                        alertSettings: m.alertSettings
                     };
                 });
                 
@@ -1696,7 +1695,7 @@ class WebAPI {
          */
         router.put('/monitors/:guildId/:monitorId', requireAuth, async (req, res) => {
             const { guildId, monitorId } = req.params;
-            const { name, url, keywords, checkInterval, channelId, roleToMention, isActive, monitorType } = req.body;
+            const { name, url, keywords, checkInterval, channelId, roleToMention, isActive, monitorType, alertSettings } = req.body;
             const user = req.session.user;
             
             // Check guild access and admin permission
@@ -1749,6 +1748,20 @@ class WebAPI {
                     const validTypes = ['auto', 'shopify', 'ticketmaster', 'ticketek', 'axs', 'eventbrite', 'generic'];
                     if (validTypes.includes(monitorType)) {
                         updates.monitorType = monitorType;
+                    }
+                }
+                if (alertSettings !== undefined) {
+                    if (alertSettings === null) {
+                        updates.alertSettings = null;
+                    } else if (typeof alertSettings === 'object') {
+                        updates.alertSettings = JSON.stringify(alertSettings);
+                    } else if (typeof alertSettings === 'string') {
+                        try {
+                            JSON.parse(alertSettings);
+                            updates.alertSettings = alertSettings;
+                        } catch {
+                            return res.status(400).json({ error: 'Invalid alertSettings JSON' });
+                        }
                     }
                 }
                 
@@ -1862,30 +1875,26 @@ class WebAPI {
                 
                 const monitor = rows[0];
                 
-                // Fetch the page
-                const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 15000);
-                
-                const response = await fetch(monitor.url, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'Cache-Control': 'no-cache',
-                    },
-                    signal: controller.signal,
-                });
-                
-                clearTimeout(timeout);
-                
-                if (!response.ok) {
-                    return res.json({
-                        success: false,
-                        status: response.status,
-                        statusText: response.statusText
-                    });
-                }
-                
-                const content = await response.text();
+                const withTimeout = async (promise, timeoutMs) => {
+                    let timeoutId;
+                    try {
+                        return await Promise.race([
+                            promise,
+                            new Promise((_, reject) => {
+                                timeoutId = setTimeout(() => reject(new Error('Request timed out')), timeoutMs);
+                            })
+                        ]);
+                    } finally {
+                        if (timeoutId) clearTimeout(timeoutId);
+                    }
+                };
+
+                const fetchResult = await withTimeout(
+                    fetchWithFallback(monitor.url, { forceBrowser: !!monitor.requiresBrowser }),
+                    45000
+                );
+
+                const content = fetchResult.html || '';
                 const titleMatch = content.match(/<title>([^<]*)<\/title>/i);
                 const pageTitle = titleMatch ? titleMatch[1].trim() : null;
                 
@@ -1899,16 +1908,94 @@ class WebAPI {
                 
                 res.json({
                     success: true,
-                    status: response.status,
+                    status: 200,
                     pageTitle,
                     contentLength: content.length,
-                    keywordsFound: keywordsFound.length > 0 ? keywordsFound : null
+                    keywordsFound: keywordsFound.length > 0 ? keywordsFound : null,
+                    usedBrowser: !!fetchResult.usedBrowser,
+                    browserReason: fetchResult.browserReason || null,
+                    finalUrl: fetchResult.finalUrl || null,
+                    passedQueueIt: fetchResult.passedQueueIt ?? null,
                 });
             } catch (error) {
                 res.json({
                     success: false,
                     error: error.name === 'AbortError' ? 'Request timed out' : error.message
                 });
+            }
+        });
+
+        /**
+         * POST /api/monitors/:guildId/:monitorId/diff
+         * Compute changes between last parsed data and a fresh fetch
+         */
+        router.post('/monitors/:guildId/:monitorId/diff', requireAuth, async (req, res) => {
+            const { guildId, monitorId } = req.params;
+            const user = req.session.user;
+
+            if (!hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+
+            if (user.id !== ADMIN_USER_ID) {
+                const userGuild = user.guilds.find(g => g.id === guildId);
+                if (!userGuild?.isAdmin) {
+                    return res.status(403).json({ error: 'Admin permission required' });
+                }
+            }
+
+            try {
+                const [rows] = await db.pool.query(
+                    'SELECT * FROM PageMonitors WHERE id = ? AND guildId = ?',
+                    [monitorId, guildId]
+                );
+
+                if (!rows.length) {
+                    return res.status(404).json({ error: 'Monitor not found' });
+                }
+
+                const monitor = rows[0];
+
+                let previousData = null;
+                if (monitor.lastParsedData) {
+                    try {
+                        previousData = JSON.parse(monitor.lastParsedData);
+                    } catch {}
+                }
+
+                const monitorType = monitor.monitorType || 'auto';
+                const keywords = monitor.keywords ? monitor.keywords.split(',').map(k => k.trim()) : [];
+                const parsedData = await parseSite(monitor.url, {
+                    type: monitorType === 'auto' ? null : monitorType,
+                    keywords,
+                    forceBrowser: !!monitor.requiresBrowser,
+                });
+
+                if (!parsedData.success) {
+                    return res.json({
+                        success: false,
+                        error: parsedData.error || 'Failed to parse page',
+                    });
+                }
+
+                if (this.client.pageMonitor && parsedData._usedBrowser && !monitor.requiresBrowser) {
+                    await this.client.pageMonitor.updateBrowserRequirement(monitor.id, true, parsedData._browserReason);
+                }
+
+                const changeResult = detectChanges(previousData, parsedData);
+
+                res.json({
+                    success: true,
+                    detectedType: parsedData.type,
+                    changes: changeResult.changes || [],
+                    summary: changeResult.summary || '',
+                    hasChanges: changeResult.hasChanges,
+                    usedBrowser: !!parsedData._usedBrowser,
+                    browserReason: parsedData._browserReason || null,
+                });
+            } catch (error) {
+                logger.error('Monitor diff API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to compute diff' });
             }
         });
         
@@ -1930,16 +2017,10 @@ class WebAPI {
             }
             
             try {
-                const [rows] = await db.pool.query(
-                    'SELECT * FROM Guilds WHERE guildId = ?',
-                    [guildId]
-                );
-                
-                if (!rows.length) {
+                const settings = await getGuildRow(guildId);
+                if (!settings) {
                     return res.status(404).json({ error: 'Guild not found' });
                 }
-                
-                const settings = rows[0];
                 const guild = this.client.guilds.cache.get(guildId);
                 
                 // Check if guild is voice whitelisted
@@ -2114,7 +2195,107 @@ class WebAPI {
                 res.status(500).json({ error: 'Failed to fetch product data' });
             }
         });
-        
+
+        // ==========================================
+        // IMAX Melbourne Endpoints
+        // ==========================================
+
+        /**
+         * GET /api/imax/sessions/:date
+         * Get available IMAX sessions for a date
+         */
+        router.get('/imax/sessions/:date', requireAuth, async (req, res) => {
+            const { date } = req.params;
+
+            // Validate date format
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+            }
+
+            try {
+                const { getImaxScannerService } = require('../services/ImaxScannerService');
+                const scanner = getImaxScannerService(this.client);
+
+                if (!scanner) {
+                    return res.status(503).json({ error: 'IMAX scanner service not available' });
+                }
+
+                const sessions = await scanner.getSessions(date);
+                res.json({ date, sessions });
+            } catch (error) {
+                logger.error('IMAX sessions API error', { error: error.message, date });
+                res.status(500).json({ error: 'Failed to fetch sessions' });
+            }
+        });
+
+        /**
+         * POST /api/imax/scan
+         * Scan IMAX sessions for optimal seating
+         * Body: { date: 'YYYY-MM-DD', numSeats: 2 } or { movie: '714', numSeats: 2 }
+         */
+        router.post('/imax/scan', requireAuth, async (req, res) => {
+            const { date, numSeats = 2, movie, movieId, movieUrl } = req.body;
+            const movieInput = movie || movieId || movieUrl;
+
+            if (!movieInput && (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
+                return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD or provide movie ID/URL' });
+            }
+
+            if (numSeats < 1 || numSeats > 10) {
+                return res.status(400).json({ error: 'Number of seats must be between 1 and 10' });
+            }
+
+            try {
+                const { getImaxScannerService } = require('../services/ImaxScannerService');
+                const scanner = getImaxScannerService(this.client);
+
+                if (!scanner) {
+                    return res.status(503).json({ error: 'IMAX scanner service not available' });
+                }
+
+                const results = movieInput ?
+                    await scanner.scanMovie(movieInput, numSeats) :
+                    await scanner.scanDate(date, numSeats);
+                res.json(results);
+            } catch (error) {
+                logger.error('IMAX scan API error', { error: error.message, date, movieInput, numSeats });
+                res.status(500).json({ error: 'Scan failed: ' + error.message });
+            }
+        });
+
+        /**
+         * GET /api/imax/session/:sessionId
+         * Scan a single IMAX session for seat availability
+         * Query params: seats (number of consecutive seats, default 2)
+         */
+        router.get('/imax/session/:sessionId', requireAuth, async (req, res) => {
+            const { sessionId } = req.params;
+            const numSeats = parseInt(req.query.seats) || 2;
+
+            if (!/^\d+$/.test(sessionId)) {
+                return res.status(400).json({ error: 'Invalid session ID' });
+            }
+
+            if (numSeats < 1 || numSeats > 10) {
+                return res.status(400).json({ error: 'Number of seats must be between 1 and 10' });
+            }
+
+            try {
+                const { getImaxScannerService } = require('../services/ImaxScannerService');
+                const scanner = getImaxScannerService(this.client);
+
+                if (!scanner) {
+                    return res.status(503).json({ error: 'IMAX scanner service not available' });
+                }
+
+                const result = await scanner.scanSession(sessionId, numSeats);
+                res.json(result);
+            } catch (error) {
+                logger.error('IMAX session API error', { error: error.message, sessionId });
+                res.status(500).json({ error: 'Session scan failed: ' + error.message });
+            }
+        });
+
         // Mount router
         this.app.use('/api', router);
         
