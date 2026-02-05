@@ -1,0 +1,3 @@
+﻿DROP TABLE IF EXISTS ImaxCheckoutLog;
+DROP TABLE IF EXISTS ImaxCredentials;
+DROP TABLE IF EXISTS ImaxScans;

@@ -145,3 +145,4 @@ CREATE TABLE IF NOT EXISTS ListeningHistory (
     INDEX idx_guild_played (guildId, playedAt DESC),
     INDEX idx_user_played (odUserId, playedAt DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
