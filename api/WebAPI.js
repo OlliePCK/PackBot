@@ -11,7 +11,10 @@ const { Server } = require('socket.io');
 const logger = require('../logger').child('api');
 const db = require('../database/db');
 const { getGuildRow } = require('../database/guilds');
+const { invalidateGuildCache } = require('../utils/guildSettingsCache');
 const { fetchWithFallback, parseSite, detectChanges } = require('../utils/siteParsers');
+const { fetchYouTubeChannel } = require('../utils/youtube');
+const { fetchShopifyProduct } = require('../utils/shopify');
 
 class WebAPI {
     constructor(client) {
@@ -912,8 +915,12 @@ class WebAPI {
             
             const [removed] = subscription.queue.splice(pos - 1, 1);
             
-            // Send queue update via WebSocket
-            this.sendQueueUpdate(guildId);
+            // Send queue update via WebSocket (debounced)
+            if (typeof subscription.scheduleQueueUpdate === 'function') {
+                subscription.scheduleQueueUpdate();
+            } else {
+                this.sendQueueUpdate(guildId);
+            }
             
             // Log queue action for audit
             logger.info('WEB_QUEUE_REMOVE', {
@@ -966,8 +973,12 @@ class WebAPI {
                 subscription.prefetchTrack(track);
             }
             
-            // Send queue update via WebSocket
-            this.sendQueueUpdate(guildId);
+            // Send queue update via WebSocket (debounced)
+            if (typeof subscription.scheduleQueueUpdate === 'function') {
+                subscription.scheduleQueueUpdate();
+            } else {
+                this.sendQueueUpdate(guildId);
+            }
             
             // Log queue action for audit
             logger.info('WEB_QUEUE_MOVE', {
@@ -1014,8 +1025,12 @@ class WebAPI {
                 subscription.prefetchTrack(subscription.queue[0]);
             }
             
-            // Send queue update via WebSocket
-            this.sendQueueUpdate(guildId);
+            // Send queue update via WebSocket (debounced)
+            if (typeof subscription.scheduleQueueUpdate === 'function') {
+                subscription.scheduleQueueUpdate();
+            } else {
+                this.sendQueueUpdate(guildId);
+            }
             
             // Log queue action for audit
             logger.info('WEB_QUEUE_SHUFFLE', {
@@ -1048,8 +1063,12 @@ class WebAPI {
             const count = subscription.queue.length;
             subscription.queue = [];
             
-            // Send queue update via WebSocket
-            this.sendQueueUpdate(guildId);
+            // Send queue update via WebSocket (debounced)
+            if (typeof subscription.scheduleQueueUpdate === 'function') {
+                subscription.scheduleQueueUpdate();
+            } else {
+                this.sendQueueUpdate(guildId);
+            }
             
             // Log queue action for audit
             logger.warn('WEB_QUEUE_CLEAR', {
@@ -1386,7 +1405,6 @@ class WebAPI {
          * GET /api/youtube/:guildId
          * Returns list of tracked YouTube channels for a guild
          */
-        const self = this; // Store reference for use in route handlers
         router.get('/youtube/:guildId', requireAuth, async (req, res) => {
             const { guildId } = req.params;
             const user = req.session.user;
@@ -1405,7 +1423,7 @@ class WebAPI {
                 // Fetch channel info from YouTube API for each channel
                 const channels = await Promise.all(rows.map(async (r) => {
                     try {
-                        const channelData = await self.fetchYouTubeChannel(r.handle);
+                        const channelData = await fetchYouTubeChannel(r.handle);
                         if (channelData) {
                             return {
                                 id: r.id,
@@ -1466,7 +1484,7 @@ class WebAPI {
             
             try {
                 // Fetch channel info from YouTube API
-                const channelData = await self.fetchYouTubeChannel(cleanHandle);
+                const channelData = await fetchYouTubeChannel(cleanHandle);
                 if (!channelData) {
                     return res.status(400).json({ error: 'Invalid YouTube handle' });
                 }
@@ -1588,6 +1606,7 @@ class WebAPI {
                         roleName: role?.name || null,
                         isActive: !!m.isActive,
                         monitorType: m.monitorType || 'auto',
+                        detectedType: m.detectedType || null,
                         errorCount: m.errorCount,
                         lastError: m.lastError,
                         lastChecked: m.lastChecked,
@@ -2126,6 +2145,8 @@ class WebAPI {
                     `UPDATE Guilds SET ${column} = ? WHERE guildId = ?`,
                     [dbValue || null, guildId]
                 );
+
+                invalidateGuildCache(guildId);
                 
                 res.json({ success: true, setting, value: dbValue });
             } catch (error) {
@@ -2148,151 +2169,26 @@ class WebAPI {
             if (!productUrl) {
                 return res.status(400).json({ error: 'URL is required' });
             }
-            
-            let url;
+
             try {
-                url = new URL(productUrl);
-            } catch {
-                return res.status(400).json({ error: 'Invalid URL' });
-            }
-            
-            if (!url.pathname.includes('/products/')) {
-                return res.status(400).json({ error: 'Not a valid Shopify product URL' });
-            }
-            
-            try {
-                const response = await fetch(`${url.origin}${url.pathname}.json`);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                
-                const data = await response.json();
-                const product = data.product;
-                
-                if (!product || !Array.isArray(product.variants)) {
-                    return res.status(400).json({ error: 'No product data found' });
-                }
-                
+                const shopify = await fetchShopifyProduct(productUrl);
+
                 res.json({
-                    title: product.title,
-                    vendor: product.vendor,
-                    productType: product.product_type,
-                    image: product.images?.[0]?.src,
-                    variants: product.variants.map(v => ({
-                        id: v.id,
-                        title: [v.option1, v.option2, v.option3]
-                            .filter(o => o && o !== 'Default Title' && o !== '-')
-                            .join(' / ') || 'Default',
-                        price: v.price,
-                        compareAtPrice: v.compare_at_price,
-                        stock: v.inventory_quantity,
-                        available: v.available,
-                        addToCart: `${url.origin}/cart/${v.id}:1`
-                    }))
+                    title: shopify.title,
+                    vendor: shopify.vendor,
+                    productType: shopify.productType,
+                    image: shopify.image,
+                    variants: shopify.variants
                 });
             } catch (error) {
                 logger.error('Shopify lookup error', { error: error.message });
-                res.status(500).json({ error: 'Failed to fetch product data' });
-            }
-        });
-
-        // ==========================================
-        // IMAX Melbourne Endpoints
-        // ==========================================
-
-        /**
-         * GET /api/imax/sessions/:date
-         * Get available IMAX sessions for a date
-         */
-        router.get('/imax/sessions/:date', requireAuth, async (req, res) => {
-            const { date } = req.params;
-
-            // Validate date format
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-                return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
-            }
-
-            try {
-                const { getImaxScannerService } = require('../services/ImaxScannerService');
-                const scanner = getImaxScannerService(this.client);
-
-                if (!scanner) {
-                    return res.status(503).json({ error: 'IMAX scanner service not available' });
-                }
-
-                const sessions = await scanner.getSessions(date);
-                res.json({ date, sessions });
-            } catch (error) {
-                logger.error('IMAX sessions API error', { error: error.message, date });
-                res.status(500).json({ error: 'Failed to fetch sessions' });
-            }
-        });
-
-        /**
-         * POST /api/imax/scan
-         * Scan IMAX sessions for optimal seating
-         * Body: { date: 'YYYY-MM-DD', numSeats: 2 } or { movie: '714', numSeats: 2 }
-         */
-        router.post('/imax/scan', requireAuth, async (req, res) => {
-            const { date, numSeats = 2, movie, movieId, movieUrl } = req.body;
-            const movieInput = movie || movieId || movieUrl;
-
-            if (!movieInput && (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date))) {
-                return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD or provide movie ID/URL' });
-            }
-
-            if (numSeats < 1 || numSeats > 10) {
-                return res.status(400).json({ error: 'Number of seats must be between 1 and 10' });
-            }
-
-            try {
-                const { getImaxScannerService } = require('../services/ImaxScannerService');
-                const scanner = getImaxScannerService(this.client);
-
-                if (!scanner) {
-                    return res.status(503).json({ error: 'IMAX scanner service not available' });
-                }
-
-                const results = movieInput ?
-                    await scanner.scanMovie(movieInput, numSeats) :
-                    await scanner.scanDate(date, numSeats);
-                res.json(results);
-            } catch (error) {
-                logger.error('IMAX scan API error', { error: error.message, date, movieInput, numSeats });
-                res.status(500).json({ error: 'Scan failed: ' + error.message });
-            }
-        });
-
-        /**
-         * GET /api/imax/session/:sessionId
-         * Scan a single IMAX session for seat availability
-         * Query params: seats (number of consecutive seats, default 2)
-         */
-        router.get('/imax/session/:sessionId', requireAuth, async (req, res) => {
-            const { sessionId } = req.params;
-            const numSeats = parseInt(req.query.seats) || 2;
-
-            if (!/^\d+$/.test(sessionId)) {
-                return res.status(400).json({ error: 'Invalid session ID' });
-            }
-
-            if (numSeats < 1 || numSeats > 10) {
-                return res.status(400).json({ error: 'Number of seats must be between 1 and 10' });
-            }
-
-            try {
-                const { getImaxScannerService } = require('../services/ImaxScannerService');
-                const scanner = getImaxScannerService(this.client);
-
-                if (!scanner) {
-                    return res.status(503).json({ error: 'IMAX scanner service not available' });
-                }
-
-                const result = await scanner.scanSession(sessionId, numSeats);
-                res.json(result);
-            } catch (error) {
-                logger.error('IMAX session API error', { error: error.message, sessionId });
-                res.status(500).json({ error: 'Session scan failed: ' + error.message });
+                const badRequestErrors = new Set([
+                    'Invalid URL',
+                    'Not a valid Shopify product URL',
+                    'No product data found',
+                ]);
+                const status = badRequestErrors.has(error.message) ? 400 : 500;
+                res.status(status).json({ error: error.message || 'Failed to fetch product data' });
             }
         });
 
@@ -2308,29 +2204,29 @@ class WebAPI {
     setupWebSocket() {
         this.io.on('connection', (socket) => {
             logger.debug('WebSocket client connected', { id: socket.id });
-            
+
             // Join a guild's room to receive updates
             socket.on('subscribe', (guildId) => {
                 // Verify the guild exists
                 if (this.client.guilds.cache.has(guildId)) {
                     socket.join(`guild:${guildId}`);
                     logger.debug('Client subscribed to guild', { socketId: socket.id, guildId });
-                    
+
                     // Send initial state
                     this.sendNowPlayingUpdate(guildId);
                 }
             });
-            
+
             socket.on('unsubscribe', (guildId) => {
                 socket.leave(`guild:${guildId}`);
             });
-            
+
             socket.on('disconnect', () => {
                 logger.debug('WebSocket client disconnected', { id: socket.id });
             });
         });
     }
-    
+
     /**
      * Send now playing update to all clients in a guild room
      */
@@ -2507,35 +2403,6 @@ class WebAPI {
         return `${minutes}m`;
     }
     
-    /**
-     * Fetch YouTube channel data by handle
-     */
-    async fetchYouTubeChannel(handle) {
-        try {
-            const { request } = require('undici');
-            const res = await request(
-                `https://www.googleapis.com/youtube/v3/channels?` +
-                `part=snippet,statistics&forHandle=@${handle}&key=${process.env.YOUTUBE_API_KEY}`
-            );
-            const body = await res.body.json();
-            if (!body.items || !body.items.length) {
-                // Try by username as fallback
-                const res2 = await request(
-                    `https://www.googleapis.com/youtube/v3/channels?` +
-                    `part=snippet,statistics&forUsername=${handle}&key=${process.env.YOUTUBE_API_KEY}`
-                );
-                const body2 = await res2.body.json();
-                if (!body2.items || !body2.items.length) return null;
-                const { snippet, statistics, id } = body2.items[0];
-                return { snippet, statistics, id };
-            }
-            const { snippet, statistics, id } = body.items[0];
-            return { snippet, statistics, id };
-        } catch (e) {
-            logger.error('YouTube API error: ' + (e.stack || e));
-            return null;
-        }
-    }
 }
 
 module.exports = WebAPI;
