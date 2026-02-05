@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const db = require('../database/db.js');
-const { request } = require('undici');
 const logger = require('../logger');
+const { fetchYouTubeChannel } = require('../utils/youtube');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -185,23 +185,3 @@ module.exports = {
         }
     }
 };
-
-/**
- * Fetches channel data by handle via YouTube Data API v3.
- * Returns the snippet & statistics plus id, or null on failure.
- */
-async function fetchYouTubeChannel(handle) {
-    try {
-        const res = await request(
-            `https://www.googleapis.com/youtube/v3/channels?` +
-            `part=snippet,statistics&forUsername=${handle}&key=${process.env.YOUTUBE_API_KEY}`
-        );
-        const body = await res.body.json();
-        if (!body.items || !body.items.length) return null;
-        const { snippet, statistics, id } = body.items[0];
-        return { snippet, statistics, id };
-    } catch (e) {
-    logger.error('YouTube API error: ' + (e.stack || e));
-        return null;
-    }
-}
