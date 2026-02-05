@@ -15,6 +15,30 @@ module.exports = {
         
         if (!subscription) return;
 
+        // If the bot itself was disconnected (admin kick), clean up and do not rejoin
+        const botId = client.user?.id;
+        if (botId && oldState.id === botId) {
+            if (oldState.channelId && !newState.channelId) {
+                subscription._manualDisconnect = true;
+                subscription.queueLock = true;
+                subscription.queue = [];
+                subscription.history = [];
+                subscription.currentTrack = null;
+                subscription.prefetchedUrls?.clear();
+                subscription.prefetchedHeaders?.clear();
+                subscription._clearPrefetchedStreams?.();
+                subscription.audioPlayer?.stop(true);
+                subscription.queueLock = false;
+                try {
+                    subscription.voiceConnection?.destroy();
+                } catch (err) {
+                    logger.error('Failed to destroy voice connection after manual disconnect', { error: err.message });
+                }
+                client.subscriptions.delete(oldState.guild.id);
+                return;
+            }
+        }
+
         // Get the channel the BOT is in, not the channel the user left
         const botChannel = subscription.voiceConnection?.joinConfig?.channelId;
         if (!botChannel) return;

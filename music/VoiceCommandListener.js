@@ -770,6 +770,7 @@ class VoiceCommandListener extends EventEmitter {
                         const j = Math.floor(Math.random() * (i + 1));
                         [sub.queue[i], sub.queue[j]] = [sub.queue[j], sub.queue[i]];
                     }
+                    sub.scheduleQueueUpdate();
                     this.sendFeedback({
                         title: `🔀 | Shuffled`,
                         description: `Shuffled **${sub.queue.length}** tracks in the queue`,
