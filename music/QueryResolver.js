@@ -20,6 +20,15 @@ function extractHttpHeaders(info) {
     return Object.keys(cleaned).length > 0 ? cleaned : null;
 }
 
+function getYtdlpInfoTimeoutMs() {
+    const raw = process.env.YTDLP_INFO_TIMEOUT_MS;
+    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+    }
+    return 30000;
+}
+
 let cachedCookiesPath;
 let cachedCookiesChecked = false;
 
@@ -236,7 +245,7 @@ class QueryResolver {
             // Store playlist metadata for the response
             const tracks = flatInfo.entries.map(entry => new Track({
                 title: entry.title && entry.title !== entry.id ? entry.title : 'Loading...',
-                url: entry.url || entry.webpage_url,
+                url: entry.webpage_url || entry.url,
                 thumbnail: entry.thumbnail || entry.thumbnails?.[0]?.url,
                 duration: entry.duration,
                 artist: entry.uploader || entry.artist || entry.creator || entry.channel,
@@ -378,17 +387,54 @@ class QueryResolver {
             
             args.push(url);
             
-            const proc = spawn(ytdlpPath, args);
+            const proc = spawn(ytdlpPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
             let output = '';
+            let errorOutput = '';
+            let settled = false;
+            const timeoutMs = getYtdlpInfoTimeoutMs();
+            const timeout = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                try {
+                    proc.kill('SIGKILL');
+                } catch {
+                    try {
+                        proc.kill();
+                    } catch {
+                        // ignore
+                    }
+                }
+                logger.warn(`yt-dlp info timed out after ${timeoutMs}ms for: ${url}`);
+                resolve(null);
+            }, timeoutMs);
+            if (typeof timeout.unref === 'function') {
+                timeout.unref();
+            }
+
             proc.stdout.on('data', d => output += d);
+            proc.stderr.on('data', d => errorOutput += d.toString());
+
+            proc.on('error', (err) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                logger.warn(`yt-dlp info spawn error: ${err.message}`);
+                resolve(null);
+            });
+
             proc.on('close', code => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
                 if (code === 0) {
                     try {
                         resolve(JSON.parse(output));
-                    } catch {
+                    } catch (e) {
+                        logger.warn(`yt-dlp info parse error: ${e.message}`);
                         resolve(null);
                     }
                 } else {
+                    logger.warn(`yt-dlp info exited with code ${code}: ${errorOutput}`);
                     resolve(null);
                 }
             });
@@ -418,6 +464,7 @@ class QueryResolver {
                 url
             ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
                 if (error) {
+                    logger.warn(`Direct stream fetch failed: ${error.message}`);
                     resolve(null);
                 } else {
                     try {

@@ -293,19 +293,21 @@ module.exports = {
                 let trackCount = 0;
                 let firstBatch = true;
                 
-                for await (const batch of QueryResolver.streamSpotifyPlaylist(playlistId, requestedBy)) {
-                    for (const track of batch) {
-                        subscription.enqueue(track);
-                        trackCount++;
+                try {
+                    for await (const batch of QueryResolver.streamSpotifyPlaylist(playlistId, requestedBy)) {
+                        for (const track of batch) {
+                            subscription.enqueue(track);
+                            trackCount++;
+                        }
+                        
+                        // After first batch, the first track should start playing
+                        if (firstBatch) {
+                            firstBatch = false;
+                        }
                     }
-                    
-                    // After first batch, the first track should start playing
-                    if (firstBatch) {
-                        firstBatch = false;
-                    }
+                } finally {
+                    subscription._suppressAddSong = false;
                 }
-                
-                subscription._suppressAddSong = false;
                 logger.info(`Finished loading ${trackCount} tracks from Spotify playlist`);
                 return;
             }
@@ -324,11 +326,13 @@ module.exports = {
             const isPlaylist = tracks.length > 1;
             subscription._suppressAddSong = true;
 
-            for (const track of tracks) {
-                subscription.enqueue(track);
+            try {
+                for (const track of tracks) {
+                    subscription.enqueue(track);
+                }
+            } finally {
+                subscription._suppressAddSong = false;
             }
-
-            subscription._suppressAddSong = false;
 
             if (isPlaylist) {
                 

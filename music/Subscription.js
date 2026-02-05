@@ -149,6 +149,7 @@ function resetYtAuthFailures() {
 
 function shouldPreferYtdlpStreaming(url) {
     if (!url) return false;
+    const preferStreaming = process.env.PREFER_YTDLP_STREAMING === '1' || process.env.PREFER_YTDLP_STREAMING === 'true';
     if (process.env.DISABLE_DIRECT_URL === '1' || process.env.DISABLE_DIRECT_URL === 'true') {
         return true;
     }
@@ -156,6 +157,7 @@ function shouldPreferYtdlpStreaming(url) {
     if (!isYouTube) return false;
     const cookiePath = resolveYtdlpCookiesPath();
     if (!cookiePath) return false;
+    if (!preferStreaming) return false;
 
     // Reset failure count after timeout
     if (ytAuthFailureCount > 0 && (Date.now() - lastYtAuthFailure) > YT_AUTH_FAILURE_RESET_MS) {
@@ -239,6 +241,8 @@ class Subscription extends EventEmitter {
         this._queueUpdateDebounceMs = 100;
         this._queueUpdateMaxWaitMs = 2000;
         this._manualDisconnect = false;
+        this._skipRequested = false;
+        this._skipClearTimer = null;
 
         this.voiceConnection.on('stateChange', async (_, newState) => {
             if (newState.status === VoiceConnectionStatus.Disconnected) {
@@ -301,10 +305,15 @@ class Subscription extends EventEmitter {
                 logger.info(`AudioPlayer went Idle from ${oldState.status} (destroying: ${this._destroying}, stopping: ${this._stopping})`);
                 
                 // Don't emit events if we're being destroyed or explicitly stopping
-                if (this._destroying || this._stopping) return;
+                if (this._destroying || this._stopping) {
+                    this._skipRequested = false;
+                    return;
+                }
                 
                 // Track finished naturally
-                if (this.queue.length === 0 && this.repeatMode === 0) {
+                const suppressFinish = this._skipRequested;
+                this._skipRequested = false;
+                if (!suppressFinish && this.queue.length === 0 && this.repeatMode === 0) {
                     this.emit('finish');
                 }
                 this.processQueue();
@@ -558,6 +567,7 @@ class Subscription extends EventEmitter {
 
     stop(user = null) {
         this._stopping = true; // Prevent finish event
+        this._skipRequested = false;
         this.queueLock = true;
         this.queue = [];
         this.history = [];
@@ -573,8 +583,18 @@ class Subscription extends EventEmitter {
 
     skip(user = null) {
         const skipped = this.currentTrack;
+        this._skipRequested = true;
         this.audioPlayer.stop();
         this.emit('skip', skipped, user);
+        if (this._skipClearTimer) {
+            clearTimeout(this._skipClearTimer);
+        }
+        this._skipClearTimer = setTimeout(() => {
+            this._skipRequested = false;
+        }, 2000);
+        if (typeof this._skipClearTimer.unref === 'function') {
+            this._skipClearTimer.unref();
+        }
     }
 
     // Play the previous track from history
@@ -1100,6 +1120,13 @@ class Subscription extends EventEmitter {
                     }
                 });
             }
+
+            const sourceLabel = prefetched ? 'prefetched yt-dlp stream' : 'yt-dlp stream';
+            sourceStream.on('error', (err) => {
+                if (err?.code !== 'EPIPE' && err?.message !== 'Premature close') {
+                    logger.warn(`${sourceLabel} error: ${err.message}`);
+                }
+            });
             
             // If we have filters, pipe through FFmpeg
             if (activeFilters.length > 0) {
@@ -1120,12 +1147,35 @@ class Subscription extends EventEmitter {
                 
                 const ffmpeg = spawn(FFMPEG_PATH, ffmpegArgs);
                 sourceStream.pipe(ffmpeg.stdin);
+
+                ffmpeg.on('error', (err) => {
+                    logger.error(`FFmpeg spawn error (filters): ${err.message}`);
+                });
+
+                ffmpeg.stderr.on('data', (data) => {
+                    const msg = data.toString().trim();
+                    if (msg) {
+                        logger.warn(`FFmpeg stderr (filters): ${msg}`);
+                    }
+                });
+
+                ffmpeg.stdin.on('error', (err) => {
+                    if (err?.code !== 'EPIPE' && err?.message !== 'Premature close') {
+                        logger.warn(`FFmpeg stdin error (filters): ${err.message}`);
+                    }
+                });
                 
                 ffmpeg.stdout.once('data', () => {
                     const label = prefetched ? 'prefetched yt-dlp+FFmpeg' : 'yt-dlp+FFmpeg';
                     logger.info(`${label} first data after ${Date.now() - startTime}ms (with filters)`);
                     // Reset auth failures on successful stream
                     if (ytAuthFailureCount > 0) resetYtAuthFailures();
+                });
+
+                ffmpeg.stdout.on('error', (err) => {
+                    if (err?.code !== 'EPIPE' && err?.message !== 'Premature close') {
+                        logger.warn(`FFmpeg stdout error (filters): ${err.message}`);
+                    }
                 });
                 
                 const resource = createAudioResource(ffmpeg.stdout, { 

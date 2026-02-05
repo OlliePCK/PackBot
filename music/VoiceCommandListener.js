@@ -222,6 +222,9 @@ class VoiceCommandListener extends EventEmitter {
         this.lastSpeakingUser = null; // Backup in case currentSpeakingUser is null
         this.lastSpeakingTime = 0;
         this.keepAliveInterval = null;
+        this.receiver = null;
+        this._onSpeakingStart = null;
+        this._onSpeakingEnd = null;
     }
     
     /**
@@ -341,21 +344,25 @@ class VoiceCommandListener extends EventEmitter {
         this.enabled = true;
         
         const receiver = this.subscription.voiceConnection.receiver;
+        this.receiver = receiver;
         
         // Listen for users speaking
-        receiver.speaking.on('start', (userId) => {
+        this._onSpeakingStart = (userId) => {
             if (!this.enabled) return;
             this.startListening(userId);
-        });
+        };
         
-        receiver.speaking.on('end', (userId) => {
+        this._onSpeakingEnd = (userId) => {
             // User stopped speaking - remember them as last speaker
             if (this.currentSpeakingUser === userId) {
                 this.lastSpeakingUser = userId;
                 this.lastSpeakingTime = Date.now();
                 this.currentSpeakingUser = null;
             }
-        });
+        };
+
+        receiver.speaking.on('start', this._onSpeakingStart);
+        receiver.speaking.on('end', this._onSpeakingEnd);
         
         logger.info('Voice command listener started with Deepgram');
         
@@ -898,6 +905,14 @@ class VoiceCommandListener extends EventEmitter {
         if (this.keepAliveInterval) {
             clearInterval(this.keepAliveInterval);
             this.keepAliveInterval = null;
+        }
+
+        if (this.receiver && this._onSpeakingStart) {
+            this.receiver.speaking.off('start', this._onSpeakingStart);
+            this.receiver.speaking.off('end', this._onSpeakingEnd);
+            this._onSpeakingStart = null;
+            this._onSpeakingEnd = null;
+            this.receiver = null;
         }
         
         // Clean up streams
