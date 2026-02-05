@@ -6,16 +6,24 @@ module.exports = {
         .setDescription('Stop the music and clear the queue'),
     async execute(interaction) {
         const subscription = interaction.client.subscriptions.get(interaction.guildId);
-        if (subscription) {
-            subscription.stop(interaction.user);
-            // Delete the deferred reply - the event embed will be the response
-            await interaction.deleteReply();
-        } else {
+        if (!subscription) {
             const embed = new EmbedBuilder()
                 .setDescription(`${interaction.client.emotes.error} | Not playing anything.`)
                 .setColor('#ff0000')
                 .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
-            interaction.editReply({ embeds: [embed] });
+            return await interaction.editReply({ embeds: [embed] });
+        }
+
+        try {
+            subscription.stop(interaction.user);
+            // Delete the deferred reply - the event embed will be the response
+            await interaction.deleteReply().catch(() => {});
+        } catch (e) {
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | Couldn't stop playback.`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return await interaction.editReply({ embeds: [embed] });
         }
     },
 };

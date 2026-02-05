@@ -68,6 +68,7 @@ module.exports = {
             if ((idx1 === 0 || idx2 === 0) && subscription.queue.length > 0) {
                 subscription.prefetchTrack(subscription.queue[0]);
             }
+            subscription.scheduleQueueUpdate();
 
             const embed = new EmbedBuilder()
                 .setDescription(`🔀 Swapped positions **${pos1}** and **${pos2}**.`)

@@ -57,6 +57,7 @@ module.exports = {
 
             // Prefetch the newly moved track since it's now next
             subscription.prefetchTrack(movedSong);
+            subscription.scheduleQueueUpdate();
 
             const embed = new EmbedBuilder()
                 .setDescription(`⏫ **${movedSong.title || 'Track'}** moved to play next.`)

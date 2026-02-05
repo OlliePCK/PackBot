@@ -27,9 +27,12 @@ module.exports = {
 
         // Clear prefetched URLs since queue order changed, then prefetch the new next track
         subscription.prefetchedUrls.clear();
+        subscription.prefetchedHeaders?.clear();
+        subscription._clearPrefetchedStreams?.();
         if (subscription.queue.length > 0) {
             subscription.prefetchTrack(subscription.queue[0]);
         }
+        subscription.scheduleQueueUpdate();
 
         const embed = new EmbedBuilder()
             .setDescription(`🔀 Shuffled **${subscription.queue.length}** songs in the queue.`)

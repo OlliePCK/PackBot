@@ -27,6 +27,7 @@ module.exports = {
         try {
             // Remove the last song in the queue
             const removed = subscription.queue.pop();
+            subscription.scheduleQueueUpdate();
 
             const embed = new EmbedBuilder()
                 .setTitle(`${interaction.client.emotes.success} | Removed from queue`)
