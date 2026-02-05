@@ -1,14 +1,7 @@
 // events/interactionCreate.js
-const { getGuildRow } = require('../../database/guilds');
 const { MessageFlags } = require('discord.js');
 const logger = require('../../logger').child('commands');
-
-// Guild cache with TTL (5 minutes)
-const CACHE_TTL = 5 * 60 * 1000;
-const guildCache = new Map(); // { guildId: { data, timestamp } }
-
-// Export cache for clearing from other modules (e.g., settings.js)
-module.exports.guildCache = guildCache;
+const { getGuildProfile } = require('../../utils/guildSettingsCache');
 
 // Commands/subcommands that should not be deferred (e.g., modal commands)
 const NO_DEFER_COMMANDS = new Set([
@@ -68,16 +61,8 @@ module.exports = {
 				});
 			}
 
-			// Load or upsert + fetch the guild profile (with TTL check)
-			const cached = guildCache.get(interaction.guildId);
-			let guildProfile = null;
-			if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-				guildProfile = cached.data;
-			}
-			if (!guildProfile) {
-				guildProfile = await getGuildRow(interaction.guildId);
-				guildCache.set(interaction.guildId, { data: guildProfile, timestamp: Date.now() });
-			}
+			// Load or upsert + fetch the guild profile (cached)
+			const guildProfile = await getGuildProfile(interaction.guildId);
 
 			// Execute the command, passing in the profile
 			logger.command(interaction.commandName, interaction.user.tag, interaction.guild?.name || interaction.guildId);

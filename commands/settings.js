@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const db = require('../database/db.js');
-const { guildCache } = require('../events/client/interactionCreate.js');
+const { invalidateGuildCache } = require('../utils/guildSettingsCache');
 
 const SETTERS = {
 	'set-live-role': {
@@ -129,7 +129,7 @@ module.exports = {
 				[newValue, interaction.guildId]
 			);
 			
-			guildCache.delete(interaction.guildId);
+			invalidateGuildCache(interaction.guildId);
 			guildProfile[cfg.column] = newValue;
 			
 			const embed = new EmbedBuilder()
@@ -165,7 +165,7 @@ module.exports = {
 		);
 
 		// Clear the guild cache so the new setting takes effect immediately
-		guildCache.delete(interaction.guildId);
+		invalidateGuildCache(interaction.guildId);
 
 		// sync your cache object in memory
 		guildProfile[cfg.column] = target.id;
