@@ -17,6 +17,9 @@ const DEFAULT_CONFIG = {
     maxPagesBeforeRestart: 100,    // Restart browser after N pages (memory management)
     viewportWidth: 1920,
     viewportHeight: 1080,
+    // Proxy support (uses PROXY_URL env var if set)
+    useProxy: !!process.env.PROXY_URL,
+    proxyUrl: process.env.PROXY_URL,
 };
 
 /**
@@ -126,28 +129,58 @@ class BrowserClient {
     }
 
     /**
+     * Parse proxy URL into components
+     * @returns {{host: string, port: string, username: string, password: string}|null}
+     */
+    parseProxyUrl() {
+        if (!this.config.proxyUrl) return null;
+
+        try {
+            const url = new URL(this.config.proxyUrl);
+            return {
+                host: url.hostname,
+                port: url.port || (url.protocol === 'https:' ? '443' : '80'),
+                username: decodeURIComponent(url.username || ''),
+                password: decodeURIComponent(url.password || ''),
+            };
+        } catch (err) {
+            logger.warn('Failed to parse proxy URL', { error: err.message });
+            return null;
+        }
+    }
+
+    /**
      * Internal browser launch
      * @returns {Promise<Browser>}
      */
     async _launchBrowser() {
+        const args = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            `--window-size=${this.config.viewportWidth},${this.config.viewportHeight}`,
+        ];
+
+        // Add proxy if configured
+        const proxyInfo = this.parseProxyUrl();
+        if (this.config.useProxy && proxyInfo) {
+            args.push(`--proxy-server=${proxyInfo.host}:${proxyInfo.port}`);
+            logger.info('Browser using proxy', { host: proxyInfo.host, port: proxyInfo.port });
+        }
+
         const launchOptions = {
             headless: 'new',
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process',
-                `--window-size=${this.config.viewportWidth},${this.config.viewportHeight}`,
-            ],
+            args,
             defaultViewport: {
                 width: this.config.viewportWidth,
                 height: this.config.viewportHeight,
             },
         };
 
-        logger.debug('Launching browser', { options: launchOptions });
+        logger.debug('Launching browser', { useProxy: !!proxyInfo });
         return puppeteer.launch(launchOptions);
     }
 
@@ -156,6 +189,15 @@ class BrowserClient {
      * @param {Page} page - Puppeteer page
      */
     async applyStealthSettings(page) {
+        // Authenticate with proxy if configured
+        const proxyInfo = this.parseProxyUrl();
+        if (this.config.useProxy && proxyInfo && proxyInfo.username) {
+            await page.authenticate({
+                username: proxyInfo.username,
+                password: proxyInfo.password,
+            });
+        }
+
         const userAgent = getRandomUserAgent('desktop');
         await page.setUserAgent(userAgent);
 
@@ -251,12 +293,74 @@ class BrowserClient {
     }
 
     /**
+     * Wait for page to stabilize (no more navigations/network activity)
+     * @param {Page} page - Puppeteer page
+     * @param {number} timeout - Max wait time in ms
+     */
+    async waitForPageStable(page, timeout = 10000) {
+        const startTime = Date.now();
+        let lastUrl = page.url();
+        let stableCount = 0;
+        const stableRequired = 3; // Need 3 consecutive stable checks
+
+        while (Date.now() - startTime < timeout) {
+            await new Promise(r => setTimeout(r, 500));
+
+            try {
+                const currentUrl = page.url();
+                if (currentUrl === lastUrl) {
+                    stableCount++;
+                    if (stableCount >= stableRequired) {
+                        // Page URL stable, now wait for network
+                        try {
+                            await page.waitForNetworkIdle({ timeout: 3000 });
+                        } catch {
+                            // Network idle timeout is OK
+                        }
+                        return;
+                    }
+                } else {
+                    // URL changed, reset counter
+                    lastUrl = currentUrl;
+                    stableCount = 0;
+                    logger.debug('Page navigated during stabilization', { newUrl: currentUrl });
+                }
+            } catch (err) {
+                // Page might be mid-navigation
+                stableCount = 0;
+            }
+        }
+
+        logger.debug('Page stabilization timeout, proceeding anyway');
+    }
+
+    /**
+     * Detect if HTML content is a Chrome error/interstitial page
+     * @param {string} html - HTML content
+     * @returns {boolean}
+     */
+    isErrorPage(html) {
+        if (!html) return false;
+        const snippet = html.substring(0, 2000).toLowerCase();
+        return (
+            snippet.includes('chromium authors') ||
+            snippet.includes('err_') ||
+            snippet.includes('net::err_') ||
+            snippet.includes("this site can't be reached") ||
+            snippet.includes('your connection is not private') ||
+            snippet.includes('ssl_error') ||
+            (snippet.includes('<title>') && !snippet.includes('imax') && snippet.includes('.com.au</title>'))
+        );
+    }
+
+    /**
      * Fetch a page and return its HTML content
      * @param {string} url - URL to fetch
      * @param {object} options - Options
      * @returns {Promise<{html: string, finalUrl: string, passedQueueIt: boolean}>}
      */
     async getPageHtml(url, options = {}) {
+        const { retryWithoutProxy = true } = options;
         const browser = await this.ensureBrowser();
         const page = await browser.newPage();
         this.trackPageOpen();
@@ -286,9 +390,22 @@ class BrowserClient {
                 }
             }
 
+            // Wait for page to stabilize (handles JavaScript redirects)
+            await this.waitForPageStable(page);
+
             // Get the final HTML content
             const html = await page.content();
             const finalUrl = page.url();
+
+            // Check for Chrome error pages (often caused by proxy issues)
+            if (this.isErrorPage(html) && this.config.useProxy && retryWithoutProxy) {
+                logger.warn('Detected Chrome error page, retrying without proxy', { url });
+                await page.close();
+                this.trackPageClose();
+
+                // Create a new browser instance without proxy for this request
+                return this.getPageHtmlWithoutProxy(url);
+            }
 
             logger.debug('Page fetched successfully', {
                 url,
@@ -305,8 +422,91 @@ class BrowserClient {
             };
 
         } finally {
-            await page.close();
+            await page.close().catch(() => {});
             this.trackPageClose();
+        }
+    }
+
+    /**
+     * Fetch a page without using proxy (fallback for proxy errors)
+     * @param {string} url - URL to fetch
+     * @returns {Promise<{html: string, finalUrl: string, passedQueueIt: boolean}>}
+     */
+    async getPageHtmlWithoutProxy(url) {
+        logger.info('Launching browser without proxy for fallback', { url });
+
+        const args = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=IsolateOrigins,site-per-process',
+            `--window-size=${this.config.viewportWidth},${this.config.viewportHeight}`,
+        ];
+
+        const browser = await puppeteer.launch({
+            headless: 'new',
+            args,
+            defaultViewport: {
+                width: this.config.viewportWidth,
+                height: this.config.viewportHeight,
+            },
+        });
+
+        const page = await browser.newPage();
+
+        try {
+            // Apply stealth settings but skip proxy auth
+            const userAgent = getRandomUserAgent('desktop');
+            await page.setUserAgent(userAgent);
+            await page.setExtraHTTPHeaders({
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            });
+            await page.evaluateOnNewDocument(() => {
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            });
+
+            const response = await page.goto(url, {
+                waitUntil: 'networkidle2',
+                timeout: this.config.navigationTimeout,
+            });
+
+            let passedQueueIt = false;
+            const currentUrl = page.url();
+
+            if (isQueueItUrl(currentUrl)) {
+                logger.info('Queue-it detected in no-proxy fallback', { currentUrl });
+                passedQueueIt = await this.waitForQueueIt(page);
+                if (!passedQueueIt) {
+                    throw new Error('Queue-it timeout in no-proxy fallback');
+                }
+            }
+
+            await this.waitForPageStable(page);
+            const html = await page.content();
+            const finalUrl = page.url();
+
+            logger.info('Page fetched successfully without proxy', {
+                url,
+                finalUrl,
+                passedQueueIt,
+                contentLength: html.length
+            });
+
+            return {
+                html,
+                finalUrl,
+                passedQueueIt,
+                status: response?.status() || 200,
+            };
+
+        } finally {
+            await page.close().catch(() => {});
+            await browser.close().catch(() => {});
         }
     }
 
@@ -325,6 +525,158 @@ class BrowserClient {
                 this.pageCount = 0;
                 this.activePages = 0;
             }
+        }
+    }
+
+    /**
+     * Pre-warm the browser by visiting a URL and passing through Queue-it
+     * This establishes cookies that subsequent requests can reuse
+     * @param {string} url - URL to visit (should be on the protected domain)
+     * @param {number} timeout - Max time to wait in ms (default: 60000)
+     * @returns {Promise<{success: boolean, passedQueueIt: boolean, error?: string}>}
+     */
+    async preWarmQueueIt(url, timeout = 60000) {
+        const browser = await this.ensureBrowser();
+        const page = await browser.newPage();
+        this.trackPageOpen();
+
+        const startTime = Date.now();
+
+        try {
+            await this.applyStealthSettings(page);
+
+            logger.info('Pre-warming browser for Queue-it', { url });
+
+            await page.goto(url, {
+                waitUntil: 'networkidle2',
+                timeout,
+            });
+
+            let passedQueueIt = false;
+            const currentUrl = page.url();
+
+            if (isQueueItUrl(currentUrl)) {
+                logger.info('Queue-it detected during pre-warm, waiting...', { currentUrl });
+                passedQueueIt = await this.waitForQueueIt(page);
+
+                if (!passedQueueIt) {
+                    return {
+                        success: false,
+                        passedQueueIt: false,
+                        error: 'Queue-it timeout during pre-warm',
+                    };
+                }
+            }
+
+            logger.info('Browser pre-warmed successfully', {
+                url,
+                passedQueueIt,
+                elapsed: Date.now() - startTime,
+            });
+
+            return {
+                success: true,
+                passedQueueIt,
+            };
+
+        } catch (error) {
+            logger.error('Pre-warm failed', { url, error: error.message });
+            return {
+                success: false,
+                passedQueueIt: false,
+                error: error.message,
+            };
+        } finally {
+            await page.close();
+            this.trackPageClose();
+        }
+    }
+
+    /**
+     * Create an isolated browser context with its own cookies/storage
+     * Use this for parallel operations that shouldn't share state
+     * @returns {Promise<BrowserContext>}
+     */
+    async createContext() {
+        const browser = await this.ensureBrowser();
+        const context = await browser.createBrowserContext();
+        logger.debug('Created isolated browser context');
+        return context;
+    }
+
+    /**
+     * Pre-warm a browser context by visiting a URL and passing through Queue-it
+     * Establishes cookies in this specific context for subsequent requests
+     * @param {BrowserContext} context - The browser context to warm
+     * @param {string} url - URL to visit (should be on the protected domain)
+     * @param {number} timeout - Max time to wait in ms (default: 60000)
+     * @returns {Promise<{success: boolean, passedQueueIt: boolean, error?: string}>}
+     */
+    async preWarmContext(context, url, timeout = 60000) {
+        const page = await context.newPage();
+        this.trackPageOpen();
+
+        const startTime = Date.now();
+
+        try {
+            await this.applyStealthSettings(page);
+
+            logger.debug('Pre-warming context for Queue-it', { url });
+
+            await page.goto(url, {
+                waitUntil: 'networkidle2',
+                timeout,
+            });
+
+            let passedQueueIt = false;
+            const currentUrl = page.url();
+
+            if (isQueueItUrl(currentUrl)) {
+                logger.debug('Queue-it detected in context, waiting...', { currentUrl });
+                passedQueueIt = await this.waitForQueueIt(page);
+
+                if (!passedQueueIt) {
+                    return {
+                        success: false,
+                        passedQueueIt: false,
+                        error: 'Queue-it timeout during context pre-warm',
+                    };
+                }
+            }
+
+            logger.debug('Context pre-warmed successfully', {
+                elapsed: Date.now() - startTime,
+                passedQueueIt,
+            });
+
+            return {
+                success: true,
+                passedQueueIt,
+            };
+
+        } catch (error) {
+            logger.warn('Context pre-warm failed', { url, error: error.message });
+            return {
+                success: false,
+                passedQueueIt: false,
+                error: error.message,
+            };
+        } finally {
+            await page.close();
+            this.trackPageClose();
+        }
+    }
+
+    /**
+     * Close a browser context
+     * @param {BrowserContext} context - The context to close
+     */
+    async closeContext(context) {
+        try {
+            await context.close();
+            logger.debug('Closed browser context');
+        } catch (error) {
+            logger.warn('Error closing browser context', { error: error.message });
         }
     }
 
@@ -351,6 +703,7 @@ class BrowserClient {
 
 // Singleton instance for shared use
 let sharedInstance = null;
+let noProxyInstance = null;
 let shutdownRegistered = false;
 
 /**
@@ -372,12 +725,32 @@ function getBrowserClient(options = {}) {
 }
 
 /**
+ * Get a browser client instance that doesn't use proxy
+ * Useful for sites that have issues with proxy (like IMAX Melbourne)
+ * @returns {BrowserClient}
+ */
+function getNoProxyBrowserClient() {
+    if (!noProxyInstance) {
+        noProxyInstance = new BrowserClient({
+            useProxy: false,
+            proxyUrl: null,
+        });
+        logger.info('Created no-proxy browser client for direct connections');
+    }
+    return noProxyInstance;
+}
+
+/**
  * Close the shared browser client
  */
 async function closeBrowserClient() {
     if (sharedInstance) {
         await sharedInstance.close();
         sharedInstance = null;
+    }
+    if (noProxyInstance) {
+        await noProxyInstance.close();
+        noProxyInstance = null;
     }
 }
 
@@ -411,5 +784,6 @@ function registerShutdownHandlers() {
 module.exports = {
     BrowserClient,
     getBrowserClient,
+    getNoProxyBrowserClient,
     closeBrowserClient,
 };

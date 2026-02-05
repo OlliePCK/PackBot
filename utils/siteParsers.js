@@ -45,7 +45,13 @@ async function fetchWithFallback(url, options = {}) {
 
         // Check if response was successful
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            const status = response.status;
+            // Common bot-block or service protection statuses -> try browser
+            if ([403, 429, 503, 520, 521, 522, 523, 524, 525, 526].includes(status)) {
+                logger.info('HTTP status suggests bot block, switching to browser', { url, status });
+                return await fetchWithBrowser(url, `http-${status}`);
+            }
+            throw new Error(`HTTP ${status}: ${response.statusText}`);
         }
 
         // Double-check HTML content for Queue-it patterns
@@ -65,13 +71,25 @@ async function fetchWithFallback(url, options = {}) {
         };
 
     } catch (error) {
+        const code = error?.code;
+        const message = (error?.message || '').toLowerCase();
+        const isNetworkError =
+            error?.name === 'AbortError' ||
+            ['ECONNREFUSED', 'ENOTFOUND', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE',
+             'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT',
+             'UND_ERR_BODY_TIMEOUT', 'UND_ERR_ABORTED'].includes(code) ||
+            message.includes('socket hang up') ||
+            message.includes('connection reset') ||
+            message.includes('network socket disconnected') ||
+            message.includes('tls');
+
         // If HTTP fails with a network error, try browser as last resort
-        if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        if (isNetworkError) {
             logger.warn('HTTP request failed, trying browser fallback', {
                 url,
                 error: error.message
             });
-            return await fetchWithBrowser(url, 'http-error');
+            return await fetchWithBrowser(url, code || 'http-network-error');
         }
         throw error;
     }
@@ -678,7 +696,7 @@ async function parseSite(url, options = {}) {
     const { type, keywords = [], forceBrowser = false } = options;
 
     // Auto-detect site type if not specified
-    const siteType = type || detectSiteType(url);
+    const siteType = type === 'imax' ? 'generic' : (type || detectSiteType(url));
 
     logger.debug(`Parsing ${url} as ${siteType}`, { forceBrowser });
 

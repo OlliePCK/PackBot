@@ -229,11 +229,18 @@ class HttpClient {
             } catch (error) {
                 lastError = error;
                 
-                const isRetryable = 
-                    error.name === 'AbortError' || 
+                const isRetryable =
+                    error.name === 'AbortError' ||
                     error.code === 'ECONNRESET' ||
                     error.code === 'ETIMEDOUT' ||
-                    error.code === 'ENOTFOUND';
+                    error.code === 'ENOTFOUND' ||
+                    error.code === 'ECONNREFUSED' ||
+                    error.code === 'EPIPE' ||
+                    error.code === 'UND_ERR_SOCKET' ||
+                    error.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+                    error.code === 'UND_ERR_HEADERS_TIMEOUT' ||
+                    error.code === 'UND_ERR_BODY_TIMEOUT' ||
+                    error.code === 'UND_ERR_ABORTED';
 
                 if (attempt < retries && isRetryable) {
                     const delay = retryDelay * Math.pow(2, attempt - 1); // Exponential backoff
