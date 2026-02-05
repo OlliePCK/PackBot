@@ -182,27 +182,40 @@ async function restartWithFilters(subscription) {
     if (!subscription.currentTrack) return;
 
     const track = subscription.currentTrack;
-    
+
     // Calculate approximate current position in seconds
     let seekSeconds = 0;
     if (subscription.playbackStartTime) {
         seekSeconds = Math.floor((Date.now() - subscription.playbackStartTime) / 1000);
     }
-    
-    // Get direct URL for the track
+
+    // Always fetch a fresh direct URL - cached URLs may be expired
     const QueryResolver = require('../music/QueryResolver');
-    let streamUrl = track.directUrl || subscription.prefetchedUrls.get(track.url);
-    if (!streamUrl && track.url) {
-        streamUrl = await QueryResolver.getDirectStreamUrl(track.url);
+    let streamInfo = null;
+
+    if (track.url) {
+        try {
+            streamInfo = await QueryResolver.getDirectStreamInfo(track.url);
+        } catch (err) {
+            logger.warn(`Failed to get fresh stream URL: ${err.message}`);
+        }
     }
-    
-    if (!streamUrl) {
+
+    // Fallback to cached URLs if fresh fetch fails
+    if (!streamInfo?.directUrl) {
+        streamInfo = {
+            directUrl: track.directUrl || subscription.prefetchedUrls?.get(track.url),
+            directHeaders: track.directHeaders || subscription.prefetchedHeaders?.get(track.url)
+        };
+    }
+
+    if (!streamInfo?.directUrl) {
         throw new Error('Could not get stream URL for filter application');
     }
-    
+
     // Re-create the audio resource with filters and seek position
     try {
-        const resource = await subscription.createAudioResourceWithFilters(streamUrl, seekSeconds, subscription.filters);
+        const resource = await subscription.createAudioResourceWithFilters(streamInfo.directUrl, seekSeconds, subscription.filters, streamInfo.directHeaders);
         subscription.audioPlayer.play(resource);
         // Update start time accounting for the seek
         subscription.playbackStartTime = Date.now() - (seekSeconds * 1000);

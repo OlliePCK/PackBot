@@ -10,6 +10,7 @@ class Track {
         this.searchQuery = data.searchQuery;
         this.needsMetadata = data.needsMetadata || false;
         this.directUrl = data.directUrl; // Direct stream URL for fast playback
+        this.directHeaders = data.directHeaders; // HTTP headers for direct stream URL
     }
     
     // Get the best available URL for display (YouTube > Spotify > none)

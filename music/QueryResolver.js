@@ -1,7 +1,89 @@
 const { spawn } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const SpotifyWebApi = require('spotify-web-api-node');
 const Track = require('./Track');
 const logger = require('../logger');
+
+function extractHttpHeaders(info) {
+    if (!info || typeof info !== 'object') return null;
+    const rawHeaders = info.http_headers || info.httpHeaders || info.headers || info._http_headers;
+    if (!rawHeaders || typeof rawHeaders !== 'object') return null;
+    const cleaned = {};
+    for (const [key, value] of Object.entries(rawHeaders)) {
+        if (value === undefined || value === null) continue;
+        const safeValue = String(value).replace(/[\r\n]+/g, ' ').trim();
+        if (!safeValue) continue;
+        cleaned[key] = safeValue;
+    }
+    return Object.keys(cleaned).length > 0 ? cleaned : null;
+}
+
+let cachedCookiesPath;
+let cachedCookiesChecked = false;
+
+function resolveYtdlpCookiesPath() {
+    if (cachedCookiesChecked) return cachedCookiesPath;
+    const envPath = process.env.YTDLP_COOKIES_PATH || process.env.YTDLP_COOKIES_FILE || process.env.YTDLP_COOKIES;
+    if (envPath) {
+        cachedCookiesPath = envPath;
+        cachedCookiesChecked = true;
+        return cachedCookiesPath;
+    }
+    
+    const configPath = process.env.YTDLP_CONFIG_PATH ||
+        process.env.YTDLP_CONFIG ||
+        path.join(os.homedir(), '.config', 'yt-dlp', 'config');
+    
+    if (fs.existsSync(configPath)) {
+        try {
+            const content = fs.readFileSync(configPath, 'utf8');
+            const lines = content.split(/\r?\n/);
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) continue;
+                if (trimmed.startsWith('--cookies')) {
+                    let value = trimmed.slice('--cookies'.length).trim();
+                    if (value.startsWith('=')) {
+                        value = value.slice(1).trim();
+                    }
+                    if (value) {
+                        const resolved = path.isAbsolute(value) ? value : path.resolve(path.dirname(configPath), value);
+                        cachedCookiesPath = resolved;
+                        cachedCookiesChecked = true;
+                        return cachedCookiesPath;
+                    }
+                }
+            }
+        } catch {
+            // Ignore config read errors; fall back to no cookies
+        }
+    }
+    
+    cachedCookiesChecked = true;
+    cachedCookiesPath = null;
+    return cachedCookiesPath;
+}
+
+function getYtdlpCookieArgs() {
+    const cookiePath = resolveYtdlpCookiesPath();
+    if (!cookiePath) return [];
+    return ['--cookies', cookiePath];
+}
+
+function getYtdlpRuntimeArgs() {
+    const args = [];
+    const runtime = process.env.YTDLP_JS_RUNTIME || process.env.YTDLP_JS_RUNTIMES || 'node';
+    const remoteComponents = process.env.YTDLP_REMOTE_COMPONENTS || 'ejs:github';
+    if (runtime) {
+        args.push('--js-runtimes', runtime);
+    }
+    if (remoteComponents) {
+        args.push('--remote-components', remoteComponents);
+    }
+    return args;
+}
 
 class QueryResolver {
     constructor() {
@@ -190,6 +272,9 @@ class QueryResolver {
         if (result.directUrl) {
             track.directUrl = result.directUrl;
         }
+        if (result.directHeaders) {
+            track.directHeaders = result.directHeaders;
+        }
         
         return [track];
     }
@@ -216,6 +301,9 @@ class QueryResolver {
         if (result.directUrl) {
             track.directUrl = result.directUrl;
         }
+        if (result.directHeaders) {
+            track.directHeaders = result.directHeaders;
+        }
         
         return [track];
     }
@@ -233,6 +321,8 @@ class QueryResolver {
                 '--no-playlist',
                 '-j',  // JSON output
                 '-g',  // Also print URL
+                ...getYtdlpRuntimeArgs(),
+                ...getYtdlpCookieArgs(),
                 searchQuery
             ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
                 if (error) {
@@ -256,7 +346,8 @@ class QueryResolver {
                             thumbnail: info.thumbnail || info.thumbnails?.[0]?.url,
                             duration: info.duration,
                             artist: info.uploader || info.artist || info.creator || info.channel,
-                            directUrl: urlLine || null
+                            directUrl: urlLine || null,
+                            directHeaders: extractHttpHeaders(info)
                         });
                     } else {
                         resolve(null);
@@ -282,6 +373,9 @@ class QueryResolver {
                 args.push('--flat-playlist');
             }
             
+            args.push(...getYtdlpRuntimeArgs());
+            args.push(...getYtdlpCookieArgs());
+            
             args.push(url);
             
             const proc = spawn(ytdlpPath, args);
@@ -304,19 +398,45 @@ class QueryResolver {
     // Get direct stream URL for prefetching
     getDirectStreamUrl(url) {
         return new Promise((resolve) => {
+            this.getDirectStreamInfo(url).then((info) => resolve(info?.directUrl || null));
+        });
+    }
+    
+    // Get direct stream URL + headers for playback/seek
+    getDirectStreamInfo(url) {
+        return new Promise((resolve) => {
             const ytdlpPath = process.env.YTDLP_PATH || 'yt-dlp';
             const { execFile } = require('child_process');
             execFile(ytdlpPath, [
-                '-g',
                 '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
                 '--no-warnings',
                 '--no-playlist',
+                '-j',
+                '-g',
+                ...getYtdlpRuntimeArgs(),
+                ...getYtdlpCookieArgs(),
                 url
-            ], { timeout: 30000 }, (error, stdout) => {
+            ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
                 if (error) {
                     resolve(null);
                 } else {
-                    resolve(stdout.trim().split('\n')[0]);
+                    try {
+                        const lines = stdout.trim().split('\n');
+                        const jsonLine = lines.find(l => l.startsWith('{'));
+                        const urlLine = lines.find(l => l.startsWith('http') && !l.includes('youtube.com/watch'));
+                        if (jsonLine) {
+                            const info = JSON.parse(jsonLine);
+                            resolve({
+                                directUrl: urlLine || null,
+                                directHeaders: extractHttpHeaders(info)
+                            });
+                        } else {
+                            resolve({ directUrl: urlLine || null, directHeaders: null });
+                        }
+                    } catch (e) {
+                        logger.error(`Direct stream parse error: ${e.message}`);
+                        resolve(null);
+                    }
                 }
             });
         });
