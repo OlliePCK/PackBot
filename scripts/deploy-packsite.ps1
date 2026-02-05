@@ -57,6 +57,7 @@ $deployItems = @(Get-ChildItem -LiteralPath $distDir -Force | ForEach-Object { $
 # Files that Vite does NOT bundle/copy (referenced as absolute /... in HTML)
 $extraRootItems = @(
   "api.js",
+  "utilities.js",
   "sw.js",
   "manifest.json",
   "img"

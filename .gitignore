@@ -108,7 +108,7 @@ dist
 # TernJS port file
 .tern-port
 
-cookies.json
+cookies.txt
 
 PackSite/
 
