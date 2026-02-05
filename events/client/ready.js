@@ -1,6 +1,6 @@
 const youtubeNotifications = require('../../scripts/youtube-notifications');
+const cookieMonitor = require('../../scripts/cookie-monitor');
 const PageMonitorService = require('../../services/PageMonitorService');
-const { getImaxScannerService } = require('../../services/ImaxScannerService');
 const logger = require('../../logger').child('core');
 
 module.exports = {
@@ -29,21 +29,20 @@ module.exports = {
 			logger.error('Error initializing YouTube notifications', { error: e.message });
 		}
 
-		// 3) Initialize Page Monitor Service
+		// 3) Initialize Cookie expiration monitor
+		try {
+			cookieMonitor(client);
+		} catch (e) {
+			logger.error('Error initializing cookie monitor', { error: e.message });
+		}
+
+		// 4) Initialize Page Monitor Service
 		try {
 			client.pageMonitor = new PageMonitorService(client);
 			await client.pageMonitor.start();
 			logger.info('Page Monitor Service initialized');
 		} catch (e) {
 			logger.error('Error initializing Page Monitor Service', { error: e.message });
-		}
-
-		// 4) Initialize IMAX Scanner Service
-		try {
-			client.imaxScanner = getImaxScannerService(client);
-			logger.info('IMAX Scanner Service initialized');
-		} catch (e) {
-			logger.error('Error initializing IMAX Scanner Service', { error: e.message });
 		}
 
 		// 5) Setup graceful shutdown handlers
