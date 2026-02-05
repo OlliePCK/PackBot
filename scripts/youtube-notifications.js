@@ -64,15 +64,35 @@ module.exports = client => {
         return grouped;
     }
 
+    // Track proxy failures to avoid repeated failures
+    let proxyFailureCount = 0;
+    const PROXY_FAILURE_THRESHOLD = 3;
+    let lastProxyReset = Date.now();
+
     async function fetchLatestVideo(channelId) {
         const proxyUrl = process.env.PROXY_URL;
-        const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
         const url = `https://www.googleapis.com/youtube/v3/search`+
             `?part=snippet&channelId=${channelId}`+
             `&order=date&type=video&maxResults=1`+
             `&key=${process.env.YOUTUBE_API_KEY}`;
+
+        // Reset proxy failure count after 30 minutes
+        if (Date.now() - lastProxyReset > 30 * 60 * 1000) {
+            proxyFailureCount = 0;
+            lastProxyReset = Date.now();
+        }
+
+        // Skip proxy if it's been failing consistently
+        const useProxy = proxyUrl && proxyFailureCount < PROXY_FAILURE_THRESHOLD;
+        const agent = useProxy ? new HttpsProxyAgent(proxyUrl) : undefined;
+
         try {
-            const res = await axios.get(url, { httpsAgent: agent });
+            const res = await axios.get(url, {
+                httpsAgent: agent,
+                timeout: 15000
+            });
+            // Reset failure count on success with proxy
+            if (useProxy) proxyFailureCount = 0;
             const item = res.data.items && res.data.items[0];
             if (!item) return null;
             return {
@@ -81,8 +101,19 @@ module.exports = client => {
                 publishedAt: new Date(item.snippet.publishedAt),
             };
         } catch (err) {
-            if (err.response?.status === 403) record403(channelId, err);
-            else logger.error(`YouTube fetch error for ${channelId}: ${err.message}`);
+            const status = err.response?.status;
+            if (status === 403) {
+                record403(channelId, err);
+            } else if (status === 407) {
+                // Proxy authentication required - proxy credentials may be invalid
+                proxyFailureCount++;
+                if (proxyFailureCount >= PROXY_FAILURE_THRESHOLD) {
+                    logger.warn(`Proxy auth failed ${PROXY_FAILURE_THRESHOLD} times, bypassing proxy for this cycle`);
+                }
+                logger.error(`YouTube fetch error for ${channelId}: Proxy authentication failed (407)`);
+            } else {
+                logger.error(`YouTube fetch error for ${channelId}: ${err.message}`);
+            }
             return null;
         }
     }
