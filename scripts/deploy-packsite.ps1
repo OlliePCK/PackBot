@@ -1,6 +1,5 @@
 param(
   [string]$ConfigPath = "$PSScriptRoot\deploy.config.json",
-  [switch]$CleanRemote,
   [switch]$SkipBuild
 )
 
@@ -52,75 +51,27 @@ if (-not (Test-Path -LiteralPath $distDir)) {
   throw "Missing build output at '$distDir'. Run 'npm run build' in PackSite, or omit -SkipBuild."
 }
 
-$deployItems = @(Get-ChildItem -LiteralPath $distDir -Force | ForEach-Object { $_.Name })
-
-# Files that Vite does NOT bundle/copy (referenced as absolute /... in HTML)
-$extraRootItems = @(
-  "api.js",
-  "utilities.js",
-  "sw.js",
-  "manifest.json",
-  "img"
-)
-
-$dest = "$($cfg.user)@$($cfg.host):$($cfg.targetPath.TrimEnd('/'))/"
-
-$sshArgs = @()
-if ($cfg.identityFile) {
-  $sshArgs += "-i"
-  $sshArgs += $cfg.identityFile
-}
-if ($cfg.port) {
-  $sshArgs += "-p"
-  $sshArgs += [string]$cfg.port
-}
-
 $remote = "$($cfg.user)@$($cfg.host)"
 $remotePath = $cfg.targetPath.TrimEnd('/')
 
-Write-Host "Ensuring remote target exists: $remotePath" -ForegroundColor Cyan
-& ssh @sshArgs $remote "mkdir -p '$remotePath'"
+# Convert dist path to WSL mount path (trailing slash = sync contents only)
+$wslDistPath = (& wsl -d Ubuntu -- wslpath -a ($distDir -replace '\\', '/')) + "/"
 
-$scpArgs = @()
+# Build SSH args for rsync -e (copy key to WSL tmp to fix NTFS 0777 permissions)
+$sshCmd = "ssh -o StrictHostKeyChecking=no"
+$keySetup = ""
+$keyCleanup = ""
 if ($cfg.identityFile) {
-  $scpArgs += "-i"
-  $scpArgs += $cfg.identityFile
+  $wslKeyPath = (& wsl -d Ubuntu -- wslpath -a ($cfg.identityFile -replace '\\', '/'))
+  $sshCmd += " -i /tmp/.deploy_key"
+  $keySetup = "cp '$wslKeyPath' /tmp/.deploy_key && chmod 600 /tmp/.deploy_key && "
+  $keyCleanup = " && rm -f /tmp/.deploy_key"
 }
+if ($cfg.port) { $sshCmd += " -p $($cfg.port)" }
 
-if ($cfg.port) {
-  $scpArgs += "-P"
-  $scpArgs += [string]$cfg.port
-}
+$rsyncDest = "$($remote):$remotePath/"
 
-$scpArgs += "-r"
-
-if ($CleanRemote) {
-  Write-Host "Cleaning remote target: $remotePath" -ForegroundColor Yellow
-  & ssh @sshArgs $remote "rm -rf '$remotePath'/*"
-}
-
-Write-Host "Uploading files to $dest" -ForegroundColor Cyan
-foreach ($item in $deployItems) {
-  $itemPath = Join-Path $distDir $item
-  if (Test-Path -LiteralPath $itemPath) {
-    Write-Host "  Uploading $item..." -ForegroundColor Gray
-    & scp @scpArgs $itemPath $dest
-  } else {
-    Write-Host "  Skipping $item (not found)" -ForegroundColor Yellow
-  }
-}
-
-foreach ($item in $extraRootItems) {
-  $itemPath = Join-Path $packsiteDir $item
-  if (Test-Path -LiteralPath $itemPath) {
-    Write-Host "  Uploading $item..." -ForegroundColor Gray
-    & scp @scpArgs $itemPath $dest
-  } else {
-    Write-Host "  Skipping $item (not found)" -ForegroundColor Yellow
-  }
-}
-
-Write-Host "Fixing permissions..." -ForegroundColor Cyan
-& ssh @sshArgs $remote "chown -R nobody:users '$remotePath' && chmod -R 755 '$remotePath' && find '$remotePath' -type f -exec chmod 644 {} +"
+Write-Host "Syncing dist/ to $rsyncDest" -ForegroundColor Cyan
+& wsl -d Ubuntu -- bash -c "${keySetup}rsync -avz --delete --chmod=D755,F644 --chown=nobody:users -e '${sshCmd}' '${wslDistPath}' '${rsyncDest}'${keyCleanup}"
 
 Write-Host "PackSite deployed." -ForegroundColor Green
