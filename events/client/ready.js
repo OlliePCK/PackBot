@@ -1,4 +1,5 @@
 const youtubeNotifications = require('../../scripts/youtube-notifications');
+const birthdayReminders = require('../../scripts/birthday-reminders');
 const cookieMonitor = require('../../scripts/cookie-monitor');
 const PageMonitorService = require('../../services/PageMonitorService');
 const logger = require('../../logger').child('core');
@@ -29,14 +30,21 @@ module.exports = {
 			logger.error('Error initializing YouTube notifications', { error: e.message });
 		}
 
-		// 3) Initialize Cookie expiration monitor
+		// 3) Initialize Birthday reminders
+		try {
+			birthdayReminders(client);
+		} catch (e) {
+			logger.error('Error initializing birthday reminders', { error: e.message });
+		}
+
+		// 4) Initialize Cookie expiration monitor
 		try {
 			cookieMonitor(client);
 		} catch (e) {
 			logger.error('Error initializing cookie monitor', { error: e.message });
 		}
 
-		// 4) Initialize Page Monitor Service
+		// 5) Initialize Page Monitor Service
 		try {
 			client.pageMonitor = new PageMonitorService(client);
 			await client.pageMonitor.start();
@@ -45,7 +53,7 @@ module.exports = {
 			logger.error('Error initializing Page Monitor Service', { error: e.message });
 		}
 
-		// 5) Setup graceful shutdown handlers
+		// 6) Setup graceful shutdown handlers
 		setupShutdownHandlers(client);
 
 		logger.info('All features initialized');
