@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const QueryResolver = require('./QueryResolver');
+const LOG_MUSIC_TIMINGS = process.env.LOG_MUSIC_TIMINGS === '1' || process.env.LOG_MUSIC_TIMINGS === 'true';
 
 // Get FFmpeg path - prefer system ffmpeg in Docker, fallback to ffmpeg-static
 function getFFmpegPath() {
@@ -186,6 +187,19 @@ function getYtdlpRuntimeArgs() {
     return args;
 }
 
+function getYtdlpExtraArgs() {
+    const args = [];
+    const forceIpv4 = process.env.YTDLP_FORCE_IPV4 === '1' || process.env.YTDLP_FORCE_IPV4 === 'true';
+    if (forceIpv4) {
+        args.push('--force-ipv4');
+    }
+    const extractorArgs = process.env.YTDLP_EXTRACTOR_ARGS;
+    if (extractorArgs) {
+        args.push('--extractor-args', extractorArgs);
+    }
+    return args;
+}
+
 function getPrefetchBufferBytes() {
     const raw = process.env.YTDLP_PREFETCH_BYTES;
     const parsed = raw ? Number.parseInt(raw, 10) : NaN;
@@ -193,6 +207,27 @@ function getPrefetchBufferBytes() {
         return parsed;
     }
     return 1024 * 1024; // 1 MiB default buffer
+}
+
+function getDirectWaitMs() {
+    const raw = process.env.YTDLP_DIRECT_WAIT_MS;
+    if (raw === undefined || raw === null || raw === '') {
+        return null; // default: wait for direct URL
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+        return parsed;
+    }
+    return null;
+}
+
+function delay(ms) {
+    return new Promise((resolve) => {
+        const timer = setTimeout(resolve, ms);
+        if (typeof timer.unref === 'function') {
+            timer.unref();
+        }
+    });
 }
 
 function buildYtdlpStreamArgs(url) {
@@ -206,6 +241,7 @@ function buildYtdlpStreamArgs(url) {
         '--no-mtime',          // Don't set file modification time
         '--buffer-size', '16K',
         ...getYtdlpRuntimeArgs(),
+        ...getYtdlpExtraArgs(),
         ...getYtdlpCookieArgs(),
         url
     ];
@@ -331,14 +367,20 @@ class Subscription extends EventEmitter {
     enqueue(track) {
         // Only emit addSong if there's already something playing (i.e., adding to queue, not starting fresh)
         const shouldEmitAddSong = !this._suppressAddSong && (this.currentTrack !== null || this.queue.length > 0);
+        if (track) {
+            track._timing = track._timing || {};
+            if (!track._timing.enqueuedAt) {
+                track._timing.enqueuedAt = Date.now();
+            }
+        }
         this.queue.push(track);
         this.scheduleQueueUpdate();
         if (shouldEmitAddSong) {
             this.emit('addSong', track);
         }
         
-        // Prefetch the next track's stream URL for faster playback
-        if (this.currentTrack && this.queue.length === 1) {
+        // Prefetch direct URL early for faster playback (including first track)
+        if (this.queue.length === 1) {
             this.prefetchTrack(track);
         }
         
@@ -517,51 +559,116 @@ class Subscription extends EventEmitter {
         }
         
         this._prefetching.add(prefetchKey);
-        
+        const prefetchPromise = (async () => {
+            try {
+                // For Spotify tracks without URL, resolve via search first
+                if (!track.url && track.searchQuery) {
+                    const resolved = await QueryResolver.handleSearch(track.searchQuery, track.requestedBy);
+                    if (resolved && resolved.length > 0) {
+                        track.url = resolved[0].url;
+                        track.directUrl = resolved[0].directUrl;
+                        track.directHeaders = resolved[0].directHeaders;
+                        track.duration = resolved[0].duration;
+                        track.title = track.title || resolved[0].title;
+                        track.thumbnail = resolved[0].thumbnail || track.thumbnail;
+                        track.artist = track.artist || resolved[0].artist;
+                        logger.info(`Pre-resolved Spotify track: ${track.title}`);
+                    }
+                }
+                
+                // Skip if no URL
+                if (!track.url) {
+                    return;
+                }
+                
+                if (shouldPreferYtdlpStreaming(track.url)) {
+                    await this._prefetchYtdlpStream(track.url, track.title);
+                    return;
+                }
+
+                // Skip if already has directUrl for direct playback
+                if (track.directUrl) {
+                    return;
+                }
+
+                const streamInfo = await QueryResolver.getDirectStreamInfo(track.url);
+                if (streamInfo?.directUrl) {
+                    this.prefetchedUrls.set(track.url, streamInfo.directUrl);
+                    if (streamInfo.directHeaders) {
+                        this.prefetchedHeaders.set(track.url, streamInfo.directHeaders);
+                    }
+                    logger.info(`Prefetched stream URL for: ${track.title}`);
+                }
+            } catch (error) {
+                // Prefetch failed, will fall back to normal method
+                logger.warn(`Prefetch failed for ${track.title}: ${error.message}`);
+            } finally {
+                this._prefetching.delete(prefetchKey);
+            }
+        })();
+
+        track._prefetchPromise = prefetchPromise;
+
         try {
-            // For Spotify tracks without URL, resolve via search first
-            if (!track.url && track.searchQuery) {
-                const resolved = await QueryResolver.handleSearch(track.searchQuery, track.requestedBy);
-                if (resolved && resolved.length > 0) {
-                    track.url = resolved[0].url;
-                    track.directUrl = resolved[0].directUrl;
-                    track.directHeaders = resolved[0].directHeaders;
-                    track.duration = resolved[0].duration;
-                    track.title = track.title || resolved[0].title;
-                    track.thumbnail = resolved[0].thumbnail || track.thumbnail;
-                    track.artist = track.artist || resolved[0].artist;
-                    logger.info(`Pre-resolved Spotify track: ${track.title}`);
-                }
-            }
-            
-            // Skip if no URL
-            if (!track.url) {
-                return;
-            }
-            
-            if (shouldPreferYtdlpStreaming(track.url)) {
-                await this._prefetchYtdlpStream(track.url, track.title);
-                return;
-            }
-
-            // Skip if already has directUrl for direct playback
-            if (track.directUrl) {
-                return;
-            }
-
-            const streamInfo = await QueryResolver.getDirectStreamInfo(track.url);
-            if (streamInfo?.directUrl) {
-                this.prefetchedUrls.set(track.url, streamInfo.directUrl);
-                if (streamInfo.directHeaders) {
-                    this.prefetchedHeaders.set(track.url, streamInfo.directHeaders);
-                }
-                logger.info(`Prefetched stream URL for: ${track.title}`);
-            }
-        } catch (error) {
-            // Prefetch failed, will fall back to normal method
-            logger.warn(`Prefetch failed for ${track.title}: ${error.message}`);
+            await prefetchPromise;
         } finally {
-            this._prefetching.delete(prefetchKey);
+            if (track._prefetchPromise === prefetchPromise) {
+                delete track._prefetchPromise;
+            }
+        }
+    }
+
+    async ensureDirectUrlForTrack(track) {
+        if (!track || !track.url) return;
+        if (track.directUrl) return;
+        if (shouldPreferYtdlpStreaming(track.url)) return;
+
+        const adoptPrefetched = () => {
+            const prefetchedUrl = this.prefetchedUrls.get(track.url);
+            if (!prefetchedUrl) return false;
+            track.directUrl = prefetchedUrl;
+            track.directHeaders = this.prefetchedHeaders.get(track.url) || null;
+            return true;
+        };
+
+        if (adoptPrefetched()) return;
+
+        if (track._prefetchPromise) {
+            try {
+                await track._prefetchPromise;
+            } catch {
+                // ignore prefetch errors
+            }
+            if (adoptPrefetched()) return;
+        }
+
+        const streamInfo = await QueryResolver.getDirectStreamInfo(track.url);
+        if (streamInfo?.directUrl) {
+            track.directUrl = streamInfo.directUrl;
+            track.directHeaders = streamInfo.directHeaders || null;
+        } else {
+            track.directUrl = null;
+            track.directHeaders = null;
+        }
+    }
+
+    async waitForDirectUrlForPlayback(track) {
+        const waitMs = getDirectWaitMs();
+        if (waitMs === null) {
+            await this.waitForDirectUrlForPlayback(track);
+            return;
+        }
+        if (waitMs <= 0) {
+            this.ensureDirectUrlForTrack(track).catch(() => {});
+            return;
+        }
+        try {
+            await Promise.race([
+                this.ensureDirectUrlForTrack(track),
+                delay(waitMs)
+            ]);
+        } catch {
+            // Ignore errors; playback will fall back to streaming
         }
     }
 
@@ -611,8 +718,9 @@ class Subscription extends EventEmitter {
         // Get the previous track from history
         const previousTrack = this.history.pop();
         this.currentTrack = previousTrack;
-        
+
         // Play the previous track
+        await this.waitForDirectUrlForPlayback(previousTrack);
         const resource = await this.createAudioResource(previousTrack.url, previousTrack.directUrl, previousTrack.directHeaders);
         this.audioPlayer.play(resource);
         this.playbackStartTime = Date.now();
@@ -670,6 +778,7 @@ class Subscription extends EventEmitter {
         }
 
         // Play the target track
+        await this.waitForDirectUrlForPlayback(targetTrack);
         const resource = await this.createAudioResource(targetTrack.url, targetTrack.directUrl, targetTrack.directHeaders);
         this.audioPlayer.play(resource);
         this.playbackStartTime = Date.now();
@@ -885,6 +994,9 @@ class Subscription extends EventEmitter {
                 }
             }
 
+            // Ensure we have a direct URL before starting playback (keeps seek/filters working)
+            await this.ensureDirectUrlForTrack(track);
+
             // Emit playSong event AFTER metadata is resolved
             this.emit('playSong', track);
 
@@ -892,11 +1004,24 @@ class Subscription extends EventEmitter {
             logger.info(`Playing track: "${track.title}" | URL: ${track.url} | DirectURL: ${track.directUrl ? 'yes' : 'no'}`);
 
             // Create resource and play
+            const createStart = Date.now();
             const resource = await this.createAudioResource(track.url, track.directUrl, track.directHeaders);
+            const createMs = Date.now() - createStart;
             logger.info(`Audio resource created, playing...`);
             this.audioPlayer.play(resource);
             logger.info(`audioPlayer.play() called, state: ${this.audioPlayer.state.status}`);
             this.playbackStartTime = Date.now(); // Track when playback started
+
+            if (LOG_MUSIC_TIMINGS) {
+                const timing = track._timing || {};
+                const totalMs = timing.requestStart ? (Date.now() - timing.requestStart) : null;
+                const queueMs = timing.enqueuedAt ? (Date.now() - timing.enqueuedAt) : null;
+                const parts = [];
+                if (totalMs !== null) parts.push(`total=${totalMs}ms`);
+                if (queueMs !== null) parts.push(`queue=${queueMs}ms`);
+                parts.push(`createResource=${createMs}ms`);
+                logger.info(`Timing: play start (${parts.join(', ')})`);
+            }
             
             this.queueLock = false;
             

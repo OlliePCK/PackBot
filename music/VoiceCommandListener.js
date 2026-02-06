@@ -548,6 +548,8 @@ class VoiceCommandListener extends EventEmitter {
      */
     async executeCommand(userId, commandText) {
         logger.info(`Executing voice command from ${userId || 'unknown'}: "${commandText}"`);
+        const timingStart = Date.now();
+        const logTimings = process.env.LOG_MUSIC_TIMINGS === '1' || process.env.LOG_MUSIC_TIMINGS === 'true';
         
         let user = null;
         if (userId) {
@@ -640,7 +642,12 @@ class VoiceCommandListener extends EventEmitter {
                 });
                 
                 const QueryResolver = require('./QueryResolver');
+                const resolveStart = Date.now();
                 const tracks = await QueryResolver.resolve(query, user);
+                const resolveMs = Date.now() - resolveStart;
+                if (logTimings) {
+                    logger.info(`Timing: QueryResolver.resolve() took ${resolveMs}ms (voice:play)`);
+                }
                 
                 if (!tracks || tracks.length === 0) {
                     this.sendFeedback({
@@ -654,6 +661,10 @@ class VoiceCommandListener extends EventEmitter {
                 // Suppress addSong events for voice commands (we show our own feedback)
                 sub._suppressAddSong = true;
                 for (const track of tracks) {
+                    track._timing = track._timing || {};
+                    track._timing.requestStart = timingStart;
+                    track._timing.requestSource = 'voice:play';
+                    track._timing.resolveMs = resolveMs;
                     sub.enqueue(track);
                 }
                 sub._suppressAddSong = false;

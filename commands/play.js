@@ -197,6 +197,8 @@ module.exports = {
             await interaction.deferReply();
         }
         
+        const timingStart = Date.now();
+        const logTimings = process.env.LOG_MUSIC_TIMINGS === '1' || process.env.LOG_MUSIC_TIMINGS === 'true';
         const query = interaction.options.getString('song');
         const voiceChannel = interaction.member.voice.channel;
 
@@ -263,7 +265,12 @@ module.exports = {
         try {
             // Apply music taste correction if needed 🎵
             const correctedQuery = getCorrectedQuery(interaction.user.id, query);
+            const resolveStart = Date.now();
             const result = await QueryResolver.resolve(correctedQuery, interaction.user);
+            const resolveMs = Date.now() - resolveStart;
+            if (logTimings) {
+                logger.info(`Timing: QueryResolver.resolve() took ${resolveMs}ms (slash:/play)`);
+            }
             
             // Handle streaming Spotify playlist (start playing immediately while fetching)
             if (result && result.isStreamingPlaylist) {
@@ -296,6 +303,10 @@ module.exports = {
                 try {
                     for await (const batch of QueryResolver.streamSpotifyPlaylist(playlistId, requestedBy)) {
                         for (const track of batch) {
+                            track._timing = track._timing || {};
+                            track._timing.requestStart = timingStart;
+                            track._timing.requestSource = 'slash:/play';
+                            track._timing.resolveMs = resolveMs;
                             subscription.enqueue(track);
                             trackCount++;
                         }
@@ -328,6 +339,10 @@ module.exports = {
 
             try {
                 for (const track of tracks) {
+                    track._timing = track._timing || {};
+                    track._timing.requestStart = timingStart;
+                    track._timing.requestSource = 'slash:/play';
+                    track._timing.resolveMs = resolveMs;
                     subscription.enqueue(track);
                 }
             } finally {

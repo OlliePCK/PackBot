@@ -4,7 +4,18 @@ const os = require('os');
 const path = require('path');
 const SpotifyWebApi = require('spotify-web-api-node');
 const Track = require('./Track');
+const { searchYouTubeVideo, getYouTubeVideoDetails, extractYouTubeVideoId } = require('../utils/youtube');
 const logger = require('../logger');
+const LOG_YTDLP_TIMINGS = process.env.LOG_YTDLP_TIMINGS === '1' || process.env.LOG_YTDLP_TIMINGS === 'true';
+const RESOLVE_DIRECT_URL = process.env.YTDLP_RESOLVE_DIRECT_URL === '1' || process.env.YTDLP_RESOLVE_DIRECT_URL === 'true';
+const DIRECT_FAST = process.env.YTDLP_DIRECT_FAST !== '0' && process.env.YTDLP_DIRECT_FAST !== 'false';
+const YT_SEARCH_PROVIDER = (process.env.YT_SEARCH_PROVIDER || 'auto').toLowerCase();
+
+function shouldUseYouTubeApi() {
+    if (YT_SEARCH_PROVIDER === 'ytdlp') return false;
+    if (YT_SEARCH_PROVIDER === 'api') return true;
+    return Boolean(process.env.YOUTUBE_API_KEY);
+}
 
 function extractHttpHeaders(info) {
     if (!info || typeof info !== 'object') return null;
@@ -27,6 +38,15 @@ function getYtdlpInfoTimeoutMs() {
         return parsed;
     }
     return 30000;
+}
+
+function getYtdlpDirectTimeoutMs() {
+    const raw = process.env.YTDLP_DIRECT_TIMEOUT_MS;
+    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+    if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+    }
+    return 15000;
 }
 
 let cachedCookiesPath;
@@ -94,6 +114,19 @@ function getYtdlpRuntimeArgs() {
     return args;
 }
 
+function getYtdlpExtraArgs() {
+    const args = [];
+    const forceIpv4 = process.env.YTDLP_FORCE_IPV4 === '1' || process.env.YTDLP_FORCE_IPV4 === 'true';
+    if (forceIpv4) {
+        args.push('--force-ipv4');
+    }
+    const extractorArgs = process.env.YTDLP_EXTRACTOR_ARGS;
+    if (extractorArgs) {
+        args.push('--extractor-args', extractorArgs);
+    }
+    return args;
+}
+
 class QueryResolver {
     constructor() {
         this.spotifyApi = null;
@@ -120,18 +153,31 @@ class QueryResolver {
     }
 
     async resolve(query, requestedBy) {
+        const start = Date.now();
         // Check if Spotify URL
         if (query.includes('spotify.com') && this.spotifyApi) {
-            return this.handleSpotify(query, requestedBy);
+            const result = await this.handleSpotify(query, requestedBy);
+            if (LOG_YTDLP_TIMINGS) {
+                logger.info(`Timing: resolve(spotify) ${Date.now() - start}ms`);
+            }
+            return result;
         }
         
         // Check if URL (YouTube/SoundCloud)
         if (/^https?:\/\//.test(query)) {
-            return this.handleUrl(query, requestedBy);
+            const result = await this.handleUrl(query, requestedBy);
+            if (LOG_YTDLP_TIMINGS) {
+                logger.info(`Timing: resolve(url) ${Date.now() - start}ms`);
+            }
+            return result;
         }
 
         // Search query
-        return this.handleSearch(query, requestedBy);
+        const result = await this.handleSearch(query, requestedBy);
+        if (LOG_YTDLP_TIMINGS) {
+            logger.info(`Timing: resolve(search) ${Date.now() - start}ms`);
+        }
+        return result;
     }
 
     async handleSpotify(url, requestedBy) {
@@ -237,6 +283,36 @@ class QueryResolver {
     }
 
     async handleUrl(url, requestedBy) {
+        const videoId = extractYouTubeVideoId(url);
+        const hasPlaylistParam = (() => {
+            try {
+                const parsed = new URL(url);
+                return Boolean(parsed.searchParams.get('list'));
+            } catch {
+                return false;
+            }
+        })();
+
+        // Fast path: single YouTube video via API to avoid slow yt-dlp metadata fetch
+        if (videoId && !hasPlaylistParam && shouldUseYouTubeApi()) {
+            const details = await getYouTubeVideoDetails(videoId);
+            if (details?.snippet) {
+                const thumb = details.snippet.thumbnails?.high?.url ||
+                    details.snippet.thumbnails?.medium?.url ||
+                    details.snippet.thumbnails?.default?.url ||
+                    null;
+                const track = new Track({
+                    title: details.snippet.title || 'Unknown Title',
+                    url: `https://www.youtube.com/watch?v=${videoId}`,
+                    thumbnail: thumb,
+                    duration: details.durationSeconds || 0,
+                    artist: details.snippet.channelTitle || 'Unknown Artist',
+                    requestedBy
+                });
+                return [track];
+            }
+        }
+
         // First check if it's a playlist with flat mode to get URLs quickly
         const flatInfo = await this.getYtDlpInfo(url, true);
         if (!flatInfo) return [];
@@ -264,8 +340,8 @@ class QueryResolver {
             return tracks;
         }
 
-        // For single tracks, get full metadata AND direct stream URL for fast playback
-        const result = await this.getSearchWithStreamUrl(url);
+        // For single tracks, get full metadata (and optionally a direct stream URL)
+        const result = await this.getSearchResult(url, RESOLVE_DIRECT_URL);
         if (!result) return [];
 
         const track = new Track({
@@ -292,9 +368,28 @@ class QueryResolver {
         // Prefer official audio by searching YouTube Music first, fallback to regular YouTube
         // Adding "audio" helps avoid music video results
         const searchQuery = query.toLowerCase().includes('audio') ? query : `${query} audio`;
+
+        if (shouldUseYouTubeApi()) {
+            const details = await searchYouTubeVideo(searchQuery);
+            if (details?.snippet) {
+                const thumb = details.snippet.thumbnails?.high?.url ||
+                    details.snippet.thumbnails?.medium?.url ||
+                    details.snippet.thumbnails?.default?.url ||
+                    null;
+                const track = new Track({
+                    title: details.snippet.title || 'Unknown Title',
+                    url: `https://www.youtube.com/watch?v=${details.id}`,
+                    thumbnail: thumb,
+                    duration: details.durationSeconds || 0,
+                    artist: details.snippet.channelTitle || 'Unknown Artist',
+                    requestedBy
+                });
+                return [track];
+            }
+        }
         
-        // Get metadata AND direct stream URL in one call for faster playback
-        const result = await this.getSearchWithStreamUrl(`ytsearch:${searchQuery}`);
+        // Get metadata (optionally includes direct stream URL)
+        const result = await this.getSearchResult(`ytsearch:${searchQuery}`, RESOLVE_DIRECT_URL);
         if (!result) return [];
 
         const track = new Track({
@@ -317,52 +412,76 @@ class QueryResolver {
         return [track];
     }
     
-    // Combined search that gets metadata + direct stream URL in one call
-    getSearchWithStreamUrl(searchQuery) {
+    // Resolve metadata quickly, optionally including a direct stream URL
+    getSearchResult(searchQuery, includeDirectUrl = false) {
         return new Promise((resolve) => {
             const ytdlpPath = process.env.YTDLP_PATH || 'yt-dlp';
             const { execFile } = require('child_process');
+            const start = Date.now();
             
-            // Use --print to get both JSON metadata and audio URL
-            execFile(ytdlpPath, [
-                '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+            // Resolve metadata quickly, optionally including a direct stream URL
+            const args = [
                 '--no-warnings',
                 '--no-playlist',
-                '-j',  // JSON output
-                '-g',  // Also print URL
+                '-j'
+            ];
+
+            if (includeDirectUrl) {
+                args.unshift('-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio');
+                args.push('-g');
+            }
+
+            args.push(
                 ...getYtdlpRuntimeArgs(),
+                ...getYtdlpExtraArgs(),
                 ...getYtdlpCookieArgs(),
                 searchQuery
-            ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+            );
+
+            execFile(ytdlpPath, args, { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+                const durationMs = Date.now() - start;
                 if (error) {
                     logger.error(`Search error: ${error.message}`);
+                    if (LOG_YTDLP_TIMINGS) {
+                        logger.info(`Timing: yt-dlp search failed after ${durationMs}ms`);
+                    }
                     resolve(null);
                     return;
                 }
                 
                 try {
-                    const lines = stdout.trim().split('\n');
-                    // First line is JSON, second is URL
+                    const lines = stdout.trim().split('\n').filter(Boolean);
                     const jsonLine = lines.find(l => l.startsWith('{'));
-                    const urlLine = lines.find(l => l.startsWith('http') && !l.includes('youtube.com/watch'));
+                    const urlLine = includeDirectUrl ? lines.find(l => l.startsWith('http') && !l.includes('youtube.com/watch')) : null;
                     
                     if (jsonLine) {
                         const info = JSON.parse(jsonLine);
-                        resolve({
+                        const result = {
                             title: info.title || info.fulltitle,
                             url: info.webpage_url || info.url,
                             webpage_url: info.webpage_url,
                             thumbnail: info.thumbnail || info.thumbnails?.[0]?.url,
                             duration: info.duration,
                             artist: info.uploader || info.artist || info.creator || info.channel,
-                            directUrl: urlLine || null,
-                            directHeaders: extractHttpHeaders(info)
-                        });
+                            directUrl: includeDirectUrl ? (urlLine || null) : null,
+                            directHeaders: includeDirectUrl ? extractHttpHeaders(info) : null
+                        };
+                        if (LOG_YTDLP_TIMINGS) {
+                            const directLabel = includeDirectUrl ? (result.directUrl ? 'yes' : 'no') : 'skipped';
+                            logger.info(`Timing: yt-dlp search ok ${durationMs}ms (directUrl=${directLabel})`);
+                        }
+                        resolve(result);
                     } else {
+                        if (LOG_YTDLP_TIMINGS) {
+                            logger.info(`Timing: yt-dlp search no-json ${durationMs}ms`);
+                        }
                         resolve(null);
                     }
                 } catch (e) {
                     logger.error(`Parse error: ${e.message}`);
+                    if (LOG_YTDLP_TIMINGS) {
+                        logger.info(`Timing: yt-dlp search parse-error ${durationMs}ms`);
+                    }
                     resolve(null);
                 }
             });
@@ -383,10 +502,12 @@ class QueryResolver {
             }
             
             args.push(...getYtdlpRuntimeArgs());
+            args.push(...getYtdlpExtraArgs());
             args.push(...getYtdlpCookieArgs());
             
             args.push(url);
             
+            const start = Date.now();
             const proc = spawn(ytdlpPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
             let output = '';
             let errorOutput = '';
@@ -419,6 +540,9 @@ class QueryResolver {
                 settled = true;
                 clearTimeout(timeout);
                 logger.warn(`yt-dlp info spawn error: ${err.message}`);
+                if (LOG_YTDLP_TIMINGS) {
+                    logger.info(`Timing: yt-dlp info spawn-error ${Date.now() - start}ms`);
+                }
                 resolve(null);
             });
 
@@ -428,13 +552,23 @@ class QueryResolver {
                 clearTimeout(timeout);
                 if (code === 0) {
                     try {
+                        const durationMs = Date.now() - start;
                         resolve(JSON.parse(output));
+                        if (LOG_YTDLP_TIMINGS) {
+                            logger.info(`Timing: yt-dlp info ok ${durationMs}ms (flat=${flatPlaylist ? 'yes' : 'no'})`);
+                        }
                     } catch (e) {
                         logger.warn(`yt-dlp info parse error: ${e.message}`);
+                        if (LOG_YTDLP_TIMINGS) {
+                            logger.info(`Timing: yt-dlp info parse-error ${Date.now() - start}ms`);
+                        }
                         resolve(null);
                     }
                 } else {
                     logger.warn(`yt-dlp info exited with code ${code}: ${errorOutput}`);
+                    if (LOG_YTDLP_TIMINGS) {
+                        logger.info(`Timing: yt-dlp info fail ${Date.now() - start}ms`);
+                    }
                     resolve(null);
                 }
             });
@@ -448,44 +582,108 @@ class QueryResolver {
         });
     }
     
-    // Get direct stream URL + headers for playback/seek
-    getDirectStreamInfo(url) {
+    // Fast direct URL fetch without JSON/headers
+    getDirectStreamUrlFast(url) {
         return new Promise((resolve) => {
             const ytdlpPath = process.env.YTDLP_PATH || 'yt-dlp';
             const { execFile } = require('child_process');
+            const start = Date.now();
             execFile(ytdlpPath, [
                 '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
                 '--no-warnings',
                 '--no-playlist',
-                '-j',
                 '-g',
                 ...getYtdlpRuntimeArgs(),
+                ...getYtdlpExtraArgs(),
                 ...getYtdlpCookieArgs(),
                 url
-            ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
+            ], { timeout: getYtdlpDirectTimeoutMs(), maxBuffer: 5 * 1024 * 1024 }, (error, stdout) => {
+                const durationMs = Date.now() - start;
                 if (error) {
-                    logger.warn(`Direct stream fetch failed: ${error.message}`);
-                    resolve(null);
-                } else {
-                    try {
-                        const lines = stdout.trim().split('\n');
-                        const jsonLine = lines.find(l => l.startsWith('{'));
-                        const urlLine = lines.find(l => l.startsWith('http') && !l.includes('youtube.com/watch'));
-                        if (jsonLine) {
-                            const info = JSON.parse(jsonLine);
-                            resolve({
-                                directUrl: urlLine || null,
-                                directHeaders: extractHttpHeaders(info)
-                            });
-                        } else {
-                            resolve({ directUrl: urlLine || null, directHeaders: null });
-                        }
-                    } catch (e) {
-                        logger.error(`Direct stream parse error: ${e.message}`);
-                        resolve(null);
+                    if (LOG_YTDLP_TIMINGS) {
+                        logger.info(`Timing: yt-dlp direct fast failed ${durationMs}ms`);
                     }
+                    resolve(null);
+                    return;
                 }
+                const lines = stdout.trim().split('\n').filter(Boolean);
+                const urlLine = lines.find(l => l.startsWith('http') && !l.includes('youtube.com/watch')) || null;
+                if (LOG_YTDLP_TIMINGS) {
+                    logger.info(`Timing: yt-dlp direct fast ok ${durationMs}ms (directUrl=${urlLine ? 'yes' : 'no'})`);
+                }
+                resolve(urlLine);
             });
+        });
+    }
+
+    // Get direct stream URL + headers for playback/seek
+    getDirectStreamInfo(url) {
+        return new Promise((resolve) => {
+            const start = Date.now();
+            if (DIRECT_FAST) {
+                this.getDirectStreamUrlFast(url).then((fastUrl) => {
+                    if (fastUrl) {
+                        resolve({ directUrl: fastUrl, directHeaders: null });
+                        return;
+                    }
+                    this.getDirectStreamInfoWithJson(url, start, resolve);
+                });
+                return;
+            }
+
+            this.getDirectStreamInfoWithJson(url, start, resolve);
+        });
+    }
+
+    getDirectStreamInfoWithJson(url, start, resolve) {
+        const ytdlpPath = process.env.YTDLP_PATH || 'yt-dlp';
+        const { execFile } = require('child_process');
+        execFile(ytdlpPath, [
+            '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+            '--no-warnings',
+            '--no-playlist',
+            '-j',
+            '-g',
+            ...getYtdlpRuntimeArgs(),
+            ...getYtdlpExtraArgs(),
+            ...getYtdlpCookieArgs(),
+            url
+        ], { timeout: getYtdlpDirectTimeoutMs(), maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
+            const durationMs = Date.now() - start;
+            if (error) {
+                logger.warn(`Direct stream fetch failed: ${error.message}`);
+                if (LOG_YTDLP_TIMINGS) {
+                    logger.info(`Timing: yt-dlp direct failed ${durationMs}ms`);
+                }
+                resolve(null);
+            } else {
+                try {
+                    const lines = stdout.trim().split('\n');
+                    const jsonLine = lines.find(l => l.startsWith('{'));
+                    const urlLine = lines.find(l => l.startsWith('http') && !l.includes('youtube.com/watch'));
+                    if (jsonLine) {
+                        const info = JSON.parse(jsonLine);
+                        resolve({
+                            directUrl: urlLine || null,
+                            directHeaders: extractHttpHeaders(info)
+                        });
+                        if (LOG_YTDLP_TIMINGS) {
+                            logger.info(`Timing: yt-dlp direct ok ${durationMs}ms (directUrl=${urlLine ? 'yes' : 'no'})`);
+                        }
+                    } else {
+                        resolve({ directUrl: urlLine || null, directHeaders: null });
+                        if (LOG_YTDLP_TIMINGS) {
+                            logger.info(`Timing: yt-dlp direct no-json ${durationMs}ms (directUrl=${urlLine ? 'yes' : 'no'})`);
+                        }
+                    }
+                } catch (e) {
+                    logger.error(`Direct stream parse error: ${e.message}`);
+                    if (LOG_YTDLP_TIMINGS) {
+                        logger.info(`Timing: yt-dlp direct parse-error ${durationMs}ms`);
+                    }
+                    resolve(null);
+                }
+            }
         });
     }
 }
