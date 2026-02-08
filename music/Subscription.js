@@ -68,8 +68,8 @@ function normalizeHeadersForUrl(url, headers) {
         if (!headerKeys.has('origin')) {
             normalized['Origin'] = 'https://www.youtube.com';
         }
-        if (!headerKeys.has('range')) {
-            normalized['Range'] = 'bytes=0-';
+        if (!headerKeys.has('user-agent')) {
+            normalized['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
         }
     }
     
@@ -129,49 +129,29 @@ function resolveYtdlpCookiesPath() {
     return cachedCookiesPath;
 }
 
-// Track YouTube auth failures to fall back to direct URL
-let ytAuthFailureCount = 0;
-let lastYtAuthFailure = 0;
-const YT_AUTH_FAILURE_THRESHOLD = 2;
-const YT_AUTH_FAILURE_RESET_MS = 30 * 60 * 1000; // 30 minutes
-
-function recordYtAuthFailure() {
-    ytAuthFailureCount++;
-    lastYtAuthFailure = Date.now();
-    logger.warn(`YouTube auth failure recorded (${ytAuthFailureCount}/${YT_AUTH_FAILURE_THRESHOLD})`);
-}
-
-function resetYtAuthFailures() {
-    if (ytAuthFailureCount > 0) {
-        logger.info('Resetting YouTube auth failure count');
+function getMusicStreamMode() {
+    // Supported:
+    // - auto (default): use direct URL if available, otherwise fall back to yt-dlp piping
+    // - direct: prefer direct URL (still falls back if unavailable/incompatible)
+    // - ytdlp: always use yt-dlp piping (simplest + most consistent)
+    const raw = (process.env.MUSIC_STREAM_MODE || '').trim().toLowerCase();
+    if (raw === 'auto' || raw === 'direct' || raw === 'ytdlp') {
+        return raw;
     }
-    ytAuthFailureCount = 0;
+
+    // Backwards compatibility for legacy flags (deprecated):
+    const disableDirect = process.env.DISABLE_DIRECT_URL === '1' || process.env.DISABLE_DIRECT_URL === 'true';
+    if (disableDirect) return 'ytdlp';
+    const preferStreaming = process.env.PREFER_YTDLP_STREAMING === '1' || process.env.PREFER_YTDLP_STREAMING === 'true';
+    if (preferStreaming) return 'ytdlp';
+
+    return 'auto';
 }
 
 function shouldPreferYtdlpStreaming(url) {
     if (!url) return false;
-    const preferStreaming = process.env.PREFER_YTDLP_STREAMING === '1' || process.env.PREFER_YTDLP_STREAMING === 'true';
-    if (process.env.DISABLE_DIRECT_URL === '1' || process.env.DISABLE_DIRECT_URL === 'true') {
-        return true;
-    }
-    const isYouTube = /youtube\.com|youtu\.be/i.test(url);
-    if (!isYouTube) return false;
-    const cookiePath = resolveYtdlpCookiesPath();
-    if (!cookiePath) return false;
-    if (!preferStreaming) return false;
-
-    // Reset failure count after timeout
-    if (ytAuthFailureCount > 0 && (Date.now() - lastYtAuthFailure) > YT_AUTH_FAILURE_RESET_MS) {
-        resetYtAuthFailures();
-    }
-
-    // If we've had too many auth failures, skip cookie-based streaming
-    if (ytAuthFailureCount >= YT_AUTH_FAILURE_THRESHOLD) {
-        logger.info('Skipping yt-dlp streaming due to recent auth failures, using direct URL');
-        return false;
-    }
-
-    return true;
+    const mode = getMusicStreamMode();
+    return mode === 'ytdlp';
 }
 
 function getYtdlpRuntimeArgs() {
@@ -209,26 +189,8 @@ function getPrefetchBufferBytes() {
     return 1024 * 1024; // 1 MiB default buffer
 }
 
-function getDirectWaitMs() {
-    const raw = process.env.YTDLP_DIRECT_WAIT_MS;
-    if (raw === undefined || raw === null || raw === '') {
-        return null; // default: wait for direct URL
-    }
-    const parsed = Number.parseInt(raw, 10);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-        return parsed;
-    }
-    return null;
-}
-
-function delay(ms) {
-    return new Promise((resolve) => {
-        const timer = setTimeout(resolve, ms);
-        if (typeof timer.unref === 'function') {
-            timer.unref();
-        }
-    });
-}
+// Intentionally no "direct URL wait" tuning; if direct resolution is slow or fails,
+// playback falls back to yt-dlp piping.
 
 function buildYtdlpStreamArgs(url) {
     return [
@@ -272,6 +234,7 @@ class Subscription extends EventEmitter {
         this.prefetchedStreams = new Map(); // Cache for prefetched yt-dlp stream processes
         this._prefetching = new Set(); // Track URLs/queries currently being prefetched
         this._destroying = false; // Flag to prevent events during cleanup
+        this._playbackProcesses = []; // Track spawned FFmpeg/yt-dlp for current track
         this._queueUpdateTimer = null;
         this._queueUpdateFirstTs = null;
         this._queueUpdateDebounceMs = 100;
@@ -311,6 +274,7 @@ class Subscription extends EventEmitter {
                 this.prefetchedUrls.clear();
                 this.prefetchedHeaders.clear();
                 this._clearPrefetchedStreams();
+                this._killPlaybackProcesses();
                 this._clearQueueUpdateTimer();
                 this.audioPlayer.stop(true);
                 // Clean up voice command listener if active
@@ -339,13 +303,37 @@ class Subscription extends EventEmitter {
             
             if (newState.status === AudioPlayerStatus.Idle && oldState.status !== AudioPlayerStatus.Idle) {
                 logger.info(`AudioPlayer went Idle from ${oldState.status} (destroying: ${this._destroying}, stopping: ${this._stopping})`);
-                
+
                 // Don't emit events if we're being destroyed or explicitly stopping
                 if (this._destroying || this._stopping) {
                     this._skipRequested = false;
                     return;
                 }
-                
+
+                // Detect early stream termination — if track played < 70% of expected duration, retry once
+                const track = this.currentTrack;
+                if (!this._skipRequested && track && track.duration && this.playbackStartTime && !track._retried) {
+                    const playedSeconds = (Date.now() - this.playbackStartTime) / 1000;
+                    if (playedSeconds < track.duration * 0.7 && playedSeconds > 5) {
+                        logger.warn(`Early termination detected for "${track.title}": played ${Math.round(playedSeconds)}s of expected ${Math.round(track.duration)}s — retrying with yt-dlp streaming from ${Math.round(playedSeconds)}s`);
+                        track._retried = true;
+                        track._forceYtdlpStream = true;
+                        track._seekOffset = Math.max(0, Math.floor(playedSeconds) - 3); // Seek back 3s for overlap
+                        // Clear cached direct URL so retry falls through to yt-dlp streaming
+                        track.directUrl = null;
+                        track.directHeaders = null;
+                        if (track.url) {
+                            this.prefetchedUrls.delete(track.url);
+                            this.prefetchedHeaders.delete(track.url);
+                            this.prefetchedStreams.delete(track.url);
+                        }
+                        // Re-queue at front and process
+                        this.queue.unshift(track);
+                        this.processQueue();
+                        return;
+                    }
+                }
+
                 // Track finished naturally
                 const suppressFinish = this._skipRequested;
                 this._skipRequested = false;
@@ -455,6 +443,15 @@ class Subscription extends EventEmitter {
         }
     }
 
+    _killPlaybackProcesses() {
+        for (const proc of this._playbackProcesses) {
+            if (proc && !proc.killed) {
+                try { proc.kill('SIGTERM'); } catch {}
+            }
+        }
+        this._playbackProcesses = [];
+    }
+
     _clearPrefetchedStreams() {
         if (!this.prefetchedStreams || this.prefetchedStreams.size === 0) return;
         for (const url of this.prefetchedStreams.keys()) {
@@ -531,12 +528,6 @@ class Subscription extends EventEmitter {
             entry.ended = true;
             if (!entry.killed && code !== 0 && code !== null) {
                 logger.warn(`yt-dlp prefetch exited with code ${code}: ${entry.errorOutput}`);
-                // Detect auth failures (403 Forbidden) - only track for YouTube
-                const isYouTube = /youtube\.com|youtu\.be/i.test(url);
-                if (isYouTube && (entry.errorOutput.includes('403') || entry.errorOutput.includes('Forbidden') ||
-                    entry.errorOutput.includes('Sign in to confirm') || entry.errorOutput.includes('Please sign in'))) {
-                    recordYtAuthFailure();
-                }
             }
             if (this.prefetchedStreams.get(url) === entry) {
                 this.prefetchedStreams.delete(url);
@@ -563,12 +554,17 @@ class Subscription extends EventEmitter {
             try {
                 // For Spotify tracks without URL, resolve via search first
                 if (!track.url && track.searchQuery) {
-                    const resolved = await QueryResolver.handleSearch(track.searchQuery, track.requestedBy);
+                    const resolved = await QueryResolver.handleSearch(track.searchQuery, track.requestedBy, track.duration || null);
                     if (resolved && resolved.length > 0) {
                         track.url = resolved[0].url;
                         track.directUrl = resolved[0].directUrl;
                         track.directHeaders = resolved[0].directHeaders;
-                        track.duration = resolved[0].duration;
+                        // Warn if YouTube duration differs significantly from Spotify duration
+                        const ytDuration = resolved[0].duration;
+                        if (track.duration && ytDuration && Math.abs(track.duration - ytDuration) > 15) {
+                            logger.warn(`Duration mismatch for "${track.title}": Spotify=${Math.round(track.duration)}s, YouTube=${Math.round(ytDuration)}s — possible wrong match`);
+                        }
+                        track.duration = track.duration || resolved[0].duration;
                         track.title = track.title || resolved[0].title;
                         track.thumbnail = resolved[0].thumbnail || track.thumbnail;
                         track.artist = track.artist || resolved[0].artist;
@@ -622,6 +618,8 @@ class Subscription extends EventEmitter {
         if (!track || !track.url) return;
         if (track.directUrl) return;
         if (shouldPreferYtdlpStreaming(track.url)) return;
+        // Skip direct URL resolution on retry — force yt-dlp streaming fallback
+        if (track._forceYtdlpStream) return;
 
         const adoptPrefetched = () => {
             const prefetchedUrl = this.prefetchedUrls.get(track.url);
@@ -653,23 +651,7 @@ class Subscription extends EventEmitter {
     }
 
     async waitForDirectUrlForPlayback(track) {
-        const waitMs = getDirectWaitMs();
-        if (waitMs === null) {
-            await this.waitForDirectUrlForPlayback(track);
-            return;
-        }
-        if (waitMs <= 0) {
-            this.ensureDirectUrlForTrack(track).catch(() => {});
-            return;
-        }
-        try {
-            await Promise.race([
-                this.ensureDirectUrlForTrack(track),
-                delay(waitMs)
-            ]);
-        } catch {
-            // Ignore errors; playback will fall back to streaming
-        }
+        await this.ensureDirectUrlForTrack(track);
     }
 
     stop(user = null) {
@@ -967,17 +949,28 @@ class Subscription extends EventEmitter {
         try {
             // Resolve URL if missing (Lazy Track from Spotify)
             if (!track.url && track.searchQuery) {
-                const resolved = await QueryResolver.handleSearch(track.searchQuery, track.requestedBy);
-                if (resolved && resolved.length > 0) {
-                    track.url = resolved[0].url;
-                    track.directUrl = resolved[0].directUrl; // Copy direct URL for fast playback
-                    track.directHeaders = resolved[0].directHeaders;
-                    track.duration = resolved[0].duration;
-                    track.title = track.title || resolved[0].title;
-                    track.thumbnail = resolved[0].thumbnail || track.thumbnail;
-                    track.artist = track.artist || resolved[0].artist;
-                } else {
-                    throw new Error('Could not resolve track');
+                // Wait for any in-flight prefetch first to avoid duplicate searches
+                if (track._prefetchPromise) {
+                    try { await track._prefetchPromise; } catch {}
+                }
+                // If prefetch resolved the URL, skip redundant search
+                if (!track.url) {
+                    const resolved = await QueryResolver.handleSearch(track.searchQuery, track.requestedBy, track.duration || null);
+                    if (resolved && resolved.length > 0) {
+                        track.url = resolved[0].url;
+                        track.directUrl = resolved[0].directUrl;
+                        track.directHeaders = resolved[0].directHeaders;
+                        const ytDuration = resolved[0].duration;
+                        if (track.duration && ytDuration && Math.abs(track.duration - ytDuration) > 15) {
+                            logger.warn(`Duration mismatch for "${track.title}": Spotify=${Math.round(track.duration)}s, YouTube=${Math.round(ytDuration)}s — possible wrong match`);
+                        }
+                        track.duration = track.duration || resolved[0].duration;
+                        track.title = track.title || resolved[0].title;
+                        track.thumbnail = resolved[0].thumbnail || track.thumbnail;
+                        track.artist = track.artist || resolved[0].artist;
+                    } else {
+                        throw new Error('Could not resolve track');
+                    }
                 }
             }
 
@@ -1000,8 +993,12 @@ class Subscription extends EventEmitter {
             // Emit playSong event AFTER metadata is resolved
             this.emit('playSong', track);
 
+            // Kill any leftover child processes from previous playback
+            this._killPlaybackProcesses();
+
             // Log track state before creating resource
-            logger.info(`Playing track: "${track.title}" | URL: ${track.url} | DirectURL: ${track.directUrl ? 'yes' : 'no'}`);
+            const seekInfo = track._seekOffset ? ` | Seek: ${Math.round(track._seekOffset)}s` : '';
+            logger.info(`Playing track: "${track.title}" | URL: ${track.url} | DirectURL: ${track.directUrl ? 'yes' : 'no'}${seekInfo}`);
 
             // Create resource and play
             const createStart = Date.now();
@@ -1010,7 +1007,12 @@ class Subscription extends EventEmitter {
             logger.info(`Audio resource created, playing...`);
             this.audioPlayer.play(resource);
             logger.info(`audioPlayer.play() called, state: ${this.audioPlayer.state.status}`);
-            this.playbackStartTime = Date.now(); // Track when playback started
+            // Track when playback started — offset for seek so duration check accounts for skipped time
+            const seekOffset = track._seekOffset || 0;
+            this.playbackStartTime = Date.now() - (seekOffset * 1000);
+            if (seekOffset > 0) {
+                delete track._seekOffset;
+            }
 
             if (LOG_MUSIC_TIMINGS) {
                 const timing = track._timing || {};
@@ -1109,6 +1111,7 @@ class Subscription extends EventEmitter {
                 const ffmpegArgs = [
                     '-reconnect', '1',
                     '-reconnect_streamed', '1',
+                    '-reconnect_on_network_error', '1',
                     '-reconnect_delay_max', '5'
                 ];
 
@@ -1142,11 +1145,12 @@ class Subscription extends EventEmitter {
                 );
                 
                 logger.info(`Spawning FFmpeg for direct URL playback`);
-                
+
                 const child = spawn(FFMPEG_PATH, ffmpegArgs, {
                     stdio: ['pipe', 'pipe', 'pipe'],
                     windowsHide: true
                 });
+                this._playbackProcesses.push(child);
                 
                 child.on('error', (err) => {
                     logger.error(`FFmpeg spawn error: ${err.message}`);
@@ -1221,6 +1225,7 @@ class Subscription extends EventEmitter {
                 const ytdlpPath = process.env.YTDLP_PATH || 'yt-dlp';
                 const args = buildYtdlpStreamArgs(url);
                 const ytdlp = spawn(ytdlpPath, args);
+                this._playbackProcesses.push(ytdlp);
 
                 sourceStream = ytdlp.stdout;
                 
@@ -1236,12 +1241,6 @@ class Subscription extends EventEmitter {
                 ytdlp.on('close', (code) => {
                     if (code !== 0 && code !== null) {
                         logger.error(`yt-dlp exited with code ${code}: ${errorOutput}`);
-                        // Detect auth failures (403 Forbidden) - only track for YouTube
-                        const isYouTube = /youtube\.com|youtu\.be/i.test(url);
-                        if (isYouTube && (errorOutput.includes('403') || errorOutput.includes('Forbidden') ||
-                            errorOutput.includes('Sign in to confirm') || errorOutput.includes('Please sign in'))) {
-                            recordYtAuthFailure();
-                        }
                     }
                 });
             }
@@ -1253,24 +1252,33 @@ class Subscription extends EventEmitter {
                 }
             });
             
-            // If we have filters, pipe through FFmpeg
-            if (activeFilters.length > 0) {
-                const filterString = activeFilters
-                    .map(f => Subscription.FILTER_VALUES[f])
-                    .filter(Boolean)
-                    .join(',');
-                
-                const ffmpegArgs = [
-                    '-i', 'pipe:0',
-                    '-af', filterString,
+            // If we have filters or need to seek, pipe through FFmpeg
+            const seekSeconds = this.currentTrack?._seekOffset || 0;
+            const filterString = activeFilters
+                .map(f => Subscription.FILTER_VALUES[f])
+                .filter(Boolean)
+                .join(',');
+
+            if (activeFilters.length > 0 || seekSeconds > 0) {
+                const ffmpegArgs = ['-i', 'pipe:0'];
+                if (seekSeconds > 0) {
+                    // Output seek: decode from start but skip output until seek point
+                    ffmpegArgs.push('-ss', String(seekSeconds));
+                    logger.info(`Seeking to ${seekSeconds}s in yt-dlp stream via FFmpeg`);
+                }
+                if (filterString) {
+                    ffmpegArgs.push('-af', filterString);
+                }
+                ffmpegArgs.push(
                     '-f', 's16le',
                     '-ar', '48000',
                     '-ac', '2',
                     '-loglevel', 'error',
                     'pipe:1'
-                ];
-                
+                );
+
                 const ffmpeg = spawn(FFMPEG_PATH, ffmpegArgs);
+                this._playbackProcesses.push(ffmpeg);
                 sourceStream.pipe(ffmpeg.stdin);
 
                 ffmpeg.on('error', (err) => {
@@ -1289,12 +1297,10 @@ class Subscription extends EventEmitter {
                         logger.warn(`FFmpeg stdin error (filters): ${err.message}`);
                     }
                 });
-                
+
                 ffmpeg.stdout.once('data', () => {
                     const label = prefetched ? 'prefetched yt-dlp+FFmpeg' : 'yt-dlp+FFmpeg';
-                    logger.info(`${label} first data after ${Date.now() - startTime}ms (with filters)`);
-                    // Reset auth failures on successful stream
-                    if (ytAuthFailureCount > 0) resetYtAuthFailures();
+                    logger.info(`${label} first data after ${Date.now() - startTime}ms${seekSeconds ? ` (seek=${seekSeconds}s)` : ''}${filterString ? ' (with filters)' : ''}`);
                 });
 
                 ffmpeg.stdout.on('error', (err) => {
@@ -1302,10 +1308,10 @@ class Subscription extends EventEmitter {
                         logger.warn(`FFmpeg stdout error (filters): ${err.message}`);
                     }
                 });
-                
-                const resource = createAudioResource(ffmpeg.stdout, { 
+
+                const resource = createAudioResource(ffmpeg.stdout, {
                     inputType: StreamType.Raw,
-                    inlineVolume: true 
+                    inlineVolume: true
                 });
                 resource.volume.setVolume(this.volume / 100);
                 resolve(resource);
@@ -1313,8 +1319,6 @@ class Subscription extends EventEmitter {
                 sourceStream.once('data', () => {
                     const label = prefetched ? 'prefetched yt-dlp' : 'yt-dlp';
                     logger.info(`${label} first data after ${Date.now() - startTime}ms`);
-                    // Reset auth failures on successful stream
-                    if (ytAuthFailureCount > 0) resetYtAuthFailures();
                 });
 
                 // Create resource from stdout stream immediately - don't wait for data
