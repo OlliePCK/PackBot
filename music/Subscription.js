@@ -148,10 +148,17 @@ function getMusicStreamMode() {
     return 'auto';
 }
 
+function isYouTubeUrl(url) {
+    return Boolean(url && /youtube\.com|youtu\.be/i.test(url));
+}
+
 function shouldPreferYtdlpStreaming(url) {
     if (!url) return false;
     const mode = getMusicStreamMode();
-    return mode === 'ytdlp';
+    if (mode === 'ytdlp') return true;
+    if (mode === 'direct') return false;
+    // auto: prefer yt-dlp for YouTube (more resilient than direct googlevideo URLs)
+    return isYouTubeUrl(url);
 }
 
 function getYtdlpRuntimeArgs() {
@@ -229,6 +236,7 @@ class Subscription extends EventEmitter {
         this.filters = []; // Active audio filters
         this.autoplay = false; // Autoplay related songs when queue ends
         this.playbackStartTime = null; // When the current track started playing
+        this._currentTrackStartOffset = 0; // Seconds offset into track at which current playback started
         this.prefetchedUrls = new Map(); // Cache for pre-fetched direct stream URLs
         this.prefetchedHeaders = new Map(); // Cache for HTTP headers for direct URLs
         this.prefetchedStreams = new Map(); // Cache for prefetched yt-dlp stream processes
@@ -271,6 +279,8 @@ class Subscription extends EventEmitter {
                 this.queueLock = true;
                 this.queue = [];
                 this.currentTrack = null;
+                this.playbackStartTime = null;
+                this._currentTrackStartOffset = 0;
                 this.prefetchedUrls.clear();
                 this.prefetchedHeaders.clear();
                 this._clearPrefetchedStreams();
@@ -313,12 +323,22 @@ class Subscription extends EventEmitter {
                 // Detect early stream termination — if track played < 70% of expected duration, retry once
                 const track = this.currentTrack;
                 if (!this._skipRequested && track && track.duration && this.playbackStartTime && !track._retried) {
-                    const playedSeconds = (Date.now() - this.playbackStartTime) / 1000;
-                    if (playedSeconds < track.duration * 0.7 && playedSeconds > 5) {
+                    let playedSeconds = null;
+                    const playbackMs = oldState.resource?.playbackDuration;
+                    if (typeof playbackMs === 'number') {
+                        playedSeconds = (playbackMs / 1000) + (this._currentTrackStartOffset || 0);
+                    } else if (this.playbackStartTime) {
+                        playedSeconds = (Date.now() - this.playbackStartTime) / 1000;
+                    }
+                    if (!Number.isFinite(playedSeconds)) {
+                        playedSeconds = null;
+                    }
+                    if (playedSeconds !== null && playedSeconds < track.duration * 0.7 && playedSeconds > 5) {
                         logger.warn(`Early termination detected for "${track.title}": played ${Math.round(playedSeconds)}s of expected ${Math.round(track.duration)}s — retrying with yt-dlp streaming from ${Math.round(playedSeconds)}s`);
                         track._retried = true;
                         track._forceYtdlpStream = true;
                         track._seekOffset = Math.max(0, Math.floor(playedSeconds) - 3); // Seek back 3s for overlap
+                        this._currentTrackStartOffset = 0;
                         // Clear cached direct URL so retry falls through to yt-dlp streaming
                         track.directUrl = null;
                         track.directHeaders = null;
@@ -664,6 +684,9 @@ class Subscription extends EventEmitter {
         this.prefetchedUrls.clear();
         this.prefetchedHeaders.clear();
         this._clearPrefetchedStreams();
+        this._killPlaybackProcesses();
+        this.playbackStartTime = null;
+        this._currentTrackStartOffset = 0;
         this.audioPlayer.stop(true);
         this.emit('stop', user);
         this.queueLock = false;
@@ -706,6 +729,7 @@ class Subscription extends EventEmitter {
         const resource = await this.createAudioResource(previousTrack.url, previousTrack.directUrl, previousTrack.directHeaders);
         this.audioPlayer.play(resource);
         this.playbackStartTime = Date.now();
+        this._currentTrackStartOffset = 0;
         
         // Prefetch the next track in queue
         if (this.queue.length > 0) {
@@ -764,6 +788,7 @@ class Subscription extends EventEmitter {
         const resource = await this.createAudioResource(targetTrack.url, targetTrack.directUrl, targetTrack.directHeaders);
         this.audioPlayer.play(resource);
         this.playbackStartTime = Date.now();
+        this._currentTrackStartOffset = 0;
         
         // Prefetch the next track in queue
         if (this.queue.length > 0) {
@@ -779,10 +804,10 @@ class Subscription extends EventEmitter {
         if (!this.currentTrack || !this.currentTrack.url) {
             throw new Error('No track playing');
         }
-        
+
         const track = this.currentTrack;
         // Always try to get a fresh URL for seeking to avoid expiration issues
-        // But fallback to existing directUrl if needed
+        // But fall back to cached directUrl if needed.
         let streamInfo = await QueryResolver.getDirectStreamInfo(track.url);
         
         if (!streamInfo) {
@@ -795,15 +820,23 @@ class Subscription extends EventEmitter {
             throw new Error('Could not get stream URL for seek');
         }
         
-        // Create new resource with seek position and current filters
-        logger.info(`Seeking to ${timeSeconds}s with URL: ${streamInfo.directUrl.substring(0, 50)}...`);
-        const resource = await this.createAudioResourceWithFilters(streamInfo.directUrl, timeSeconds, this.filters, streamInfo.directHeaders);
-        this.audioPlayer.play(resource);
+        // Swap pipelines, but suppress Idle handling so we don't accidentally advance the queue.
+        this._stopping = true;
+        try {
+            this._killPlaybackProcesses();
+            // Create new resource with seek position and current filters
+            logger.info(`Seeking to ${timeSeconds}s with URL: ${streamInfo.directUrl.substring(0, 50)}...`);
+            const resource = await this.createAudioResourceWithFilters(streamInfo.directUrl, timeSeconds, this.filters, streamInfo.directHeaders);
+            this.audioPlayer.play(resource);
+        } finally {
+            this._stopping = false;
+        }
         
         // Update playback start time to reflect the seek
         // If we seek to 60s, we want (Date.now() - playbackStartTime) / 1000 = 60
         // So playbackStartTime = Date.now() - 60000
         this.playbackStartTime = Date.now() - (timeSeconds * 1000);
+        this._currentTrackStartOffset = timeSeconds;
         
         logger.info(`Seeked to ${timeSeconds}s in ${track.title}`);
     }
@@ -819,6 +852,7 @@ class Subscription extends EventEmitter {
             const ffmpegArgs = [
                 '-reconnect', '1',
                 '-reconnect_streamed', '1',
+                '-reconnect_on_network_error', '1',
                 '-reconnect_delay_max', '5'
             ];
 
@@ -856,6 +890,7 @@ class Subscription extends EventEmitter {
 
             logger.debug(`Spawning FFmpeg with args: ${ffmpegArgs.join(' ')}`);
             const child = spawn(FFMPEG_PATH, ffmpegArgs);
+            this._playbackProcesses.push(child);
 
             let stderrData = '';
             child.stderr.on('data', (data) => {
@@ -1010,6 +1045,7 @@ class Subscription extends EventEmitter {
             // Track when playback started — offset for seek so duration check accounts for skipped time
             const seekOffset = track._seekOffset || 0;
             this.playbackStartTime = Date.now() - (seekOffset * 1000);
+            this._currentTrackStartOffset = seekOffset;
             if (seekOffset > 0) {
                 delete track._seekOffset;
             }
@@ -1034,6 +1070,7 @@ class Subscription extends EventEmitter {
         } catch (error) {
             logger.error(`Error playing track ${track.title}: ${error.message}`);
             this.playbackStartTime = null;
+            this._currentTrackStartOffset = 0;
             this.queueLock = false;
             this.processQueue();
         }
@@ -1207,7 +1244,9 @@ class Subscription extends EventEmitter {
                 resolve(resource);
                 return;
             } else if (directUrl) {
-                logger.info('Skipping direct URL playback; using yt-dlp streaming (cookies or config present).');
+                const mode = getMusicStreamMode();
+                const ytNote = isYouTubeUrl(url) && mode === 'auto' ? ' (YouTube stable)' : '';
+                logger.info(`Direct URL available but mode=${mode}${ytNote}; using yt-dlp streaming.`);
             }
             
             // Fallback: use yt-dlp to stream (slower but works)

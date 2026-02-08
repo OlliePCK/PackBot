@@ -1,6 +1,28 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const logger = require('../logger');
 
+function getMusicStreamMode() {
+    const raw = (process.env.MUSIC_STREAM_MODE || '').trim().toLowerCase();
+    if (raw === 'auto' || raw === 'direct' || raw === 'ytdlp') return raw;
+    // Backwards compat with old flags.
+    const disableDirect = process.env.DISABLE_DIRECT_URL === '1' || process.env.DISABLE_DIRECT_URL === 'true';
+    if (disableDirect) return 'ytdlp';
+    const preferStreaming = process.env.PREFER_YTDLP_STREAMING === '1' || process.env.PREFER_YTDLP_STREAMING === 'true';
+    if (preferStreaming) return 'ytdlp';
+    return 'auto';
+}
+
+function isYouTubeUrl(url) {
+    return Boolean(url && /youtube\.com|youtu\.be/i.test(url));
+}
+
+function shouldUseYtdlpForUrl(url) {
+    const mode = getMusicStreamMode();
+    if (mode === 'ytdlp') return true;
+    if (mode === 'direct') return false;
+    return isYouTubeUrl(url);
+}
+
 // Available FFmpeg audio filters
 const FILTERS = {
     'bassboost': { name: 'Bass Boost', value: 'bass=g=10' },
@@ -189,6 +211,28 @@ async function restartWithFilters(subscription) {
         seekSeconds = Math.floor((Date.now() - subscription.playbackStartTime) / 1000);
     }
 
+    // In stable mode, avoid direct googlevideo streaming for YouTube. Rebuild the pipeline via yt-dlp piping.
+    if (shouldUseYtdlpForUrl(track.url)) {
+        subscription._stopping = true;
+        try {
+            subscription._killPlaybackProcesses?.();
+
+            // Force yt-dlp path inside createAudioResource by omitting directUrl and setting a seek offset.
+            track._seekOffset = Math.max(0, seekSeconds);
+            track.directUrl = null;
+            track.directHeaders = null;
+
+            const resource = await subscription.createAudioResource(track.url, null, null, subscription.filters);
+            subscription.audioPlayer.play(resource);
+            subscription.playbackStartTime = Date.now() - (seekSeconds * 1000);
+            subscription._currentTrackStartOffset = seekSeconds;
+            delete track._seekOffset;
+        } finally {
+            subscription._stopping = false;
+        }
+        return;
+    }
+
     // Always fetch a fresh direct URL - cached URLs may be expired
     const QueryResolver = require('../music/QueryResolver');
     let streamInfo = null;
@@ -215,10 +259,17 @@ async function restartWithFilters(subscription) {
 
     // Re-create the audio resource with filters and seek position
     try {
-        const resource = await subscription.createAudioResourceWithFilters(streamInfo.directUrl, seekSeconds, subscription.filters, streamInfo.directHeaders);
-        subscription.audioPlayer.play(resource);
-        // Update start time accounting for the seek
-        subscription.playbackStartTime = Date.now() - (seekSeconds * 1000);
+        subscription._stopping = true;
+        try {
+            subscription._killPlaybackProcesses?.();
+            const resource = await subscription.createAudioResourceWithFilters(streamInfo.directUrl, seekSeconds, subscription.filters, streamInfo.directHeaders);
+            subscription.audioPlayer.play(resource);
+            // Update start time accounting for the seek
+            subscription.playbackStartTime = Date.now() - (seekSeconds * 1000);
+            subscription._currentTrackStartOffset = seekSeconds;
+        } finally {
+            subscription._stopping = false;
+        }
     } catch (error) {
         logger.error(`Failed to restart with filters: ${error}`);
         throw error;
