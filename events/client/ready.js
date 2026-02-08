@@ -1,6 +1,7 @@
 const youtubeNotifications = require('../../scripts/youtube-notifications');
 const birthdayReminders = require('../../scripts/birthday-reminders');
 const cookieMonitor = require('../../scripts/cookie-monitor');
+const pollExpiry = require('../../scripts/poll-expiry');
 const PageMonitorService = require('../../services/PageMonitorService');
 const logger = require('../../logger').child('core');
 
@@ -53,7 +54,14 @@ module.exports = {
 			logger.error('Error initializing Page Monitor Service', { error: e.message });
 		}
 
-		// 6) Setup graceful shutdown handlers
+		// 6) Initialize poll expiry checker
+		try {
+			pollExpiry(client);
+		} catch (e) {
+			logger.error('Error initializing poll expiry', { error: e.message });
+		}
+
+		// 7) Setup graceful shutdown handlers
 		setupShutdownHandlers(client);
 
 		logger.info('All features initialized');

@@ -214,6 +214,7 @@ class QueryResolver {
                 const data = await this.spotifyApi.getAlbum(id);
                 const album = data.body;
                 
+                const albumName = album.name || '';
                 const result = album.tracks.items.map(t => new Track({
                     title: t.name,
                     url: null,
@@ -222,7 +223,7 @@ class QueryResolver {
                     duration: t.duration_ms / 1000,
                     artist: t.artists?.[0]?.name || 'Unknown Artist',
                     requestedBy,
-                    searchQuery: `${t.name} ${t.artists?.[0]?.name || ''}`
+                    searchQuery: `${t.name} ${t.artists?.[0]?.name || ''} ${albumName}`.trim()
                 }));
                 
                 result.playlistInfo = {
@@ -253,7 +254,7 @@ class QueryResolver {
             const data = await this.spotifyApi.getPlaylistTracks(playlistId, {
                 offset,
                 limit,
-                fields: 'total,items(track(name,artists,album(images),duration_ms,external_urls,id))'
+                fields: 'total,items(track(name,artists,album(name,images),duration_ms,external_urls,id))'
             });
             
             if (total === null) {
@@ -272,7 +273,7 @@ class QueryResolver {
                     duration: t.duration_ms / 1000,
                     artist: t.artists?.[0]?.name || 'Unknown Artist',
                     requestedBy,
-                    searchQuery: `${t.name} ${t.artists?.[0]?.name || ''}`
+                    searchQuery: `${t.name} ${t.artists?.[0]?.name || ''} ${t.album?.name || ''}`.trim()
                 }));
             
             offset += limit;
@@ -364,13 +365,13 @@ class QueryResolver {
         return [track];
     }
 
-    async handleSearch(query, requestedBy) {
+    async handleSearch(query, requestedBy, expectedDurationSeconds = null) {
         // Prefer official audio by searching YouTube Music first, fallback to regular YouTube
         // Adding "audio" helps avoid music video results
         const searchQuery = query.toLowerCase().includes('audio') ? query : `${query} audio`;
 
         if (shouldUseYouTubeApi()) {
-            const details = await searchYouTubeVideo(searchQuery);
+            const details = await searchYouTubeVideo(searchQuery, expectedDurationSeconds);
             if (details?.snippet) {
                 const thumb = details.snippet.thumbnails?.high?.url ||
                     details.snippet.thumbnails?.medium?.url ||

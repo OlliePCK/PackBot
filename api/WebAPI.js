@@ -1398,6 +1398,453 @@ class WebAPI {
         });
         
         // ==========================================
+        // Quotes Endpoints
+        // ==========================================
+
+        /**
+         * GET /api/quotes/:guildId
+         * Returns paginated quotes for a guild
+         */
+        router.get('/quotes/:guildId', requireAuth, async (req, res) => {
+            const { guildId } = req.params;
+            const user = req.session.user;
+            const page = parseInt(req.query.page) || 1;
+            const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+
+            if (!hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+
+            try {
+                const [[{ total }]] = await db.pool.query(
+                    'SELECT COUNT(*) as total FROM Quotes WHERE guildId = ?', [guildId]
+                );
+                const [rows] = await db.pool.query(
+                    'SELECT * FROM Quotes WHERE guildId = ? ORDER BY createdAt DESC LIMIT ? OFFSET ?',
+                    [guildId, limit, (page - 1) * limit]
+                );
+
+                res.json({
+                    quotes: rows.map(q => ({
+                        id: q.id,
+                        content: q.messageContent,
+                        authorId: q.authorId,
+                        authorUsername: q.authorUsername,
+                        savedBy: q.savedBy,
+                        createdAt: q.createdAt
+                    })),
+                    total,
+                    page,
+                    pages: Math.ceil(total / limit)
+                });
+            } catch (error) {
+                logger.error('Quotes API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to fetch quotes' });
+            }
+        });
+
+        /**
+         * GET /api/quotes/:guildId/random
+         * Returns a random quote from a guild
+         */
+        router.get('/quotes/:guildId/random', requireAuth, async (req, res) => {
+            const { guildId } = req.params;
+            const user = req.session.user;
+
+            if (!hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+
+            try {
+                const [rows] = await db.pool.query(
+                    'SELECT * FROM Quotes WHERE guildId = ? ORDER BY RAND() LIMIT 1', [guildId]
+                );
+
+                if (rows.length === 0) {
+                    return res.json({ quote: null });
+                }
+
+                const q = rows[0];
+                res.json({
+                    quote: {
+                        id: q.id,
+                        content: q.messageContent,
+                        authorId: q.authorId,
+                        authorUsername: q.authorUsername,
+                        savedBy: q.savedBy,
+                        createdAt: q.createdAt
+                    }
+                });
+            } catch (error) {
+                logger.error('Random quote API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to fetch random quote' });
+            }
+        });
+
+        /**
+         * GET /api/quotes/:guildId/user/:userId
+         * Returns quotes by a specific user
+         */
+        router.get('/quotes/:guildId/user/:userId', requireAuth, async (req, res) => {
+            const { guildId, userId } = req.params;
+            const user = req.session.user;
+            const page = parseInt(req.query.page) || 1;
+            const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+
+            if (!hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+
+            try {
+                const [[{ total }]] = await db.pool.query(
+                    'SELECT COUNT(*) as total FROM Quotes WHERE guildId = ? AND authorId = ?',
+                    [guildId, userId]
+                );
+                const [rows] = await db.pool.query(
+                    'SELECT * FROM Quotes WHERE guildId = ? AND authorId = ? ORDER BY createdAt DESC LIMIT ? OFFSET ?',
+                    [guildId, userId, limit, (page - 1) * limit]
+                );
+
+                res.json({
+                    quotes: rows.map(q => ({
+                        id: q.id,
+                        content: q.messageContent,
+                        authorId: q.authorId,
+                        authorUsername: q.authorUsername,
+                        savedBy: q.savedBy,
+                        createdAt: q.createdAt
+                    })),
+                    total,
+                    page,
+                    pages: Math.ceil(total / limit)
+                });
+            } catch (error) {
+                logger.error('User quotes API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to fetch user quotes' });
+            }
+        });
+
+        // ==========================================
+        // Starboard Endpoints
+        // ==========================================
+
+        /**
+         * GET /api/starboard/:guildId
+         * Returns paginated starboard entries sorted by star count
+         */
+        router.get('/starboard/:guildId', requireAuth, async (req, res) => {
+            const { guildId } = req.params;
+            const user = req.session.user;
+            const page = parseInt(req.query.page) || 1;
+            const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+
+            if (!hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+
+            try {
+                const [[{ total }]] = await db.pool.query(
+                    'SELECT COUNT(*) as total FROM Starboard WHERE guildId = ?', [guildId]
+                );
+                const [rows] = await db.pool.query(
+                    'SELECT * FROM Starboard WHERE guildId = ? ORDER BY starCount DESC, createdAt DESC LIMIT ? OFFSET ?',
+                    [guildId, limit, (page - 1) * limit]
+                );
+
+                res.json({
+                    entries: rows.map(e => ({
+                        id: e.id,
+                        originalMessageId: e.originalMessageId,
+                        starboardMessageId: e.starboardMessageId,
+                        channelId: e.channelId,
+                        authorId: e.authorId,
+                        content: e.content,
+                        attachmentUrl: e.attachmentUrl,
+                        starCount: e.starCount,
+                        createdAt: e.createdAt
+                    })),
+                    total,
+                    page,
+                    pages: Math.ceil(total / limit)
+                });
+            } catch (error) {
+                logger.error('Starboard API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to fetch starboard' });
+            }
+        });
+
+        // ==========================================
+        // Music Compatibility Endpoint
+        // ==========================================
+
+        /**
+         * GET /api/profile/:userId/compatibility/:otherUserId
+         * Compute music taste compatibility between two users
+         */
+        router.get('/profile/:userId/compatibility/:otherUserId', requireAuth, async (req, res) => {
+            const { userId, otherUserId } = req.params;
+            const user = req.session.user;
+            const guildId = req.query.guildId;
+
+            if (guildId && !hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+
+            try {
+                const accessibleGuildIds = guildId ? [guildId] : getUserGuildIds(user);
+                const guildPlaceholders = accessibleGuildIds.map(() => '?').join(',');
+
+                // Get top 50 artists for each user
+                const [user1Artists] = await db.pool.query(
+                    `SELECT trackArtist as artist, COUNT(*) as playCount
+                     FROM ListeningHistory
+                     WHERE odUserId = ? AND trackArtist IS NOT NULL AND guildId IN (${guildPlaceholders})
+                     GROUP BY trackArtist ORDER BY playCount DESC LIMIT 50`,
+                    [userId, ...accessibleGuildIds]
+                );
+
+                const [user2Artists] = await db.pool.query(
+                    `SELECT trackArtist as artist, COUNT(*) as playCount
+                     FROM ListeningHistory
+                     WHERE odUserId = ? AND trackArtist IS NOT NULL AND guildId IN (${guildPlaceholders})
+                     GROUP BY trackArtist ORDER BY playCount DESC LIMIT 50`,
+                    [otherUserId, ...accessibleGuildIds]
+                );
+
+                const set1 = new Set(user1Artists.map(a => a.artist.toLowerCase()));
+                const set2 = new Set(user2Artists.map(a => a.artist.toLowerCase()));
+
+                const shared = [...set1].filter(a => set2.has(a));
+                const minSize = Math.min(set1.size, set2.size);
+                const compatibility = minSize > 0 ? Math.round((shared.length / minSize) * 100) : 0;
+
+                res.json({
+                    compatibility,
+                    sharedArtists: shared,
+                    user1ArtistCount: set1.size,
+                    user2ArtistCount: set2.size
+                });
+            } catch (error) {
+                logger.error('Compatibility API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to compute compatibility' });
+            }
+        });
+
+        // ==========================================
+        // Wrapped (Music Stats) Endpoints
+        // ==========================================
+
+        /**
+         * GET /api/wrapped/:guildId/server
+         * Server-wide music stats
+         */
+        router.get('/wrapped/:guildId/server', requireAuth, async (req, res) => {
+            const { guildId } = req.params;
+            const user = req.session.user;
+
+            if (!hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+
+            try {
+                const [[stats]] = await db.pool.query(
+                    `SELECT COUNT(*) as totalTracks,
+                            COALESCE(SUM(durationSeconds), 0) as totalSeconds,
+                            COUNT(DISTINCT trackArtist) as uniqueArtists,
+                            COUNT(DISTINCT CONCAT(trackTitle, trackArtist)) as uniqueTracks
+                     FROM ListeningHistory WHERE guildId = ?`,
+                    [guildId]
+                );
+
+                const [topTracks] = await db.pool.query(
+                    `SELECT trackTitle as title, trackArtist as artist, trackThumbnail as thumbnail,
+                            COUNT(*) as playCount
+                     FROM ListeningHistory WHERE guildId = ?
+                     GROUP BY trackTitle, trackArtist, trackThumbnail
+                     ORDER BY playCount DESC LIMIT 5`,
+                    [guildId]
+                );
+
+                const [topListeners] = await db.pool.query(
+                    `SELECT odUserId, odUsername as username,
+                            COUNT(*) as playCount, COALESCE(SUM(durationSeconds), 0) as totalSeconds
+                     FROM ListeningHistory WHERE guildId = ?
+                     GROUP BY odUserId, odUsername
+                     ORDER BY totalSeconds DESC LIMIT 5`,
+                    [guildId]
+                );
+
+                const [topArtists] = await db.pool.query(
+                    `SELECT trackArtist as artist, COUNT(*) as playCount
+                     FROM ListeningHistory WHERE guildId = ? AND trackArtist IS NOT NULL
+                     GROUP BY trackArtist ORDER BY playCount DESC LIMIT 5`,
+                    [guildId]
+                );
+
+                res.json({
+                    stats: {
+                        totalTracks: parseInt(stats.totalTracks),
+                        totalSeconds: parseInt(stats.totalSeconds),
+                        uniqueArtists: parseInt(stats.uniqueArtists),
+                        uniqueTracks: parseInt(stats.uniqueTracks)
+                    },
+                    topTracks,
+                    topListeners,
+                    topArtists
+                });
+            } catch (error) {
+                logger.error('Wrapped server API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to fetch server stats' });
+            }
+        });
+
+        /**
+         * GET /api/wrapped/:guildId/compare/:userId1/:userId2
+         * Compare two users' music stats
+         */
+        router.get('/wrapped/:guildId/compare/:userId1/:userId2', requireAuth, async (req, res) => {
+            const { guildId, userId1, userId2 } = req.params;
+            const user = req.session.user;
+
+            if (!hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+
+            try {
+                const getUserStats = async (uid) => {
+                    const [[stats]] = await db.pool.query(
+                        `SELECT COUNT(*) as totalTracks, COALESCE(SUM(durationSeconds), 0) as totalSeconds
+                         FROM ListeningHistory WHERE guildId = ? AND odUserId = ?`,
+                        [guildId, uid]
+                    );
+                    const [[userInfo]] = await db.pool.query(
+                        'SELECT odUsername FROM ListeningHistory WHERE odUserId = ? ORDER BY playedAt DESC LIMIT 1',
+                        [uid]
+                    );
+                    const [topTracks] = await db.pool.query(
+                        `SELECT trackTitle as title, trackArtist as artist, COUNT(*) as playCount
+                         FROM ListeningHistory WHERE guildId = ? AND odUserId = ?
+                         GROUP BY trackTitle, trackArtist ORDER BY playCount DESC LIMIT 50`,
+                        [guildId, uid]
+                    );
+                    const [topArtists] = await db.pool.query(
+                        `SELECT trackArtist as artist, COUNT(*) as playCount
+                         FROM ListeningHistory WHERE guildId = ? AND odUserId = ? AND trackArtist IS NOT NULL
+                         GROUP BY trackArtist ORDER BY playCount DESC LIMIT 30`,
+                        [guildId, uid]
+                    );
+                    return { stats, username: userInfo?.odUsername || 'Unknown', topTracks, topArtists };
+                };
+
+                const [u1, u2] = await Promise.all([getUserStats(userId1), getUserStats(userId2)]);
+
+                // Compute shared tracks and artists
+                const tracks1 = new Set(u1.topTracks.map(t => `${t.title}::${t.artist}`.toLowerCase()));
+                const tracks2 = new Set(u2.topTracks.map(t => `${t.title}::${t.artist}`.toLowerCase()));
+                const sharedTracks = [...tracks1].filter(t => tracks2.has(t));
+
+                const artists1 = new Set(u1.topArtists.map(a => a.artist.toLowerCase()));
+                const artists2 = new Set(u2.topArtists.map(a => a.artist.toLowerCase()));
+                const sharedArtists = [...artists1].filter(a => artists2.has(a));
+
+                const minArtists = Math.min(artists1.size, artists2.size);
+                const compatibility = minArtists > 0 ? Math.round((sharedArtists.length / minArtists) * 100) : 0;
+
+                res.json({
+                    user1: {
+                        userId: userId1,
+                        username: u1.username,
+                        totalTracks: parseInt(u1.stats.totalTracks),
+                        totalSeconds: parseInt(u1.stats.totalSeconds),
+                        topTracks: u1.topTracks.slice(0, 5),
+                        topArtists: u1.topArtists.slice(0, 5)
+                    },
+                    user2: {
+                        userId: userId2,
+                        username: u2.username,
+                        totalTracks: parseInt(u2.stats.totalTracks),
+                        totalSeconds: parseInt(u2.stats.totalSeconds),
+                        topTracks: u2.topTracks.slice(0, 5),
+                        topArtists: u2.topArtists.slice(0, 5)
+                    },
+                    compatibility,
+                    sharedTracks: sharedTracks.length,
+                    sharedArtists
+                });
+            } catch (error) {
+                logger.error('Wrapped compare API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to compare users' });
+            }
+        });
+
+        /**
+         * GET /api/wrapped/:guildId/:userId
+         * User-specific music stats for a guild
+         */
+        router.get('/wrapped/:guildId/:userId', requireAuth, async (req, res) => {
+            const { guildId, userId } = req.params;
+            const user = req.session.user;
+
+            if (!hasGuildAccess(user, guildId)) {
+                return res.status(403).json({ error: 'No access to this guild' });
+            }
+
+            try {
+                const [[stats]] = await db.pool.query(
+                    `SELECT COUNT(*) as totalTracks,
+                            COALESCE(SUM(durationSeconds), 0) as totalSeconds,
+                            COUNT(DISTINCT CONCAT(trackTitle, trackArtist)) as uniqueTracks
+                     FROM ListeningHistory WHERE guildId = ? AND odUserId = ?`,
+                    [guildId, userId]
+                );
+
+                const [[userInfo]] = await db.pool.query(
+                    'SELECT odUsername FROM ListeningHistory WHERE odUserId = ? ORDER BY playedAt DESC LIMIT 1',
+                    [userId]
+                );
+
+                const [topTracks] = await db.pool.query(
+                    `SELECT trackTitle as title, trackArtist as artist, trackThumbnail as thumbnail,
+                            COUNT(*) as playCount
+                     FROM ListeningHistory WHERE guildId = ? AND odUserId = ?
+                     GROUP BY trackTitle, trackArtist, trackThumbnail
+                     ORDER BY playCount DESC LIMIT 5`,
+                    [guildId, userId]
+                );
+
+                const [topArtists] = await db.pool.query(
+                    `SELECT trackArtist as artist, COUNT(*) as playCount
+                     FROM ListeningHistory WHERE guildId = ? AND odUserId = ? AND trackArtist IS NOT NULL
+                     GROUP BY trackArtist ORDER BY playCount DESC LIMIT 5`,
+                    [guildId, userId]
+                );
+
+                const [favoriteHour] = await db.pool.query(
+                    `SELECT HOUR(playedAt) as hour, COUNT(*) as count
+                     FROM ListeningHistory WHERE guildId = ? AND odUserId = ?
+                     GROUP BY HOUR(playedAt) ORDER BY count DESC LIMIT 1`,
+                    [guildId, userId]
+                );
+
+                res.json({
+                    userId,
+                    username: userInfo?.odUsername || 'Unknown',
+                    stats: {
+                        totalTracks: parseInt(stats.totalTracks),
+                        totalSeconds: parseInt(stats.totalSeconds),
+                        uniqueTracks: parseInt(stats.uniqueTracks)
+                    },
+                    topTracks,
+                    topArtists,
+                    favoriteHour: favoriteHour.length > 0 ? favoriteHour[0].hour : null
+                });
+            } catch (error) {
+                logger.error('Wrapped user API error', { error: error.message });
+                res.status(500).json({ error: 'Failed to fetch user stats' });
+            }
+        });
+
+        // ==========================================
         // YouTube Channel Management Endpoints
         // ==========================================
         
@@ -2071,6 +2518,8 @@ class WebAPI {
                     youtubeChannel: getChannelName(settings.youtubeChannelID),
                     twentyFourSevenMode: !!settings.twentyFourSevenMode,
                     voiceCommandsEnabled: !!settings.voiceCommandsEnabled,
+                    starboardChannel: getChannelName(settings.starboardChannelID),
+                    starThreshold: settings.starThreshold || 3,
                     isVoiceWhitelisted,
                     // Include available channels and roles for dropdowns
                     availableChannels: guild?.channels.cache
@@ -2115,7 +2564,9 @@ class WebAPI {
                 'generalChannel': 'generalChannelID',
                 'youtubeChannel': 'youtubeChannelID',
                 'twentyFourSevenMode': 'twentyFourSevenMode',
-                'voiceCommandsEnabled': 'voiceCommandsEnabled'
+                'voiceCommandsEnabled': 'voiceCommandsEnabled',
+                'starboardChannel': 'starboardChannelID',
+                'starThreshold': 'starThreshold'
             };
             
             const column = allowedSettings[setting];
@@ -2139,6 +2590,14 @@ class WebAPI {
                 let dbValue = value;
                 if (setting === 'twentyFourSevenMode' || setting === 'voiceCommandsEnabled') {
                     dbValue = value ? 1 : 0;
+                }
+
+                // Handle integer settings
+                if (setting === 'starThreshold') {
+                    dbValue = parseInt(value);
+                    if (isNaN(dbValue) || dbValue < 1 || dbValue > 25) {
+                        return res.status(400).json({ error: 'Star threshold must be between 1 and 25' });
+                    }
                 }
                 
                 await db.pool.query(

@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const db = require('../database/db.js');
 
 /**
  * Create a visual progress bar for track playback
@@ -107,6 +108,28 @@ module.exports = {
             embed.setThumbnail(track.thumbnail);
         }
         
+        // Add listening history stats
+        try {
+            const [[{ playCount }]] = await db.pool.query(
+                'SELECT COUNT(*) as playCount FROM ListeningHistory WHERE guildId = ? AND trackTitle = ?',
+                [interaction.guildId, track.title]
+            );
+            if (playCount > 0) {
+                const [firstPlayRows] = await db.pool.query(
+                    'SELECT odUserId, playedAt FROM ListeningHistory WHERE guildId = ? AND trackTitle = ? ORDER BY playedAt ASC LIMIT 1',
+                    [interaction.guildId, track.title]
+                );
+                let historyText = `Played **${playCount}** time${playCount !== 1 ? 's' : ''} in this server`;
+                if (firstPlayRows.length > 0) {
+                    const firstPlay = firstPlayRows[0];
+                    historyText += `\nFirst played by <@${firstPlay.odUserId}>`;
+                }
+                embed.addFields({ name: 'History', value: historyText, inline: false });
+            }
+        } catch {
+            // Non-critical, silent fail
+        }
+
         // Add queue info
         if (subscription.queue.length > 0) {
             const nextTrack = subscription.queue[0];

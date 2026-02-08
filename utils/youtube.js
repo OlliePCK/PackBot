@@ -102,27 +102,111 @@ async function getYouTubeVideoDetails(videoId) {
     }
 }
 
-async function searchYouTubeVideo(query) {
+async function getYouTubeVideoDetailsBatch(videoIds) {
+    if (!videoIds || !videoIds.length) return [];
+    const apiKey = getYouTubeApiKey();
+    if (!apiKey) return [];
+
+    try {
+        const res = await request(
+            `https://www.googleapis.com/youtube/v3/videos?` +
+            `part=snippet,contentDetails,statistics&id=${videoIds.join(',')}&key=${apiKey}`
+        );
+        const body = await res.body.json();
+        if (!body.items || !body.items.length) return [];
+        return body.items.map(item => ({
+            id: item.id,
+            snippet: item.snippet,
+            durationSeconds: parseIsoDurationToSeconds(item.contentDetails?.duration),
+            viewCount: parseInt(item.statistics?.viewCount, 10) || 0
+        }));
+    } catch (e) {
+        logger.error('YouTube API batch error: ' + (e.stack || e));
+        return [];
+    }
+}
+
+function scoreYouTubeResult(details, expectedDurationSeconds) {
+    let score = 0;
+    const channel = (details.snippet?.channelTitle || '').toLowerCase();
+    const title = (details.snippet?.title || '').toLowerCase();
+
+    // Official channel indicators
+    if (channel.includes('vevo')) score += 30;
+    if (channel.endsWith('- topic')) score += 20;
+    if (title.includes('official')) score += 10;
+
+    // View count as popularity/legitimacy signal (log scale, capped)
+    // 1M views = +20, 100K = +13, 10K = +7, 1K = 0
+    if (details.viewCount > 1000) {
+        score += Math.min(25, Math.round(Math.log10(details.viewCount / 1000) * 7));
+    }
+
+    // Duration matching (most important signal)
+    if (expectedDurationSeconds && details.durationSeconds) {
+        const diff = Math.abs(details.durationSeconds - expectedDurationSeconds);
+        if (diff <= 5) {
+            score += 100; // Near-perfect match
+        } else if (diff <= 15) {
+            score += 80;
+        } else if (diff <= 30) {
+            score += 50;
+        } else {
+            score += Math.max(0, 40 - diff); // Degrades with distance
+        }
+        // Heavy penalty if video is much shorter than expected (likely truncated)
+        if (details.durationSeconds < expectedDurationSeconds * 0.6) {
+            score -= 200;
+        }
+    }
+
+    return score;
+}
+
+async function searchYouTubeVideo(query, expectedDurationSeconds = null) {
     if (!query) return null;
     const apiKey = getYouTubeApiKey();
     if (!apiKey) return null;
 
     try {
+        const maxResults = expectedDurationSeconds ? 5 : 1;
         const res = await request(
             `https://www.googleapis.com/youtube/v3/search?` +
-            `part=snippet&type=video&maxResults=1&q=${encodeURIComponent(query)}&key=${apiKey}`
+            `part=snippet&type=video&maxResults=${maxResults}&q=${encodeURIComponent(query)}&key=${apiKey}`
         );
         const body = await res.body.json();
         if (!body.items || !body.items.length) return null;
-        const item = body.items[0];
-        const videoId = item.id?.videoId;
-        if (!videoId) return null;
 
-        const details = await getYouTubeVideoDetails(videoId);
-        if (!details) {
-            return { id: videoId, snippet: item.snippet, durationSeconds: null };
+        const videoIds = body.items.map(item => item.id?.videoId).filter(Boolean);
+        if (!videoIds.length) return null;
+
+        // Single result — no scoring needed
+        if (videoIds.length === 1) {
+            const details = await getYouTubeVideoDetails(videoIds[0]);
+            return details || { id: videoIds[0], snippet: body.items[0].snippet, durationSeconds: null };
         }
-        return details;
+
+        // Batch-fetch details for all candidates
+        const allDetails = await getYouTubeVideoDetailsBatch(videoIds);
+        if (!allDetails.length) {
+            // Fallback to first result without details
+            return { id: videoIds[0], snippet: body.items[0].snippet, durationSeconds: null };
+        }
+
+        // Score and pick the best result
+        let best = allDetails[0];
+        let bestScore = scoreYouTubeResult(best, expectedDurationSeconds);
+
+        for (let i = 1; i < allDetails.length; i++) {
+            const s = scoreYouTubeResult(allDetails[i], expectedDurationSeconds);
+            if (s > bestScore) {
+                best = allDetails[i];
+                bestScore = s;
+            }
+        }
+
+        logger.info(`YouTube search: picked "${best.snippet?.title}" (score=${bestScore}, duration=${best.durationSeconds}s, views=${best.viewCount}) from ${allDetails.length} candidates for expected ${expectedDurationSeconds}s`);
+        return best;
     } catch (e) {
         logger.error('YouTube API error: ' + (e.stack || e));
         return null;

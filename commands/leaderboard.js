@@ -45,6 +45,10 @@ module.exports = {
         .addSubcommand(sub =>
             sub.setName('games')
                 .setDescription('Top 10 most played games in this server')
+        )
+        .addSubcommand(sub =>
+            sub.setName('music')
+                .setDescription('Top 10 music listeners by total listening time')
         ),
 
     async autocomplete(interaction) {
@@ -178,6 +182,57 @@ module.exports = {
                     .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
                     .setColor('#ff006a')
                     .setTimestamp();
+
+                return interaction.editReply({ embeds: [embed] });
+
+            } else if (subcommand === 'music') {
+                // Top 10 listeners by total listening hours
+                const [rows] = await db.pool.query(`
+                    SELECT odUserId, odUsername,
+                           COALESCE(SUM(durationSeconds), 0) as totalSeconds,
+                           COUNT(*) as playCount,
+                           COUNT(DISTINCT CONCAT(trackTitle, trackArtist)) as uniqueTracks
+                    FROM ListeningHistory
+                    WHERE guildId = ?
+                    GROUP BY odUserId, odUsername
+                    ORDER BY totalSeconds DESC
+                    LIMIT 10
+                `, [interaction.guildId]);
+
+                if (rows.length === 0) {
+                    const embed = new EmbedBuilder()
+                        .setDescription('🎵 No listening data recorded yet!')
+                        .setColor('#ff006a')
+                        .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                    return interaction.editReply({ embeds: [embed] });
+                }
+
+                // Get the most played track overall
+                const [topTrack] = await db.pool.query(`
+                    SELECT trackTitle, trackArtist, COUNT(*) as plays
+                    FROM ListeningHistory WHERE guildId = ?
+                    GROUP BY trackTitle, trackArtist
+                    ORDER BY plays DESC LIMIT 1
+                `, [interaction.guildId]);
+
+                const leaderboard = rows.map((row, i) => {
+                    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**${i + 1}.**`;
+                    return `${medal} <@${row.odUserId}> — ${formatTime(row.totalSeconds)}\n\u2003${row.playCount} plays • ${row.uniqueTracks} unique tracks`;
+                }).join('\n');
+
+                const embed = new EmbedBuilder()
+                    .setTitle('🎵 Music Listening Leaderboard')
+                    .setDescription(leaderboard)
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
+                    .setColor('#ff006a')
+                    .setTimestamp();
+
+                if (topTrack.length > 0) {
+                    embed.addFields({
+                        name: '🏆 Most Played Track',
+                        value: `**${topTrack[0].trackTitle}** by ${topTrack[0].trackArtist || 'Unknown'} (${topTrack[0].plays} plays)`
+                    });
+                }
 
                 return interaction.editReply({ embeds: [embed] });
 

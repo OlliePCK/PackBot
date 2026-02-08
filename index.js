@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('./logger').child('core');
-const { Client, Collection, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, EmbedBuilder, Partials } = require('discord.js');
 const config = require('./config.json');
 require('dotenv').config();
 
@@ -56,7 +56,9 @@ const client = new Client({
 		GatewayIntentBits.GuildPresences,
 		GatewayIntentBits.GuildMembers,
 		GatewayIntentBits.GuildVoiceStates,
+		GatewayIntentBits.GuildMessageReactions,
 	],
+	partials: [Partials.Message, Partials.Reaction],
 });
 
 client.emotes = config.emoji;

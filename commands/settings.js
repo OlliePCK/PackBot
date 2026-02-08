@@ -47,6 +47,26 @@ const SETTERS = {
 		type: 'toggle',
 		title: '24/7 Mode toggled!',
 		fieldName: 'Status'
+	},
+	'set-starboard-channel': {
+		option: 'starboard-channel',
+		column: 'starboardChannelID',
+		type: 'channel',
+		title: 'Set starboard channel!',
+		validate: ch => ch.isTextBased(),
+		error: '🚫 That is not a text channel!',
+		format: ch => `<#${ch.id}>`,
+		fieldName: 'Channel'
+	},
+	'set-star-threshold': {
+		option: 'threshold',
+		column: 'starThreshold',
+		type: 'integer',
+		title: 'Set star threshold!',
+		validate: val => val >= 1 && val <= 25,
+		error: 'Threshold must be between 1 and 25.',
+		format: val => `\`${val}\``,
+		fieldName: 'Threshold'
 	}
 };
 
@@ -89,6 +109,18 @@ module.exports = {
 			sc
 				.setName('toggle-247')
 				.setDescription('Toggle 24/7 mode (bot stays in voice channel when alone)')
+		)
+		.addSubcommand(sc =>
+			sc
+				.setName('set-starboard-channel')
+				.setDescription('Channel for starboard highlights')
+				.addChannelOption(o => o.setName('starboard-channel').setDescription('Text channel').setRequired(true))
+		)
+		.addSubcommand(sc =>
+			sc
+				.setName('set-star-threshold')
+				.setDescription('Minimum stars to post to starboard (1-25)')
+				.addIntegerOption(o => o.setName('threshold').setDescription('Number of stars required').setRequired(true).setMinValue(1).setMaxValue(25))
 		),
 
 	/**
@@ -106,6 +138,8 @@ module.exports = {
 				{ name: 'General Chan', value: guildProfile.generalChannelID ? `<#${guildProfile.generalChannelID}>` : '`Not set`', inline: true },
 				{ name: 'YouTube Chan', value: guildProfile.youtubeChannelID ? `<#${guildProfile.youtubeChannelID}>` : '`Not set`', inline: true },
 				{ name: '24/7 Mode', value: guildProfile.twentyFourSevenMode ? '`Enabled`' : '`Disabled`', inline: true },
+				{ name: 'Starboard Chan', value: guildProfile.starboardChannelID ? `<#${guildProfile.starboardChannelID}>` : '`Not set`', inline: true },
+				{ name: 'Star Threshold', value: `\`${guildProfile.starThreshold || 3}\``, inline: true },
 			];
 			const embed = new EmbedBuilder()
 				.setTitle(`${interaction.guild.name} Settings`)
@@ -144,6 +178,38 @@ module.exports = {
 			return interaction.editReply({ embeds: [embed] });
 		}
 		
+		// Handle integer type (e.g. star threshold)
+		if (cfg.type === 'integer') {
+			const value = interaction.options.getInteger(cfg.option);
+
+			if (!cfg.validate(value)) {
+				const embed = new EmbedBuilder()
+					.setDescription(`${interaction.client.emotes.error} | ${cfg.error}`)
+					.setColor('#ff0000')
+					.setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+				return interaction.editReply({ embeds: [embed] });
+			}
+
+			await db.pool.query(
+				`UPDATE Guilds SET ${cfg.column} = ? WHERE guildId = ?`,
+				[value, interaction.guildId]
+			);
+
+			invalidateGuildCache(interaction.guildId);
+			guildProfile[cfg.column] = value;
+
+			const embed = new EmbedBuilder()
+				.setTitle(`${interaction.client.emotes.success} | ${cfg.title}`)
+				.addFields(
+					{ name: cfg.fieldName, value: cfg.format(value), inline: true },
+					{ name: 'Set by', value: `${interaction.user}`, inline: true }
+				)
+				.setFooter({ text: 'The Pack', iconURL: interaction.client.logo })
+				.setColor('#ff006a');
+
+			return interaction.editReply({ embeds: [embed] });
+		}
+
 		// pull the raw option (Role or Channel)
 		const target = cfg.type === 'role'
 			? interaction.options.getRole(cfg.option)
