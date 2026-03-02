@@ -126,20 +126,44 @@ async function getYouTubeVideoDetailsBatch(videoIds) {
     }
 }
 
-function scoreYouTubeResult(details, expectedDurationSeconds) {
+function scoreYouTubeResult(details, expectedDurationSeconds, searchQuery = null) {
     let score = 0;
     const channel = (details.snippet?.channelTitle || '').toLowerCase();
     const title = (details.snippet?.title || '').toLowerCase();
 
-    // Official channel indicators
-    if (channel.includes('vevo')) score += 30;
+    // Official channel indicators (prefer auto-generated audio channels)
     if (channel.endsWith('- topic')) score += 20;
     if (title.includes('official')) score += 10;
 
+    // Prefer explicit over clean versions
+    if (/\bclean\b/.test(title)) score -= 10;
+
     // View count as popularity/legitimacy signal (log scale, capped)
-    // 1M views = +20, 100K = +13, 10K = +7, 1K = 0
+    // 1M views = +15, 100K = +10, 10K = +5, 1K = 0
     if (details.viewCount > 1000) {
-        score += Math.min(25, Math.round(Math.log10(details.viewCount / 1000) * 7));
+        score += Math.min(15, Math.round(Math.log10(details.viewCount / 1000) * 5));
+    }
+
+    // Title relevance to search query — penalize wrong songs
+    if (searchQuery) {
+        const normalize = s => s.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+        const stopWords = new Set(['audio', 'official', 'video', 'lyrics', 'music', 'feat', 'ft', 'featuring']);
+        const queryTerms = normalize(searchQuery).split(' ')
+            .filter(t => t.length > 2 && !stopWords.has(t));
+
+        if (queryTerms.length > 0) {
+            const titleNorm = normalize(title);
+            let matched = 0;
+            for (const term of queryTerms) {
+                if (titleNorm.includes(term)) matched++;
+            }
+            const ratio = matched / queryTerms.length;
+            if (ratio >= 0.8) {
+                score += 15;
+            } else if (ratio <= 0.5) {
+                score -= 50; // Heavy penalty: most search terms missing from title
+            }
+        }
     }
 
     // Duration matching (most important signal)
@@ -194,18 +218,14 @@ async function searchYouTubeVideo(query, expectedDurationSeconds = null) {
         }
 
         // Score and pick the best result
-        let best = allDetails[0];
-        let bestScore = scoreYouTubeResult(best, expectedDurationSeconds);
+        const scored = allDetails.map(d => ({ details: d, score: scoreYouTubeResult(d, expectedDurationSeconds, query) }));
+        scored.sort((a, b) => b.score - a.score);
+        const best = scored[0].details;
+        const bestScore = scored[0].score;
 
-        for (let i = 1; i < allDetails.length; i++) {
-            const s = scoreYouTubeResult(allDetails[i], expectedDurationSeconds);
-            if (s > bestScore) {
-                best = allDetails[i];
-                bestScore = s;
-            }
-        }
-
+        const candidatesSummary = scored.map(c => `"${c.details.snippet?.title}" s=${c.score} d=${c.details.durationSeconds}s v=${c.details.viewCount}`).join(' | ');
         logger.info(`YouTube search: picked "${best.snippet?.title}" (score=${bestScore}, duration=${best.durationSeconds}s, views=${best.viewCount}) from ${allDetails.length} candidates for expected ${expectedDurationSeconds}s`);
+        logger.debug(`YouTube candidates: ${candidatesSummary}`);
         return best;
     } catch (e) {
         logger.error('YouTube API error: ' + (e.stack || e));

@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const QueryResolver = require('./QueryResolver');
 const LOG_MUSIC_TIMINGS = process.env.LOG_MUSIC_TIMINGS === '1' || process.env.LOG_MUSIC_TIMINGS === 'true';
+const OPUS_PASSTHROUGH_ENABLED = process.env.MUSIC_OPUS_PASSTHROUGH !== '0' && process.env.MUSIC_OPUS_PASSTHROUGH !== 'false';
 
 // Get FFmpeg path - prefer system ffmpeg in Docker, fallback to ffmpeg-static
 function getFFmpegPath() {
@@ -203,7 +204,8 @@ function buildYtdlpStreamArgs(url) {
     return [
         '-o', '-',
         '-q',
-        '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+        // Prefer Opus-in-WebM when available so we can optionally demux and stream Opus without re-encoding.
+        '-f', 'bestaudio[acodec=opus][ext=webm]/bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
         '--no-warnings',
         '--no-playlist',
         '--no-part',           // Don't create .part files
@@ -214,6 +216,56 @@ function buildYtdlpStreamArgs(url) {
         ...getYtdlpCookieArgs(),
         url
     ];
+}
+
+function detectContainerFromFirstChunk(chunk) {
+    if (!chunk || chunk.length < 4) return null;
+
+    // WebM/Matroska EBML signature: 1A 45 DF A3
+    if (chunk[0] === 0x1A && chunk[1] === 0x45 && chunk[2] === 0xDF && chunk[3] === 0xA3) {
+        return 'webm';
+    }
+
+    // Ogg signature: "OggS"
+    if (chunk[0] === 0x4F && chunk[1] === 0x67 && chunk[2] === 0x67 && chunk[3] === 0x53) {
+        return 'ogg';
+    }
+
+    return null;
+}
+
+function peekFirstChunkAndPause(stream) {
+    return new Promise((resolve, reject) => {
+        const cleanup = () => {
+            stream.off('data', onData);
+            stream.off('end', onEnd);
+            stream.off('error', onError);
+        };
+
+        const onData = (chunk) => {
+            cleanup();
+            try {
+                stream.pause();
+            } catch {
+                // ignore
+            }
+            resolve(chunk);
+        };
+
+        const onEnd = () => {
+            cleanup();
+            resolve(null);
+        };
+
+        const onError = (err) => {
+            cleanup();
+            reject(err);
+        };
+
+        stream.on('data', onData);
+        stream.on('end', onEnd);
+        stream.on('error', onError);
+    });
 }
 
 class Subscription extends EventEmitter {
@@ -370,6 +422,34 @@ class Subscription extends EventEmitter {
         });
 
         this.voiceConnection.subscribe(this.audioPlayer);
+    }
+
+    _kickoffBackgroundDirectUrlResolve(track) {
+        if (!track || !track.url) return;
+        if (!isYouTubeUrl(track.url)) return;
+        if (track.directUrl) return;
+        if (track._directUrlPromise) return;
+
+        const startedAt = Date.now();
+        const p = QueryResolver.getDirectStreamInfo(track.url)
+            .then((streamInfo) => {
+                if (streamInfo?.directUrl) {
+                    track.directUrl = streamInfo.directUrl;
+                    track.directHeaders = streamInfo.directHeaders || null;
+                    track._directUrlResolvedAt = Date.now();
+                    logger.info(`Background-resolved direct URL for "${track.title || track.url}" in ${Date.now() - startedAt}ms`);
+                }
+            })
+            .catch((err) => {
+                logger.warn(`Background direct URL resolve failed for "${track.title || track.url}": ${err.message}`);
+            })
+            .finally(() => {
+                if (track._directUrlPromise === p) {
+                    delete track._directUrlPromise;
+                }
+            });
+
+        track._directUrlPromise = p;
     }
 
     enqueue(track) {
@@ -806,14 +886,21 @@ class Subscription extends EventEmitter {
         }
 
         const track = this.currentTrack;
-        // Always try to get a fresh URL for seeking to avoid expiration issues
-        // But fall back to cached directUrl if needed.
-        let streamInfo = await QueryResolver.getDirectStreamInfo(track.url);
-        
-        if (!streamInfo) {
-            const fallbackUrl = track.directUrl || this.prefetchedUrls.get(track.url);
-            const fallbackHeaders = track.directHeaders || this.prefetchedHeaders.get(track.url);
-            streamInfo = { directUrl: fallbackUrl, directHeaders: fallbackHeaders };
+
+        // Prefer cached direct URL for snappy seeks; refresh in background to reduce expiry risk.
+        const cachedUrl = track.directUrl || this.prefetchedUrls.get(track.url);
+        const cachedHeaders = track.directHeaders || this.prefetchedHeaders.get(track.url) || null;
+        let streamInfo = cachedUrl ? { directUrl: cachedUrl, directHeaders: cachedHeaders } : null;
+
+        if (streamInfo?.directUrl) {
+            this._kickoffBackgroundDirectUrlResolve(track);
+        } else {
+            streamInfo = await QueryResolver.getDirectStreamInfo(track.url);
+            if (streamInfo?.directUrl) {
+                track.directUrl = streamInfo.directUrl;
+                track.directHeaders = streamInfo.directHeaders || null;
+                track._directUrlResolvedAt = Date.now();
+            }
         }
         
         if (!streamInfo?.directUrl) {
@@ -849,6 +936,7 @@ class Subscription extends EventEmitter {
     // Create audio resource with filters and optional seek
     createAudioResourceWithFilters(directUrl, seekSeconds = 0, filters = [], headers = null) {
         return new Promise((resolve, reject) => {
+            const startTime = Date.now();
             const ffmpegArgs = [
                 '-reconnect', '1',
                 '-reconnect_streamed', '1',
@@ -891,6 +979,14 @@ class Subscription extends EventEmitter {
             logger.debug(`Spawning FFmpeg with args: ${ffmpegArgs.join(' ')}`);
             const child = spawn(FFMPEG_PATH, ffmpegArgs);
             this._playbackProcesses.push(child);
+
+            if (LOG_MUSIC_TIMINGS) {
+                child.stdout.once('data', () => {
+                    const seekLabel = seekSeconds > 0 ? ` (seek=${seekSeconds}s)` : '';
+                    const filterLabel = filters.length > 0 ? ' (with filters)' : '';
+                    logger.info(`FFmpeg first data after ${Date.now() - startTime}ms${seekLabel}${filterLabel}`);
+                });
+            }
 
             let stderrData = '';
             child.stderr.on('data', (data) => {
@@ -1025,6 +1121,9 @@ class Subscription extends EventEmitter {
             // Ensure we have a direct URL before starting playback (keeps seek/filters working)
             await this.ensureDirectUrlForTrack(track);
 
+            // Resolve YouTube direct URL early so /filters and /seek can restart quickly.
+            this._kickoffBackgroundDirectUrlResolve(track);
+
             // Emit playSong event AFTER metadata is resolved
             this.emit('playSong', track);
 
@@ -1062,7 +1161,7 @@ class Subscription extends EventEmitter {
             }
             
             this.queueLock = false;
-            
+
             // Prefetch next track for faster playback
             if (this.queue.length > 0) {
                 this.prefetchTrack(this.queue[0]);
@@ -1355,15 +1454,54 @@ class Subscription extends EventEmitter {
                 resource.volume.setVolume(this.volume / 100);
                 resolve(resource);
             } else {
-                sourceStream.once('data', () => {
-                    const label = prefetched ? 'prefetched yt-dlp' : 'yt-dlp';
-                    logger.info(`${label} first data after ${Date.now() - startTime}ms`);
-                });
+                const createTranscodedResource = (logFirstData = true) => {
+                    if (logFirstData) {
+                        sourceStream.once('data', () => {
+                            const label = prefetched ? 'prefetched yt-dlp' : 'yt-dlp';
+                            logger.info(`${label} first data after ${Date.now() - startTime}ms`);
+                        });
+                    }
 
-                // Create resource from stdout stream immediately - don't wait for data
-                const resource = createAudioResource(sourceStream, { inlineVolume: true });
-                resource.volume.setVolume(this.volume / 100);
-                resolve(resource);
+                    // Create resource from stdout stream immediately - don't wait for data
+                    const resource = createAudioResource(sourceStream, { inlineVolume: true });
+                    resource.volume.setVolume(this.volume / 100);
+                    resolve(resource);
+                };
+
+                const tryPassthrough = OPUS_PASSTHROUGH_ENABLED && this.volume === 100 && isYouTubeUrl(url);
+                if (!tryPassthrough) {
+                    createTranscodedResource(true);
+                    return;
+                }
+
+                let loggedFirstData = false;
+                peekFirstChunkAndPause(sourceStream).then((firstChunk) => {
+                    const label = prefetched ? 'prefetched yt-dlp' : 'yt-dlp';
+                    if (firstChunk) {
+                        loggedFirstData = true;
+                        logger.info(`${label} first data after ${Date.now() - startTime}ms`);
+                        // Put bytes back so downstream receives a complete stream.
+                        sourceStream.unshift(firstChunk);
+                    } else {
+                        throw new Error('No data received from yt-dlp stream');
+                    }
+
+                    const container = detectContainerFromFirstChunk(firstChunk);
+                    if (!container) {
+                        throw new Error('Unknown container (not webm/ogg)');
+                    }
+
+                    const inputType = container === 'webm' ? StreamType.WebmOpus : StreamType.OggOpus;
+                    const resource = createAudioResource(sourceStream, {
+                        inputType,
+                        // No inline volume: keeps Opus packets intact (no decode + re-encode).
+                        inlineVolume: false
+                    });
+                    resolve(resource);
+                }).catch((e) => {
+                    logger.warn(`Opus passthrough failed; falling back to transcoding: ${e.message}`);
+                    createTranscodedResource(!loggedFirstData);
+                });
             }
         });
     }

@@ -428,7 +428,8 @@ class QueryResolver {
             ];
 
             if (includeDirectUrl) {
-                args.unshift('-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio');
+                // Prefer Opus-in-WebM when available (matches Subscription.js stream format preference).
+                args.unshift('-f', 'bestaudio[acodec=opus][ext=webm]/bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio');
                 args.push('-g');
             }
 
@@ -590,7 +591,8 @@ class QueryResolver {
             const { execFile } = require('child_process');
             const start = Date.now();
             execFile(ytdlpPath, [
-                '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+                // Prefer Opus-in-WebM when available (matches Subscription.js stream format preference).
+                '-f', 'bestaudio[acodec=opus][ext=webm]/bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
                 '--no-warnings',
                 '--no-playlist',
                 '-g',
@@ -640,7 +642,8 @@ class QueryResolver {
         const ytdlpPath = process.env.YTDLP_PATH || 'yt-dlp';
         const { execFile } = require('child_process');
         execFile(ytdlpPath, [
-            '-f', 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+            // Prefer Opus-in-WebM when available (matches Subscription.js stream format preference).
+            '-f', 'bestaudio[acodec=opus][ext=webm]/bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
             '--no-warnings',
             '--no-playlist',
             '-j',

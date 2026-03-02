@@ -1,27 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const logger = require('../logger');
-
-function getMusicStreamMode() {
-    const raw = (process.env.MUSIC_STREAM_MODE || '').trim().toLowerCase();
-    if (raw === 'auto' || raw === 'direct' || raw === 'ytdlp') return raw;
-    // Backwards compat with old flags.
-    const disableDirect = process.env.DISABLE_DIRECT_URL === '1' || process.env.DISABLE_DIRECT_URL === 'true';
-    if (disableDirect) return 'ytdlp';
-    const preferStreaming = process.env.PREFER_YTDLP_STREAMING === '1' || process.env.PREFER_YTDLP_STREAMING === 'true';
-    if (preferStreaming) return 'ytdlp';
-    return 'auto';
-}
-
-function isYouTubeUrl(url) {
-    return Boolean(url && /youtube\.com|youtu\.be/i.test(url));
-}
-
-function shouldUseYtdlpForUrl(url) {
-    const mode = getMusicStreamMode();
-    if (mode === 'ytdlp') return true;
-    if (mode === 'direct') return false;
-    return isYouTubeUrl(url);
-}
+const QueryResolver = require('../music/QueryResolver');
 
 // Available FFmpeg audio filters
 const FILTERS = {
@@ -205,73 +184,97 @@ async function restartWithFilters(subscription) {
 
     const track = subscription.currentTrack;
 
-    // Calculate approximate current position in seconds
-    let seekSeconds = 0;
-    if (subscription.playbackStartTime) {
-        seekSeconds = Math.floor((Date.now() - subscription.playbackStartTime) / 1000);
+    const getPlaybackSeconds = () => {
+        const playbackMs = subscription.audioPlayer?.state?.resource?.playbackDuration;
+        if (typeof playbackMs === 'number') {
+            return Math.floor((playbackMs / 1000) + (subscription._currentTrackStartOffset || 0));
+        }
+        if (subscription.playbackStartTime) {
+            return Math.floor((Date.now() - subscription.playbackStartTime) / 1000);
+        }
+        return 0;
+    };
+
+    // Fast path: use cached direct URL with FFmpeg input seeking (~200-500ms)
+    let directUrl = track.directUrl || subscription.prefetchedUrls?.get(track.url);
+
+    // If we don't have a direct URL yet for YouTube, wait for the in-flight background resolve (or start one).
+    if (!directUrl && track.url && /youtube\.com|youtu\.be/i.test(track.url)) {
+        const waitStart = Date.now();
+        const existing = track._directUrlPromise;
+
+        if (existing) {
+            try {
+                await existing;
+            } catch {
+                // ignore resolve errors; we'll fall back below
+            }
+        } else {
+            const p = QueryResolver.getDirectStreamInfo(track.url)
+                .then((streamInfo) => {
+                    if (streamInfo?.directUrl) {
+                        track.directUrl = streamInfo.directUrl;
+                        track.directHeaders = streamInfo.directHeaders || null;
+                        track._directUrlResolvedAt = Date.now();
+                    }
+                })
+                .catch(() => {})
+                .finally(() => {
+                    if (track._directUrlPromise === p) {
+                        delete track._directUrlPromise;
+                    }
+                });
+
+            track._directUrlPromise = p;
+            try {
+                await p;
+            } catch {
+                // ignore
+            }
+        }
+
+        directUrl = track.directUrl || subscription.prefetchedUrls?.get(track.url);
+        const waitedMs = Date.now() - waitStart;
+        if (waitedMs >= 250) {
+            logger.info(`Waited ${waitedMs}ms for direct URL before filter restart`);
+        }
     }
 
-    // In stable mode, avoid direct googlevideo streaming for YouTube. Rebuild the pipeline via yt-dlp piping.
-    if (shouldUseYtdlpForUrl(track.url)) {
+    const seekSeconds = Math.max(0, getPlaybackSeconds());
+    if (directUrl) {
+        const directHeaders = track.directHeaders || subscription.prefetchedHeaders?.get(track.url) || null;
         subscription._stopping = true;
         try {
             subscription._killPlaybackProcesses?.();
-
-            // Force yt-dlp path inside createAudioResource by omitting directUrl and setting a seek offset.
-            track._seekOffset = Math.max(0, seekSeconds);
+            const resource = await subscription.createAudioResourceWithFilters(directUrl, seekSeconds, subscription.filters, directHeaders);
+            subscription.audioPlayer.play(resource);
+            subscription.playbackStartTime = Date.now() - (seekSeconds * 1000);
+            subscription._currentTrackStartOffset = seekSeconds;
+            logger.info(`Filter restart via direct URL (seek=${seekSeconds}s, filters=${subscription.filters.length})`);
+            return;
+        } catch (err) {
+            logger.warn(`Direct URL filter restart failed, falling back to yt-dlp: ${err.message}`);
+            // Clear stale URL so we don't retry it
             track.directUrl = null;
             track.directHeaders = null;
-
-            const resource = await subscription.createAudioResource(track.url, null, null, subscription.filters);
-            subscription.audioPlayer.play(resource);
-            subscription.playbackStartTime = Date.now() - (seekSeconds * 1000);
-            subscription._currentTrackStartOffset = seekSeconds;
-            delete track._seekOffset;
         } finally {
             subscription._stopping = false;
         }
-        return;
     }
 
-    // Always fetch a fresh direct URL - cached URLs may be expired
-    const QueryResolver = require('../music/QueryResolver');
-    let streamInfo = null;
-
-    if (track.url) {
-        try {
-            streamInfo = await QueryResolver.getDirectStreamInfo(track.url);
-        } catch (err) {
-            logger.warn(`Failed to get fresh stream URL: ${err.message}`);
-        }
-    }
-
-    // Fallback to cached URLs if fresh fetch fails
-    if (!streamInfo?.directUrl) {
-        streamInfo = {
-            directUrl: track.directUrl || subscription.prefetchedUrls?.get(track.url),
-            directHeaders: track.directHeaders || subscription.prefetchedHeaders?.get(track.url)
-        };
-    }
-
-    if (!streamInfo?.directUrl) {
-        throw new Error('Could not get stream URL for filter application');
-    }
-
-    // Re-create the audio resource with filters and seek position
+    // Slow fallback: rebuild pipeline via yt-dlp piping (~3-7s)
+    subscription._stopping = true;
     try {
-        subscription._stopping = true;
-        try {
-            subscription._killPlaybackProcesses?.();
-            const resource = await subscription.createAudioResourceWithFilters(streamInfo.directUrl, seekSeconds, subscription.filters, streamInfo.directHeaders);
-            subscription.audioPlayer.play(resource);
-            // Update start time accounting for the seek
-            subscription.playbackStartTime = Date.now() - (seekSeconds * 1000);
-            subscription._currentTrackStartOffset = seekSeconds;
-        } finally {
-            subscription._stopping = false;
-        }
-    } catch (error) {
-        logger.error(`Failed to restart with filters: ${error}`);
-        throw error;
+        subscription._killPlaybackProcesses?.();
+        track._seekOffset = Math.max(0, seekSeconds);
+
+        const resource = await subscription.createAudioResource(track.url, null, null, subscription.filters);
+        subscription.audioPlayer.play(resource);
+        subscription.playbackStartTime = Date.now() - (seekSeconds * 1000);
+        subscription._currentTrackStartOffset = seekSeconds;
+        delete track._seekOffset;
+        logger.info(`Filter restart via yt-dlp fallback (seek=${seekSeconds}s, filters=${subscription.filters.length})`);
+    } finally {
+        subscription._stopping = false;
     }
 }
