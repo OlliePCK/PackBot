@@ -365,9 +365,7 @@ class QueryResolver {
     }
 
     async handleSearch(query, requestedBy, expectedDurationSeconds = null) {
-        // Prefer official audio by searching YouTube Music first, fallback to regular YouTube
-        // Adding "audio" helps avoid music video results
-        const searchQuery = query.toLowerCase().includes('audio') ? query : `${query} audio`;
+        const searchQuery = query;
 
         if (shouldUseYouTubeApi()) {
             const details = await searchYouTubeVideo(searchQuery, expectedDurationSeconds);

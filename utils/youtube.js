@@ -135,8 +135,9 @@ function scoreYouTubeResult(details, expectedDurationSeconds, searchQuery = null
     if (channel.endsWith('- topic')) score += 20;
     if (title.includes('official')) score += 10;
 
-    // Prefer explicit over clean versions
+    // Prefer explicit over clean versions; penalize music videos (we want audio)
     if (/\bclean\b/.test(title)) score -= 10;
+    if (/\bmusic\s*video\b/.test(title)) score -= 15;
 
     // View count as popularity/legitimacy signal (log scale, capped)
     // 1M views = +20, 100K = +13, 10K = +7, 1K = 0
@@ -146,7 +147,7 @@ function scoreYouTubeResult(details, expectedDurationSeconds, searchQuery = null
 
     // Title relevance to search query — penalize wrong songs
     if (searchQuery) {
-        const normalize = s => s.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+        const normalize = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
         const stopWords = new Set(['audio', 'official', 'video', 'lyrics', 'music', 'feat', 'ft', 'featuring']);
         const queryTerms = normalize(searchQuery).split(' ')
             .filter(t => t.length > 2 && !stopWords.has(t));
