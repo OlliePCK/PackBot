@@ -1,4 +1,4 @@
-const { AudioPlayerStatus, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus, VoiceConnectionDisconnectReason, StreamType, NoSubscriberBehavior } = require('@discordjs/voice');
+const { AudioPlayerStatus, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus, VoiceConnectionDisconnectReason, StreamType, NoSubscriberBehavior, generateDependencyReport, version: VOICE_VERSION } = require('@discordjs/voice');
 const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
@@ -25,6 +25,23 @@ function getFFmpegPath() {
 
 const FFMPEG_PATH = getFFmpegPath();
 logger.info(`Using FFmpeg from: ${FFMPEG_PATH}`);
+
+// Discord began enforcing compliant voice encryption in 2026; @discordjs/voice >= 0.19
+// should run with @snazzah/davey installed so DAVE negotiation can succeed.
+(() => {
+    const [major = '0', minor = '0'] = String(VOICE_VERSION || '0.0.0').split('.');
+    const isModernVoice = Number.parseInt(major, 10) > 0 || Number.parseInt(minor, 10) >= 19;
+    if (!isModernVoice) return;
+
+    try {
+        const report = generateDependencyReport();
+        if (report.includes('@snazzah/davey: not found')) {
+            logger.warn('DAVE library missing: install @snazzah/davey to avoid Discord voice handshake failures (close code 4017).');
+        }
+    } catch {
+        // ignore dependency report failures
+    }
+})();
 
 function buildFfmpegHeaderArgs(headers) {
     if (!headers || typeof headers !== 'object') return [];

@@ -141,6 +141,7 @@ Automatic notifications and tracking:
    ```sh
    npm install
    ```
+   For Discord voice playback, keep `@discordjs/voice` and `@snazzah/davey` installed so modern encrypted voice channels can negotiate successfully.
 
 3. **Configure environment variables:**
    
