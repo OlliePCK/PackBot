@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require('discord.js');
 const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const Subscription = require('../music/Subscription');
 const QueryResolver = require('../music/QueryResolver');
@@ -27,6 +27,38 @@ function getCorrectedQuery(userId, originalQuery) {
     // Pick random from alternatives
     const alternatives = trollState.alternatives;
     return alternatives[Math.floor(Math.random() * alternatives.length)];
+}
+
+function getVoiceJoinBlockReason(interaction, voiceChannel) {
+    const me = interaction.guild.members.me;
+    if (!me) {
+        return 'I could not resolve my guild member record. Please try again.';
+    }
+
+    if (me.communicationDisabledUntilTimestamp && me.communicationDisabledUntilTimestamp > Date.now()) {
+        return 'I am currently timed out in this server and cannot join voice channels.';
+    }
+
+    const perms = voiceChannel.permissionsFor(me);
+    if (!perms) {
+        return `I cannot view or access **${voiceChannel.name}**.`;
+    }
+
+    const missing = [];
+    if (!perms.has(PermissionsBitField.Flags.ViewChannel)) missing.push('View Channel');
+    if (!perms.has(PermissionsBitField.Flags.Connect)) missing.push('Connect');
+    if (!perms.has(PermissionsBitField.Flags.Speak)) missing.push('Speak');
+    if (missing.length > 0) {
+        return `Missing permission(s) in **${voiceChannel.name}**: ${missing.join(', ')}.`;
+    }
+
+    const userLimit = voiceChannel.userLimit || 0;
+    const alreadyInChannel = interaction.client.subscriptions.get(interaction.guildId)?.voiceConnection?.joinConfig?.channelId === voiceChannel.id;
+    if (userLimit > 0 && !alreadyInChannel && voiceChannel.members.size >= userLimit) {
+        return `**${voiceChannel.name}** is full (${voiceChannel.members.size}/${userLimit}).`;
+    }
+
+    return null;
 }
 
 function setupSubscriptionEvents(subscription, client, textChannel) {
@@ -247,6 +279,15 @@ module.exports = {
             return interaction.editReply({ embeds: [embed] });
         }
 
+        const joinBlockReason = getVoiceJoinBlockReason(interaction, voiceChannel);
+        if (joinBlockReason) {
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | ${joinBlockReason}`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
+        }
+
         let subscription = interaction.client.subscriptions.get(interaction.guildId);
 
         // Handle resume if no query
@@ -303,7 +344,7 @@ module.exports = {
                     state: connection?.state?.status || null
                 });
                 const embed = new EmbedBuilder()
-                    .setDescription(`${interaction.client.emotes.error} | Failed to connect to voice. If hosted on Docker/Unraid, switch the container to **host network mode** for Discord voice UDP.`)
+                    .setDescription(`${interaction.client.emotes.error} | Failed to connect to voice. Check bot voice permissions, channel capacity, and ensure the bot image is updated for Discord's current voice encryption requirements.`)
                     .setColor('#ff0000')
                     .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
                 return interaction.editReply({ embeds: [embed] });

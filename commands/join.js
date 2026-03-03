@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require('discord.js');
 const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const Subscription = require('../music/Subscription');
 const logger = require('../logger');
@@ -41,6 +41,38 @@ async function waitForVoiceReadyWithRetry(connection, guildId, maxAttempts = 3, 
     throw lastError || new Error('Voice connection did not become Ready');
 }
 
+function getVoiceJoinBlockReason(interaction, voiceChannel) {
+    const me = interaction.guild.members.me;
+    if (!me) {
+        return 'I could not resolve my guild member record. Please try again.';
+    }
+
+    if (me.communicationDisabledUntilTimestamp && me.communicationDisabledUntilTimestamp > Date.now()) {
+        return 'I am currently timed out in this server and cannot join voice channels.';
+    }
+
+    const perms = voiceChannel.permissionsFor(me);
+    if (!perms) {
+        return `I cannot view or access **${voiceChannel.name}**.`;
+    }
+
+    const missing = [];
+    if (!perms.has(PermissionsBitField.Flags.ViewChannel)) missing.push('View Channel');
+    if (!perms.has(PermissionsBitField.Flags.Connect)) missing.push('Connect');
+    if (!perms.has(PermissionsBitField.Flags.Speak)) missing.push('Speak');
+    if (missing.length > 0) {
+        return `Missing permission(s) in **${voiceChannel.name}**: ${missing.join(', ')}.`;
+    }
+
+    const userLimit = voiceChannel.userLimit || 0;
+    const alreadyInChannel = interaction.client.subscriptions.get(interaction.guildId)?.voiceConnection?.joinConfig?.channelId === voiceChannel.id;
+    if (userLimit > 0 && !alreadyInChannel && voiceChannel.members.size >= userLimit) {
+        return `**${voiceChannel.name}** is full (${voiceChannel.members.size}/${userLimit}).`;
+    }
+
+    return null;
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('join')
@@ -51,6 +83,15 @@ module.exports = {
         if (!voiceChannel) {
             const embed = new EmbedBuilder()
                 .setDescription(`${interaction.client.emotes.error} | You must be in a voice channel!`)
+                .setColor('#ff0000')
+                .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+            return interaction.editReply({ embeds: [embed] });
+        }
+
+        const joinBlockReason = getVoiceJoinBlockReason(interaction, voiceChannel);
+        if (joinBlockReason) {
+            const embed = new EmbedBuilder()
+                .setDescription(`${interaction.client.emotes.error} | ${joinBlockReason}`)
                 .setColor('#ff0000')
                 .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
             return interaction.editReply({ embeds: [embed] });
