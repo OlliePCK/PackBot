@@ -241,6 +241,17 @@ module.exports = {
                     selfDeaf: true, // Default to deafened, will undeafen if voice commands enabled
                 });
 
+                connection.on('stateChange', (oldState, newState) => {
+                    logger.info('Voice init state change on /play', {
+                        guild: interaction.guildId,
+                        old: oldState.status,
+                        next: newState.status,
+                        reason: newState.reason || null,
+                        closeCode: newState.closeCode ?? null,
+                        rejoinAttempts: connection.rejoinAttempts || 0
+                    });
+                });
+
                 // Match /join behavior: don't start playback until voice is actually ready.
                 await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
             } catch (error) {
@@ -251,7 +262,8 @@ module.exports = {
                 }
                 logger.error('Failed to establish voice connection on /play', {
                     guild: interaction.guildId,
-                    error: error.message
+                    error: error.message,
+                    state: connection?.state?.status || null
                 });
                 const embed = new EmbedBuilder()
                     .setDescription(`${interaction.client.emotes.error} | Failed to connect to voice. If hosted on Docker/Unraid, switch the container to **host network mode** for Discord voice UDP.`)
