@@ -1,6 +1,6 @@
 # PackBot
 
-PackBot is a versatile Discord bot designed to enhance your server with music playback, voice commands, page monitoring, playtime tracking, YouTube notifications, streaming alerts, and more. Built with Discord.js v14 and a custom yt-dlp audio system.
+PackBot is a versatile Discord bot designed to enhance your server with music playback, voice commands, playtime tracking, YouTube notifications, streaming alerts, and more. Built with Discord.js v14 and a custom yt-dlp audio system.
 
 ## Features
 
@@ -54,26 +54,6 @@ Control the music bot hands-free using voice commands powered by Deepgram speech
 
 > **Note:** Voice commands require server whitelisting (paid Deepgram API). Contact the bot owner to enable for your server.
 
-### 🔍 Page Monitor
-Monitor websites for changes and get notified when specific content appears. Perfect for tracking restocks, ticket drops, or any webpage updates.
-
-| Command | Description |
-|---------|-------------|
-| `/monitor add <url> <name>` | Add a new page monitor |
-| `/monitor remove <name>` | Remove a monitor |
-| `/monitor list` | List all monitors in this server |
-| `/monitor pause <name>` | Pause a monitor |
-| `/monitor resume <name>` | Resume a paused monitor |
-| `/monitor test <name>` | Test a monitor immediately |
-| `/monitor info <name>` | View detailed monitor info |
-| `/monitor help` | Show usage guide |
-
-**Monitor Options:**
-- `interval` - Check frequency (60-3600 seconds, default: 300)
-- `keywords` - Only alert when these words appear (comma-separated)
-- `role` - Role to ping on changes
-- `channel` - Channel for notifications (defaults to current)
-
 ### 📊 Playtime Tracking & Leaderboards
 Track how long members play games and compete on leaderboards.
 
@@ -98,11 +78,6 @@ Automatic notifications and tracking:
 
 - **Game Expose**: Announces when someone plays a game for 6+ hours
 - **Live Notifications**: Alerts when members start streaming on Discord
-
-### 🛒 Shopify Integration
-| Command | Description |
-|---------|-------------|
-| `/shopify <url>` | Scrape product data from Shopify stores |
 
 ### ⚙️ Server Settings
 | Command | Description |
@@ -192,7 +167,6 @@ Automatic notifications and tracking:
    - `Youtube` - YouTube channel subscriptions
    - `Playtime` - User gaming session tracking
    - `VoiceWhitelist` - Servers enabled for voice commands
-   - `PageMonitors` - Page monitor configurations
 
 5. **Deploy slash commands:**
    ```sh
@@ -309,7 +283,6 @@ PackBot/
 │   ├── QueryResolver.js # YouTube/Spotify/URL resolution
 │   └── VoiceCommandListener.js # Deepgram voice recognition
 ├── services/           # Background services
-│   └── PageMonitorService.js # Website change detection
 ├── scripts/            # Background scripts (YouTube notifications)
 ├── logs/               # Log files (auto-created)
 ├── index.js            # Main entry point

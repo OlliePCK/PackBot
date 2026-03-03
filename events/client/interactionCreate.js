@@ -4,9 +4,7 @@ const logger = require('../../logger').child('commands');
 const { getGuildProfile } = require('../../utils/guildSettingsCache');
 
 // Commands/subcommands that should not be deferred (e.g., modal commands)
-const NO_DEFER_COMMANDS = new Set([
-	'movie:login', // Shows a modal
-]);
+const NO_DEFER_COMMANDS = new Set();
 
 module.exports = {
 	name: 'interactionCreate',
