@@ -18,6 +18,7 @@ Template file:
 - The template defaults to network `laserproxy` to match your current host setup.
 - It follows the canonical env contract in `ENVIRONMENT.md` (excluding internal-only vars like `XDG_CONFIG_HOME`).
 - It intentionally does not publish host ports; API traffic is expected through internal Docker networking (for example via nginx reverse proxy).
+- For env path vars, use container paths (for example `YTDLP_COOKIES_PATH=/usr/src/app/cookies.txt`), not host paths like `/mnt/user/...`.
 
 ## Icon for Unraid
 

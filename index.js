@@ -125,7 +125,7 @@ client.on('error', (error) => {
 });
 
 // Start Web API server after client is ready
-client.once('ready', () => {
+client.once('clientReady', () => {
 	const apiPort = parseInt(process.env.API_PORT) || 3000;
 	if (process.env.ENABLE_API !== 'false') {
 		const WebAPI = require('./api/WebAPI');

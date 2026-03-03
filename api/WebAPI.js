@@ -9,6 +9,7 @@ const session = require('express-session');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const logger = require('../logger').child('api');
+const TTLSessionStore = require('../utils/ttl-session-store');
 const db = require('../database/db');
 const { getGuildRow } = require('../database/guilds');
 const { invalidateGuildCache } = require('../utils/guildSettingsCache');
@@ -44,7 +45,10 @@ class WebAPI {
         this.app.use(express.json());
         
         // Session for OAuth
+        const sessionStore = new TTLSessionStore();
+        logger.info('Using in-process TTL session store for OAuth sessions');
         this.app.use(session({
+            store: sessionStore,
             secret: process.env.SESSION_SECRET || 'packbot-secret-change-me',
             resave: false,
             saveUninitialized: false,
