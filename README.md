@@ -215,7 +215,7 @@ docker pull olliepck/packbot:latest
 ```
 
 ### CI/CD (Automatic DockerHub builds)
-This repo includes a GitHub Actions workflow that builds and pushes the PackBot image to DockerHub on every push to `main` (`.github/workflows/build-and-push-dockerhub.yml`).
+This repo includes a GitHub Actions workflow that builds and pushes the PackBot image to DockerHub on every push to `master`/`main` (`.github/workflows/docker-image.yml`).
 
 1. Create a DockerHub access token (Account Settings → Security → New Access Token).
 
@@ -225,7 +225,7 @@ You have two separate deployment processes:
 
 ### 1) PackBot (Docker image → DockerHub)
 This repo builds and pushes the Docker image to DockerHub via:
-- `.github/workflows/build-and-push-dockerhub.yml`
+- `.github/workflows/docker-image.yml`
 
 **Required GitHub secrets:**
 - `DOCKERHUB_USERNAME`
@@ -256,7 +256,7 @@ Notes:
 2. In GitHub → Repo Settings → Secrets and variables → Actions, add:
    - `DOCKERHUB_USERNAME` = your DockerHub username
    - `DOCKERHUB_TOKEN` = your DockerHub access token
-3. Push to `main`. A new image is published as:
+3. Push to `master` (or `main`). A new image is published as:
    - `<username>/packbot:latest`
    - `<username>/packbot:sha-<commit>`
 4. On Unraid, point the container to `<username>/packbot:latest` and enable automatic updates via CA Auto Update Applications or watchtower.
