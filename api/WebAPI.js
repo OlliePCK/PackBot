@@ -35,6 +35,9 @@ class WebAPI {
     }
     
     setupMiddleware() {
+        // Behind nginx/cloud proxy chain, trust forwarded protocol/IP headers.
+        this.app.set('trust proxy', 1);
+
         // CORS configuration
         this.app.use(cors({
             origin: process.env.CORS_ORIGIN || '*',
@@ -50,11 +53,14 @@ class WebAPI {
         this.app.use(session({
             store: sessionStore,
             secret: process.env.SESSION_SECRET || 'packbot-secret-change-me',
+            proxy: true,
             resave: false,
             saveUninitialized: false,
             cookie: {
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                // "auto" avoids dropped cookies when TLS is terminated upstream.
+                secure: process.env.NODE_ENV === 'production' ? 'auto' : false,
+                sameSite: 'lax',
+                httpOnly: true,
                 maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
             }
         }));
@@ -501,8 +507,13 @@ class WebAPI {
                 };
                 
                 logger.info('User authenticated via OAuth', { userId: user.id, username: user.username });
-                
-                res.redirect(process.env.FRONTEND_URL || '/dashboard');
+                req.session.save((saveError) => {
+                    if (saveError) {
+                        logger.error('Session save failed during OAuth callback', { error: saveError.message });
+                        return res.redirect(process.env.FRONTEND_URL || '/?error=session_save_failed');
+                    }
+                    res.redirect(process.env.FRONTEND_URL || '/dashboard');
+                });
                 
             } catch (error) {
                 logger.error('OAuth callback error', { error: error.message });
