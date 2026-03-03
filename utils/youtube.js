@@ -229,7 +229,7 @@ async function searchYouTubeVideo(query, expectedDurationSeconds = null) {
 
         const candidatesSummary = scored.map(c => `"${c.details.snippet?.title}" s=${c.score} d=${c.details.durationSeconds}s v=${c.details.viewCount}`).join(' | ');
         logger.info(`YouTube search: picked "${best.snippet?.title}" (score=${bestScore}, duration=${best.durationSeconds}s, views=${best.viewCount}) from ${allDetails.length} candidates for expected ${expectedDurationSeconds}s`);
-        logger.info(`YouTube candidates: ${candidatesSummary}`);
+        logger.debug(`YouTube candidates: ${candidatesSummary}`);
         return best;
     } catch (e) {
         logger.error('YouTube API error: ' + (e.stack || e));
