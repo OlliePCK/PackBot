@@ -155,9 +155,11 @@ function scoreYouTubeResult(details, expectedDurationSeconds, searchQuery = null
 
         if (queryTerms.length > 0) {
             const titleNorm = normalize(title);
+            const channelNorm = normalize(channel);
             let matched = 0;
             for (const term of queryTerms) {
-                if (titleNorm.includes(term)) matched++;
+                // Check title first, fall back to channel name (topic channels omit artist from title)
+                if (titleNorm.includes(term) || channelNorm.includes(term)) matched++;
             }
             const ratio = matched / queryTerms.length;
             if (ratio >= 0.8) {
@@ -195,7 +197,7 @@ async function searchYouTubeVideo(query, expectedDurationSeconds = null) {
     if (!apiKey) return null;
 
     try {
-        const maxResults = 5;
+        const maxResults = 10;
         const res = await request(
             `https://www.googleapis.com/youtube/v3/search?` +
             `part=snippet&type=video&maxResults=${maxResults}&q=${encodeURIComponent(query)}&key=${apiKey}`
