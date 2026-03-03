@@ -4,6 +4,43 @@ const Subscription = require('../music/Subscription');
 const logger = require('../logger');
 const { isGuildWhitelisted } = require('./voice');
 
+async function waitForVoiceReadyWithRetry(connection, guildId, maxAttempts = 3, timeoutMs = 10_000) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            await entersState(connection, VoiceConnectionStatus.Ready, timeoutMs);
+            return;
+        } catch (error) {
+            lastError = error;
+            const state = connection?.state?.status || 'unknown';
+            logger.warn('Voice ready wait failed on /join', {
+                guild: guildId,
+                attempt,
+                maxAttempts,
+                state,
+                rejoinAttempts: connection?.rejoinAttempts || 0,
+                error: error.message
+            });
+
+            if (attempt >= maxAttempts || state === VoiceConnectionStatus.Destroyed) {
+                break;
+            }
+
+            try {
+                connection.rejoin();
+            } catch (rejoinErr) {
+                logger.warn('Voice rejoin failed during /join ready retry', {
+                    guild: guildId,
+                    attempt,
+                    error: rejoinErr.message
+                });
+            }
+        }
+    }
+
+    throw lastError || new Error('Voice connection did not become Ready');
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('join')
@@ -44,8 +81,8 @@ module.exports = {
                 selfDeaf: true, // Default deafened, undeafens when voice commands enabled
             });
 
-            // Wait for connection to be ready
-            await entersState(connection, VoiceConnectionStatus.Ready, 10_000);
+            // Wait for connection to be ready (with retry for transient voice handshake failures)
+            await waitForVoiceReadyWithRetry(connection, interaction.guildId, 3, 10_000);
 
             // Create subscription
             subscription = new Subscription(connection);

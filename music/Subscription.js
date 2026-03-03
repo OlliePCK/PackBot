@@ -359,8 +359,8 @@ class Subscription extends EventEmitter {
                     if (this.voiceConnection.state.status === VoiceConnectionStatus.Destroyed) {
                         return;
                     }
-                    // On reconnects, prefer one more rejoin cycle before hard-destroying.
-                    if (this._hasReachedVoiceReady && this.voiceConnection.rejoinAttempts < 5) {
+                    // Retry before hard-destroying, including initial joins that never reached Ready.
+                    if (this.voiceConnection.rejoinAttempts < 5) {
                         this.voiceConnection.rejoin();
                     } else {
                         this.voiceConnection.destroy();

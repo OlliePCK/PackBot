@@ -182,6 +182,43 @@ function setupSubscriptionEvents(subscription, client, textChannel) {
     });
 }
 
+async function waitForVoiceReadyWithRetry(connection, guildId, maxAttempts = 3, timeoutMs = 20_000) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            await entersState(connection, VoiceConnectionStatus.Ready, timeoutMs);
+            return;
+        } catch (error) {
+            lastError = error;
+            const state = connection?.state?.status || 'unknown';
+            logger.warn('Voice ready wait failed on /play', {
+                guild: guildId,
+                attempt,
+                maxAttempts,
+                state,
+                rejoinAttempts: connection?.rejoinAttempts || 0,
+                error: error.message
+            });
+
+            if (attempt >= maxAttempts || state === VoiceConnectionStatus.Destroyed) {
+                break;
+            }
+
+            try {
+                connection.rejoin();
+            } catch (rejoinErr) {
+                logger.warn('Voice rejoin failed during /play ready retry', {
+                    guild: guildId,
+                    attempt,
+                    error: rejoinErr.message
+                });
+            }
+        }
+    }
+
+    throw lastError || new Error('Voice connection did not become Ready');
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('play')
@@ -252,8 +289,8 @@ module.exports = {
                     });
                 });
 
-                // Match /join behavior: don't start playback until voice is actually ready.
-                await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
+                // Don't start playback until voice is actually ready.
+                await waitForVoiceReadyWithRetry(connection, interaction.guildId, 3, 20_000);
             } catch (error) {
                 try {
                     connection?.destroy();
