@@ -135,9 +135,10 @@ function scoreYouTubeResult(details, expectedDurationSeconds, searchQuery = null
     if (channel.endsWith('- topic')) score += 20;
     if (title.includes('official')) score += 10;
 
-    // Prefer explicit over clean versions; penalize music videos (we want audio)
+    // Prefer explicit over clean versions; penalize music videos and fan edits
     if (/\bclean\b/.test(title)) score -= 10;
     if (/\bmusic\s*video\b/.test(title)) score -= 15;
+    if (/\b(slowed|reverb|sped\s*up|bass\s*boost|8d|nightcore|daycore|chopped|screwed)\b/.test(title)) score -= 30;
 
     // View count as popularity/legitimacy signal (log scale, capped)
     // 1M views = +20, 100K = +13, 10K = +7, 1K = 0
@@ -226,7 +227,7 @@ async function searchYouTubeVideo(query, expectedDurationSeconds = null) {
 
         const candidatesSummary = scored.map(c => `"${c.details.snippet?.title}" s=${c.score} d=${c.details.durationSeconds}s v=${c.details.viewCount}`).join(' | ');
         logger.info(`YouTube search: picked "${best.snippet?.title}" (score=${bestScore}, duration=${best.durationSeconds}s, views=${best.viewCount}) from ${allDetails.length} candidates for expected ${expectedDurationSeconds}s`);
-        logger.debug(`YouTube candidates: ${candidatesSummary}`);
+        logger.info(`YouTube candidates: ${candidatesSummary}`);
         return best;
     } catch (e) {
         logger.error('YouTube API error: ' + (e.stack || e));
