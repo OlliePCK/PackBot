@@ -139,9 +139,9 @@ function scoreYouTubeResult(details, expectedDurationSeconds, searchQuery = null
     if (/\bclean\b/.test(title)) score -= 10;
 
     // View count as popularity/legitimacy signal (log scale, capped)
-    // 1M views = +15, 100K = +10, 10K = +5, 1K = 0
+    // 1M views = +20, 100K = +13, 10K = +7, 1K = 0
     if (details.viewCount > 1000) {
-        score += Math.min(15, Math.round(Math.log10(details.viewCount / 1000) * 5));
+        score += Math.min(20, Math.round(Math.log10(details.viewCount / 1000) * 7));
     }
 
     // Title relevance to search query — penalize wrong songs
@@ -161,7 +161,7 @@ function scoreYouTubeResult(details, expectedDurationSeconds, searchQuery = null
             if (ratio >= 0.8) {
                 score += 15;
             } else if (ratio <= 0.5) {
-                score -= 50; // Heavy penalty: most search terms missing from title
+                score -= 25; // Penalty: most search terms missing from title
             }
         }
     }
@@ -193,7 +193,7 @@ async function searchYouTubeVideo(query, expectedDurationSeconds = null) {
     if (!apiKey) return null;
 
     try {
-        const maxResults = expectedDurationSeconds ? 5 : 1;
+        const maxResults = 5;
         const res = await request(
             `https://www.googleapis.com/youtube/v3/search?` +
             `part=snippet&type=video&maxResults=${maxResults}&q=${encodeURIComponent(query)}&key=${apiKey}`

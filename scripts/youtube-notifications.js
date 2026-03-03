@@ -175,7 +175,7 @@ module.exports = client => {
             const { handle, guildId, lastCheckedVideo, initialized, notifyChannel } = row;
             // Seed without notifying: set initialized=0 so we know first real notification hasn't occurred yet
             if (!initialized || !lastCheckedVideo) {
-                updates.push(buildUpdateRow(handle, channelId, guildId, latest.videoId, 0));
+                updates.push(buildUpdateRow(handle, channelId, guildId, latest.videoId, 1));
                 continue;
             }
             if (lastCheckedVideo === latest.videoId) continue; // nothing new

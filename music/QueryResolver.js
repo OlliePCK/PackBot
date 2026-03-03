@@ -186,7 +186,8 @@ class QueryResolver {
                 const data = await this.spotifyApi.getTrack(id);
                 const track = data.body;
                 const searchString = `${track.name} ${track.artists[0].name}`;
-                return this.handleSearch(searchString, requestedBy);
+                const durationSeconds = track.duration_ms ? Math.round(track.duration_ms / 1000) : null;
+                return this.handleSearch(searchString, requestedBy, durationSeconds);
             } else if (url.includes('/playlist/')) {
                 const id = url.split('/playlist/')[1].split('?')[0];
                 
