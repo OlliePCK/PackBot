@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { joinVoiceChannel } = require('@discordjs/voice');
+const { joinVoiceChannel, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const Subscription = require('../music/Subscription');
 const QueryResolver = require('../music/QueryResolver');
 const logger = require('../logger');
@@ -232,12 +232,34 @@ module.exports = {
         // Create subscription if needed
         const createdNew = !subscription;
         if (!subscription) {
-            const connection = joinVoiceChannel({
-                channelId: voiceChannel.id,
-                guildId: interaction.guildId,
-                adapterCreator: interaction.guild.voiceAdapterCreator,
-                selfDeaf: true, // Default to deafened, will undeafen if voice commands enabled
-            });
+            let connection;
+            try {
+                connection = joinVoiceChannel({
+                    channelId: voiceChannel.id,
+                    guildId: interaction.guildId,
+                    adapterCreator: interaction.guild.voiceAdapterCreator,
+                    selfDeaf: true, // Default to deafened, will undeafen if voice commands enabled
+                });
+
+                // Match /join behavior: don't start playback until voice is actually ready.
+                await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
+            } catch (error) {
+                try {
+                    connection?.destroy();
+                } catch {
+                    // ignore cleanup errors
+                }
+                logger.error('Failed to establish voice connection on /play', {
+                    guild: interaction.guildId,
+                    error: error.message
+                });
+                const embed = new EmbedBuilder()
+                    .setDescription(`${interaction.client.emotes.error} | Failed to connect to voice. If hosted on Docker/Unraid, switch the container to **host network mode** for Discord voice UDP.`)
+                    .setColor('#ff0000')
+                    .setFooter({ text: 'The Pack', iconURL: interaction.client.logo });
+                return interaction.editReply({ embeds: [embed] });
+            }
+
             subscription = new Subscription(connection);
             interaction.client.subscriptions.set(interaction.guildId, subscription);
             

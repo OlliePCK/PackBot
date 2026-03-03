@@ -15,7 +15,8 @@ Template file:
 
 ## Notes
 
-- The template defaults to network `laserproxy` to match your current host setup.
+- The template defaults to network `host` for Discord voice reliability (UDP path is most reliable on host mode).
+- If you switch to a custom bridge network, ensure outbound UDP is allowed end-to-end or voice playback may connect but produce no audio.
 - It follows the canonical env contract in `ENVIRONMENT.md` (excluding internal-only vars like `XDG_CONFIG_HOME`).
 - It intentionally does not publish host ports; API traffic is expected through internal Docker networking (for example via nginx reverse proxy).
 - For env path vars, use container paths (for example `YTDLP_COOKIES_PATH=/usr/src/app/cookies.txt`), not host paths like `/mnt/user/...`.

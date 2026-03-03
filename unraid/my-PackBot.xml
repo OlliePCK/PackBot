@@ -3,7 +3,7 @@
   <Name>PackBot</Name>
   <Repository>olliepck/packbot:latest</Repository>
   <Registry>https://hub.docker.com/</Registry>
-  <Network>laserproxy</Network>
+  <Network>host</Network>
   <MyIP/>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>

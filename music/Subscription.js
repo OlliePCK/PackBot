@@ -1,4 +1,4 @@
-const { AudioPlayerStatus, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus, StreamType, NoSubscriberBehavior } = require('@discordjs/voice');
+const { AudioPlayerStatus, createAudioPlayer, createAudioResource, entersState, VoiceConnectionStatus, VoiceConnectionDisconnectReason, StreamType, NoSubscriberBehavior } = require('@discordjs/voice');
 const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
 const { PassThrough } = require('stream');
@@ -294,9 +294,17 @@ class Subscription extends EventEmitter {
         this._manualDisconnect = false;
         this._skipRequested = false;
         this._skipClearTimer = null;
+        this._hasReachedVoiceReady = false;
 
-        this.voiceConnection.on('stateChange', async (_, newState) => {
+        this.voiceConnection.on('stateChange', async (oldState, newState) => {
+            logger.debug(`VoiceConnection state change: ${oldState.status} -> ${newState.status}`);
+            if (newState.status === VoiceConnectionStatus.Ready) {
+                this._hasReachedVoiceReady = true;
+                return;
+            }
+
             if (newState.status === VoiceConnectionStatus.Disconnected) {
+                logger.warn(`Voice connection disconnected (reason=${newState.reason || 'unknown'}, closeCode=${newState.closeCode ?? 'n/a'}, rejoinAttempts=${this.voiceConnection.rejoinAttempts || 0})`);
                 if (this._manualDisconnect) {
                     try {
                         this.voiceConnection.destroy();
@@ -305,7 +313,7 @@ class Subscription extends EventEmitter {
                     }
                     return;
                 }
-                if (newState.reason === VoiceConnectionStatus.WebSocketClose && newState.closeCode === 4014) {
+                if (newState.reason === VoiceConnectionDisconnectReason.WebSocketClose && newState.closeCode === 4014) {
                     try {
                         await entersState(this.voiceConnection, VoiceConnectionStatus.Connecting, 5000);
                     } catch {
@@ -325,6 +333,7 @@ class Subscription extends EventEmitter {
                 this.currentTrack = null;
                 this.playbackStartTime = null;
                 this._currentTrackStartOffset = 0;
+                this._hasReachedVoiceReady = false;
                 this.prefetchedUrls.clear();
                 this.prefetchedHeaders.clear();
                 this._clearPrefetchedStreams();
@@ -342,10 +351,20 @@ class Subscription extends EventEmitter {
                 (newState.status === VoiceConnectionStatus.Connecting || newState.status === VoiceConnectionStatus.Signalling)
             ) {
                 this.readyLock = true;
+                const readyTimeoutMs = this._hasReachedVoiceReady ? 30000 : 20000;
                 try {
-                    await entersState(this.voiceConnection, VoiceConnectionStatus.Ready, 20000);
-                } catch {
-                    if (this.voiceConnection.state.status !== VoiceConnectionStatus.Destroyed) this.voiceConnection.destroy();
+                    await entersState(this.voiceConnection, VoiceConnectionStatus.Ready, readyTimeoutMs);
+                } catch (err) {
+                    logger.warn(`Voice connection did not become Ready within ${readyTimeoutMs}ms from ${newState.status}: ${err?.message || err}`);
+                    if (this.voiceConnection.state.status === VoiceConnectionStatus.Destroyed) {
+                        return;
+                    }
+                    // On reconnects, prefer one more rejoin cycle before hard-destroying.
+                    if (this._hasReachedVoiceReady && this.voiceConnection.rejoinAttempts < 5) {
+                        this.voiceConnection.rejoin();
+                    } else {
+                        this.voiceConnection.destroy();
+                    }
                 } finally {
                     this.readyLock = false;
                 }
