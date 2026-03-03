@@ -16,7 +16,7 @@ Template file:
 ## Notes
 
 - The template defaults to network `laserproxy` to match your current host setup.
-- It is intentionally trimmed to match the env vars currently present in your production `packbot` container.
+- It follows the canonical env contract in `ENVIRONMENT.md` (excluding internal-only vars like `XDG_CONFIG_HOME`).
 - It intentionally does not publish host ports; API traffic is expected through internal Docker networking (for example via nginx reverse proxy).
 
 ## Icon for Unraid

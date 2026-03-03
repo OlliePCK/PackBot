@@ -29,10 +29,7 @@ module.exports = (client) => {
 };
 
 async function checkCookieExpiration(client) {
-    const cookiePath = process.env.YTDLP_COOKIES_PATH ||
-                       process.env.YTDLP_COOKIES_FILE ||
-                       process.env.YTDLP_COOKIES ||
-                       '/usr/src/app/cookies.txt';
+    const cookiePath = process.env.YTDLP_COOKIES_PATH || '/usr/src/app/cookies.txt';
 
     if (!fs.existsSync(cookiePath)) {
         logger.warn('Cookie file not found:', cookiePath);

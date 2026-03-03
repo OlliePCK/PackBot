@@ -1,9 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('./logger').child('core');
+const { logDeprecatedEnvUsage } = require('./utils/env-contract');
 const { Client, Collection, GatewayIntentBits, EmbedBuilder, Partials } = require('discord.js');
 const config = require('./config.json');
 require('dotenv').config();
+logDeprecatedEnvUsage(logger);
 
 // Clean up any stray yt-dlp temp files on startup
 const cleanupTempFiles = () => {

@@ -54,16 +54,14 @@ let cachedCookiesChecked = false;
 
 function resolveYtdlpCookiesPath() {
     if (cachedCookiesChecked) return cachedCookiesPath;
-    const envPath = process.env.YTDLP_COOKIES_PATH || process.env.YTDLP_COOKIES_FILE || process.env.YTDLP_COOKIES;
+    const envPath = process.env.YTDLP_COOKIES_PATH;
     if (envPath) {
         cachedCookiesPath = envPath;
         cachedCookiesChecked = true;
         return cachedCookiesPath;
     }
     
-    const configPath = process.env.YTDLP_CONFIG_PATH ||
-        process.env.YTDLP_CONFIG ||
-        path.join(os.homedir(), '.config', 'yt-dlp', 'config');
+    const configPath = process.env.YTDLP_CONFIG_PATH || path.join(os.homedir(), '.config', 'yt-dlp', 'config');
     
     if (fs.existsSync(configPath)) {
         try {
@@ -103,7 +101,7 @@ function getYtdlpCookieArgs() {
 
 function getYtdlpRuntimeArgs() {
     const args = [];
-    const runtime = process.env.YTDLP_JS_RUNTIME || process.env.YTDLP_JS_RUNTIMES || 'node';
+    const runtime = process.env.YTDLP_JS_RUNTIME || 'node';
     const remoteComponents = process.env.YTDLP_REMOTE_COMPONENTS || 'ejs:github';
     if (runtime) {
         args.push('--js-runtimes', runtime);

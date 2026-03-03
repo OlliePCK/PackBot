@@ -172,6 +172,8 @@ Automatic notifications and tracking:
    LOG_MAX_FILES=5
    ```
 
+   Full canonical env reference: `ENVIRONMENT.md`.
+
 4. **Set up the database:**
    
    Option A - Run the migration script:

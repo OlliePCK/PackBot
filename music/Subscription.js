@@ -89,16 +89,14 @@ let cachedCookiesChecked = false;
 function resolveYtdlpCookiesPath() {
     if (cachedCookiesChecked) return cachedCookiesPath;
     
-    const envPath = process.env.YTDLP_COOKIES_PATH || process.env.YTDLP_COOKIES_FILE || process.env.YTDLP_COOKIES;
+    const envPath = process.env.YTDLP_COOKIES_PATH;
     if (envPath) {
         cachedCookiesPath = envPath;
         cachedCookiesChecked = true;
         return cachedCookiesPath;
     }
     
-    const configPath = process.env.YTDLP_CONFIG_PATH ||
-        process.env.YTDLP_CONFIG ||
-        path.join(os.homedir(), '.config', 'yt-dlp', 'config');
+    const configPath = process.env.YTDLP_CONFIG_PATH || path.join(os.homedir(), '.config', 'yt-dlp', 'config');
     
     if (fs.existsSync(configPath)) {
         try {
@@ -140,12 +138,6 @@ function getMusicStreamMode() {
         return raw;
     }
 
-    // Backwards compatibility for legacy flags (deprecated):
-    const disableDirect = process.env.DISABLE_DIRECT_URL === '1' || process.env.DISABLE_DIRECT_URL === 'true';
-    if (disableDirect) return 'ytdlp';
-    const preferStreaming = process.env.PREFER_YTDLP_STREAMING === '1' || process.env.PREFER_YTDLP_STREAMING === 'true';
-    if (preferStreaming) return 'ytdlp';
-
     return 'auto';
 }
 
@@ -164,7 +156,7 @@ function shouldPreferYtdlpStreaming(url) {
 
 function getYtdlpRuntimeArgs() {
     const args = [];
-    const runtime = process.env.YTDLP_JS_RUNTIME || process.env.YTDLP_JS_RUNTIMES || 'node';
+    const runtime = process.env.YTDLP_JS_RUNTIME || 'node';
     const remoteComponents = process.env.YTDLP_REMOTE_COMPONENTS || 'ejs:github';
     if (runtime) {
         args.push('--js-runtimes', runtime);
