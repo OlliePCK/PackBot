@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>PackBot</Name>
+  <Repository>olliepck/packbot:latest</Repository>
+  <Registry>https://hub.docker.com/</Registry>
+  <Network>laserproxy</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/OlliePCK/PackBot/issues</Support>
+  <Project>https://github.com/OlliePCK/PackBot</Project>
+  <Overview>Discord bot with music playback, web API, and MySQL-backed persistence.</Overview>
+  <Category>Network:Other Tools:Utilities</Category>
+  <WebUI/>
+  <TemplateURL>https://raw.githubusercontent.com/OlliePCK/PackBot/master/unraid/my-PackBot.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/OlliePCK/PackBot/master/unraid/packbot-icon.jpg</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+
+  <Config Name="AppData: logs" Target="/app/logs" Default="/mnt/user/appdata/packbot/logs" Mode="rw" Description="Persist PackBot logs" Type="Path" Display="always" Required="false" Mask="false">/mnt/user/appdata/packbot/logs</Config>
+  <Config Name="AppData: yt-dlp config" Target="/root/.config/yt-dlp" Default="/mnt/user/appdata/packbot/yt-dlp" Mode="rw" Description="yt-dlp config directory (cookies/config)" Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/packbot/yt-dlp</Config>
+  <Config Name="AppData: cookies file" Target="/usr/src/app/cookies.txt" Default="/mnt/user/appdata/packbot/cookies.txt" Mode="rw" Description="Optional YouTube cookies file" Type="Path" Display="advanced" Required="false" Mask="false">/mnt/user/appdata/packbot/cookies.txt</Config>
+
+  <Config Name="TOKEN" Target="TOKEN" Default="" Mode="" Description="Discord bot token" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="CLIENT_ID" Target="CLIENT_ID" Default="" Mode="" Description="Discord application client ID" Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="MYSQL_HOST" Target="MYSQL_HOST" Default="mariadb" Mode="" Description="MySQL host (container name or IP)" Type="Variable" Display="always" Required="true" Mask="false">mariadb</Config>
+  <Config Name="MYSQL_PORT" Target="MYSQL_PORT" Default="3306" Mode="" Description="MySQL port" Type="Variable" Display="always" Required="true" Mask="false">3306</Config>
+  <Config Name="MYSQL_USER" Target="MYSQL_USER" Default="packbot" Mode="" Description="MySQL username" Type="Variable" Display="always" Required="true" Mask="false">packbot</Config>
+  <Config Name="MYSQL_PASSWORD" Target="MYSQL_PASSWORD" Default="" Mode="" Description="MySQL password" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="MYSQL_DB" Target="MYSQL_DB" Default="packbot" Mode="" Description="MySQL database name" Type="Variable" Display="always" Required="true" Mask="false">packbot</Config>
+
+  <Config Name="ENABLE_API" Target="ENABLE_API" Default="true" Mode="" Description="Enable PackBot API/WebUI" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="API_PORT" Target="API_PORT" Default="3001" Mode="" Description="Internal API port (should match container port mapping)" Type="Variable" Display="advanced" Required="false" Mask="false">3001</Config>
+  <Config Name="CORS_ORIGIN" Target="CORS_ORIGIN" Default="*" Mode="" Description="CORS origin for API requests" Type="Variable" Display="advanced" Required="false" Mask="false">*</Config>
+  <Config Name="SESSION_SECRET" Target="SESSION_SECRET" Default="" Mode="" Description="Session signing secret for API auth" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="DISCORD_CLIENT_SECRET" Target="DISCORD_CLIENT_SECRET" Default="" Mode="" Description="Discord OAuth client secret for web login" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="OAUTH_REDIRECT_URI" Target="OAUTH_REDIRECT_URI" Default="" Mode="" Description="Discord OAuth redirect URI" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="FRONTEND_URL" Target="FRONTEND_URL" Default="" Mode="" Description="Frontend URL for OAuth redirects" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="YOUTUBE_API_KEY" Target="YOUTUBE_API_KEY" Default="" Mode="" Description="Optional YouTube Data API key" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="SPOTIFY_CLIENT_ID" Target="SPOTIFY_CLIENT_ID" Default="" Mode="" Description="Optional Spotify client ID" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="SPOTIFY_CLIENT_SECRET" Target="SPOTIFY_CLIENT_SECRET" Default="" Mode="" Description="Optional Spotify client secret" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="DEEPGRAM_API_KEY" Target="DEEPGRAM_API_KEY" Default="" Mode="" Description="Optional Deepgram API key for voice commands" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="PROXY_URL" Target="PROXY_URL" Default="" Mode="" Description="Optional HTTP proxy URL" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+
+  <Config Name="LOG_LEVEL" Target="LOG_LEVEL" Default="info" Mode="" Description="Log level: debug|info|warn|error" Type="Variable" Display="advanced" Required="false" Mask="false">info</Config>
+  <Config Name="LOG_FORMAT" Target="LOG_FORMAT" Default="text" Mode="" Description="Log format: text|json" Type="Variable" Display="advanced" Required="false" Mask="false">text</Config>
+  <Config Name="LOG_COLORS" Target="LOG_COLORS" Default="false" Mode="" Description="Enable ANSI colors in logs" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="LOG_DIR" Target="LOG_DIR" Default="/app/logs" Mode="" Description="Log directory inside container" Type="Variable" Display="advanced" Required="false" Mask="false">/app/logs</Config>
+  <Config Name="LOG_MAX_SIZE_MB" Target="LOG_MAX_SIZE_MB" Default="5" Mode="" Description="Log rotation max size (MB)" Type="Variable" Display="advanced" Required="false" Mask="false">5</Config>
+  <Config Name="LOG_MAX_FILES" Target="LOG_MAX_FILES" Default="5" Mode="" Description="Log rotation max files" Type="Variable" Display="advanced" Required="false" Mask="false">5</Config>
+  <Config Name="LOG_MUSIC_TIMINGS" Target="LOG_MUSIC_TIMINGS" Default="true" Mode="" Description="Enable music timing debug logs" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="LOG_YTDLP_TIMINGS" Target="LOG_YTDLP_TIMINGS" Default="true" Mode="" Description="Enable yt-dlp timing debug logs" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+
+  <Config Name="YTDLP_PATH" Target="YTDLP_PATH" Default="/usr/local/bin/yt-dlp" Mode="" Description="yt-dlp binary path" Type="Variable" Display="advanced" Required="false" Mask="false">/usr/local/bin/yt-dlp</Config>
+  <Config Name="TZ" Target="TZ" Default="Australia/Sydney" Mode="" Description="Container timezone" Type="Variable" Display="advanced" Required="false" Mask="false">Australia/Sydney</Config>
+
+  <TailscaleStateDir/>
+</Container>

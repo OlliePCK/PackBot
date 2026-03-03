@@ -282,9 +282,11 @@ services:
 ```
 
 ### Unraid Setup:
+Template available at `unraid/my-PackBot.xml`.
+
 1. Add container from Docker Hub: `olliepck/packbot:latest`
 2. Add environment variables in container settings
-3. Mount `/usr/src/app/logs` for persistent logs
+3. Mount `/app/logs` for persistent logs
 4. Mount `cookies.json` if needed for age-restricted videos
 
 ## Project Structure
