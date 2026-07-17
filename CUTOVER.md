@@ -68,11 +68,14 @@ Everything below runs on grid unless noted.
 
 ## Rollback
 
-`docker stop packbot-go && docker start packbot` restores the Node bot
-(shared DB, so no data issues). Its global commands were overwritten in step
-3 — rerun `node deploy-commands.js` inside the Node container to restore
-them, and revert the PackSite deploy (previous dist or `git checkout` in the
-PackSite repo + redeploy) since the old site needs Socket.io.
+**Retired 2026-07-17.** The one-command rollback (`docker start packbot`)
+existed only while the stopped Node container and `olliepck/packbot:latest`
+image were kept on grid; both were removed once the Go bot proved stable, so
+this runbook is now historical. Recovering the Node bot would mean rebuilding
+its image from history before commit `7500d8f` (`git checkout 7500d8f~1 --`
+the deleted paths), redeploying it, re-registering its commands
+(`node deploy-commands.js`), and reverting the PackSite deploy to a
+Socket.io build.
 
 ## Known behavioural differences (accepted in FEATURES.md)
 
