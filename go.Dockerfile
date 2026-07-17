@@ -8,15 +8,15 @@ FROM golang:1.26 AS build
 
 WORKDIR /src
 
-# Cache module downloads separately from source changes.
+# Cache module downloads separately from source changes. third_party must be
+# present before `go mod download`: go.mod's replace directive points into it
+# (locally patched disgolink — see third_party/disgolink/README.md).
 COPY go.mod go.sum ./
+COPY third_party/ third_party/
 RUN go mod download
 
 COPY cmd/ cmd/
 COPY internal/ internal/
-# Locally patched disgolink (see third_party/disgolink/README.md), wired via
-# the replace directive in go.mod.
-COPY third_party/ third_party/
 
 # CGO_ENABLED=0 → fully static binary, safe on distroless/static.
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /packbot ./cmd/packbot
