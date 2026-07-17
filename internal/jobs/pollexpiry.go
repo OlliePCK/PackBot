@@ -11,6 +11,7 @@ import (
 
 	"github.com/OlliePCK/packbot/internal/commands"
 	"github.com/OlliePCK/packbot/internal/storage"
+	"github.com/OlliePCK/packbot/internal/style"
 )
 
 const pollExpiryInterval = 30 * time.Second
@@ -50,12 +51,7 @@ func sweepExpiredPolls(ctx context.Context, s *discordgo.Session, store *storage
 		}
 
 		embed, components := commands.ClosedPollMessage(p)
-		_, err := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
-			Channel:    p.ChannelID,
-			ID:         p.MessageID,
-			Embeds:     &[]*discordgo.MessageEmbed{embed},
-			Components: &components,
-		})
+		err := style.EditCard(s, p.ChannelID, p.MessageID, []*discordgo.MessageEmbed{embed}, components)
 		if err != nil {
 			// Message may have been deleted — poll is closed in DB either way.
 			log.Warn("failed to edit expired poll message", "poll", p.ID, "error", err)

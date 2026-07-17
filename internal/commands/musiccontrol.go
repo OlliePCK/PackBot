@@ -422,6 +422,72 @@ func Undo(d Deps) *Command {
 }
 
 // NowPlaying is /nowplaying.
+// npCtlPrefix routes /nowplaying's control buttons ("np_ctl:pause" etc.).
+const npCtlPrefix = "np_ctl:"
+
+// renderNowPlayingCard builds the hand-crafted V2 now-playing card with
+// playback controls — the show-piece of the Components-V2 restyle (the rest
+// of the bot converts embeds at the send boundary; this composes directly).
+func renderNowPlayingCard(d Deps, guildID string) ([]discordgo.MessageComponent, bool) {
+	gp := d.Music.Guild(guildID)
+	current := gp.CurrentTrack()
+	if current == nil {
+		return nil, false
+	}
+
+	position := d.Music.Position(guildID)
+	total := current.Duration
+	bar := progressBar(position.Seconds(), total.Seconds(), 20)
+	snapshot := gp.Snapshot()
+	paused := d.Music.Paused(guildID)
+
+	loop := snapshot.RepeatMode.String()
+	if snapshot.RepeatMode != music.RepeatOff {
+		loop = style.Emotes.Repeat + " " + loop
+	}
+
+	status := style.Emotes.Play + " Now Playing"
+	if paused {
+		status = style.Emotes.Pause + " Paused"
+	}
+	head := fmt.Sprintf("### %s\n**[%s](%s)**\nby %s", status, current.Title, current.DisplayURL(), orUnknown(current.Artist))
+
+	var children []discordgo.MessageComponent
+	headText := discordgo.TextDisplay{Content: head}
+	if current.Thumbnail != "" {
+		children = append(children, discordgo.Section{
+			Components: []discordgo.MessageComponent{headText},
+			Accessory:  discordgo.Thumbnail{Media: discordgo.UnfurledMediaItem{URL: current.Thumbnail}},
+		})
+	} else {
+		children = append(children, headText)
+	}
+
+	info := fmt.Sprintf("`%s`\n`%s / %s`\n**Volume** `%d%%` · **Loop** %s · **Requested by** %s",
+		bar, formatSeconds(int(position.Seconds())), formatSeconds(int(total.Seconds())),
+		snapshot.Volume, loop, current.Requester)
+	if len(snapshot.Queue) > 0 {
+		info += fmt.Sprintf("\n**Up Next (%d in queue)** %s", len(snapshot.Queue), snapshot.Queue[0].Title)
+	}
+	if snapshot.Autoplay {
+		info += "\n" + style.Emotes.Autoplay + " Autoplay on"
+	}
+	children = append(children, discordgo.TextDisplay{Content: info})
+
+	pauseLabel, pauseEmoji := "Pause", "⏸"
+	if paused {
+		pauseLabel, pauseEmoji = "Resume", "▶️"
+	}
+	children = append(children, discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+		discordgo.Button{CustomID: npCtlPrefix + "pause", Label: pauseLabel, Emoji: &discordgo.ComponentEmoji{Name: pauseEmoji}, Style: discordgo.SecondaryButton},
+		discordgo.Button{CustomID: npCtlPrefix + "skip", Label: "Skip", Emoji: &discordgo.ComponentEmoji{Name: "⏭"}, Style: discordgo.SecondaryButton},
+		discordgo.Button{CustomID: npCtlPrefix + "stop", Label: "Stop", Emoji: &discordgo.ComponentEmoji{Name: "⏹"}, Style: discordgo.DangerButton},
+	}})
+
+	accent := style.ColorBrand
+	return []discordgo.MessageComponent{discordgo.Container{AccentColor: &accent, Components: children}}, true
+}
+
 func NowPlaying(d Deps) *Command {
 	return &Command{
 		Def: &discordgo.ApplicationCommand{Name: "nowplaying", Description: "Show the currently playing track with progress"},
@@ -429,47 +495,55 @@ func NowPlaying(d Deps) *Command {
 			if !requireMusic(d, s, i) {
 				return nil
 			}
-			gp := d.Music.Guild(i.GuildID)
-			current := gp.CurrentTrack()
-			if current == nil {
+			card, ok := renderNowPlayingCard(d, i.GuildID)
+			if !ok {
 				return Respond(s, i, style.ErrorEmbed("Nothing is currently playing."))
 			}
+			_, err := RespondV2(s, i, card)
+			return err
+		},
+		Components: map[string]Handler{
+			npCtlPrefix: func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+				action := strings.TrimPrefix(i.MessageComponentData().CustomID, npCtlPrefix)
+				ephemeral := func(msg string) error {
+					return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+						Type: discordgo.InteractionResponseChannelMessageWithSource,
+						Data: &discordgo.InteractionResponseData{Content: msg, Flags: discordgo.MessageFlagsEphemeral},
+					})
+				}
+				if d.Music == nil {
+					return ephemeral("Music is currently unavailable.")
+				}
 
-			position := d.Music.Position(i.GuildID)
-			total := current.Duration
-			bar := progressBar(position.Seconds(), total.Seconds(), 20)
+				var actionErr error
+				switch action {
+				case "pause":
+					_, actionErr = d.Music.SetPaused(ctx, i.GuildID, !d.Music.Paused(i.GuildID))
+				case "skip":
+					actionErr = d.Music.Skip(ctx, i.GuildID, displayName(interactionUser(i)))
+				case "stop":
+					actionErr = d.Music.Stop(ctx, i.GuildID, displayName(interactionUser(i)))
+				}
+				if actionErr != nil {
+					return ephemeral("Nothing is currently playing.")
+				}
 
-			snapshot := gp.Snapshot()
-			loop := snapshot.RepeatMode.String()
-			if snapshot.RepeatMode != music.RepeatOff {
-				loop = style.Emotes.Repeat + " " + loop
-			}
-
-			embed := &discordgo.MessageEmbed{
-				Title:       style.Emotes.Play + " Now Playing",
-				Description: fmt.Sprintf("**[%s](%s)**\nby %s", current.Title, current.DisplayURL(), orUnknown(current.Artist)),
-				Color:       style.ColorBrand,
-				Footer:      style.Footer(),
-				Fields: []*discordgo.MessageEmbedField{
-					{Name: "Progress", Value: fmt.Sprintf("`%s`\n`%s / %s`", bar, formatSeconds(int(position.Seconds())), formatSeconds(int(total.Seconds())))},
-					{Name: "Volume", Value: fmt.Sprintf("`%d%%`", snapshot.Volume), Inline: true},
-					{Name: "Loop", Value: loop, Inline: true},
-					{Name: "Requested by", Value: current.Requester, Inline: true},
-				},
-			}
-			if current.Thumbnail != "" {
-				embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: current.Thumbnail}
-			}
-			if len(snapshot.Queue) > 0 {
-				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-					Name:  fmt.Sprintf("Up Next (%d in queue)", len(snapshot.Queue)),
-					Value: snapshot.Queue[0].Title,
+				// Refresh the card in place; when playback ended, close it out.
+				card, ok := renderNowPlayingCard(d, i.GuildID)
+				if !ok {
+					accent := style.ColorBrand
+					card = []discordgo.MessageComponent{discordgo.Container{
+						AccentColor: &accent,
+						Components: []discordgo.MessageComponent{
+							discordgo.TextDisplay{Content: "### " + style.Emotes.Stop + " Playback stopped"},
+						},
+					}}
+				}
+				return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseUpdateMessage,
+					Data: &discordgo.InteractionResponseData{Components: card},
 				})
-			}
-			if snapshot.Autoplay {
-				embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Status", Value: "🔄 Autoplay"})
-			}
-			return Respond(s, i, embed)
+			},
 		},
 	}
 }
@@ -607,13 +681,7 @@ func Queue(d Deps) *Command {
 					embed = style.ErrorEmbed("Queue is empty.")
 					components = []discordgo.MessageComponent{}
 				}
-				return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseUpdateMessage,
-					Data: &discordgo.InteractionResponseData{
-						Embeds:     []*discordgo.MessageEmbed{embed},
-						Components: components,
-					},
-				})
+				return UpdateV2(s, i, []*discordgo.MessageEmbed{embed}, components)
 			},
 		},
 	}

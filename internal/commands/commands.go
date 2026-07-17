@@ -7,11 +7,14 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
+	"log/slog"
 
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/storage"
+	"github.com/OlliePCK/packbot/internal/style"
 	"github.com/OlliePCK/packbot/internal/youtube"
 )
 
@@ -91,20 +94,78 @@ func All(d Deps) []*Command {
 	}
 }
 
-// Respond edits the deferred reply with one or more embeds — the standard way
-// every PackBot command answers (Node: interaction.editReply({embeds: [...]})).
+// Respond edits the deferred reply — the standard way every PackBot command
+// answers. Commands still build classic embeds; the reply is rendered as a
+// Components-V2 card (style.FromEmbeds), falling back to a plain embed edit
+// if Discord rejects the V2 payload so no command breaks on a rendering bug.
 func Respond(s *discordgo.Session, i *discordgo.InteractionCreate, embeds ...*discordgo.MessageEmbed) error {
+	if _, err := RespondV2(s, i, style.FromEmbeds(embeds...)); err == nil {
+		return nil
+	} else {
+		slog.Warn("V2 reply rejected, falling back to embeds", "error", err)
+	}
 	_, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 		Embeds: &embeds,
 	})
 	return err
 }
 
-// RespondComplex edits the deferred reply with embeds and components.
+// RespondComplex edits the deferred reply with embeds and interactive rows,
+// rendered as one V2 card with the rows attached (same fallback as Respond).
 func RespondComplex(s *discordgo.Session, i *discordgo.InteractionCreate, embeds []*discordgo.MessageEmbed, components []discordgo.MessageComponent) (*discordgo.Message, error) {
+	if msg, err := RespondV2(s, i, style.FromEmbedsWithRows(embeds, components)); err == nil {
+		return msg, nil
+	} else {
+		slog.Warn("V2 reply rejected, falling back to embeds", "error", err)
+	}
 	return s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 		Embeds:     &embeds,
 		Components: &components,
+	})
+}
+
+// RespondV2 edits the deferred reply into a Components-V2 message. discordgo
+// v0.29's WebhookEdit has no Flags field, so this goes through the raw REST
+// layer — IS_COMPONENTS_V2 may be applied on edit while the deferred message
+// is still empty (no content/embeds).
+func RespondV2(s *discordgo.Session, i *discordgo.InteractionCreate, components []discordgo.MessageComponent) (*discordgo.Message, error) {
+	payload := struct {
+		Components []discordgo.MessageComponent `json:"components"`
+		Flags      discordgo.MessageFlags       `json:"flags"`
+	}{components, discordgo.MessageFlagsIsComponentsV2}
+
+	uri := discordgo.EndpointWebhookMessage(i.AppID, i.Token, "@original")
+	body, err := s.RequestWithBucketID("PATCH", uri, payload, discordgo.EndpointWebhookToken("", ""))
+	if err != nil {
+		return nil, err
+	}
+	var msg discordgo.Message
+	if err := json.Unmarshal(body, &msg); err != nil {
+		return nil, err
+	}
+	return &msg, nil
+}
+
+// UpdateV2 answers a component interaction by replacing the message's
+// components (the message is already V2, so no flag change is needed); falls
+// back to a legacy embed update for messages created before the V2 rollout.
+func UpdateV2(s *discordgo.Session, i *discordgo.InteractionCreate, embeds []*discordgo.MessageEmbed, rows []discordgo.MessageComponent) error {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Components: style.FromEmbedsWithRows(embeds, rows),
+		},
+	})
+	if err == nil {
+		return nil
+	}
+	slog.Warn("V2 update rejected, falling back to embeds", "error", err)
+	return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Embeds:     embeds,
+			Components: rows,
+		},
 	})
 }
 

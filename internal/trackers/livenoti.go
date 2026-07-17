@@ -90,7 +90,7 @@ func (l *LiveNoti) HandlePresenceUpdate(s *discordgo.Session, p *discordgo.Prese
 			embed.URL = streamActivity.URL
 			embed.Description = "Watch here: " + streamActivity.URL
 		}
-		if _, err := s.ChannelMessageSendEmbed(channelID, embed); err != nil {
+		if _, err := style.Send(s, channelID, "", embed); err != nil {
 			l.log.Error("failed to send live notification", "guild", p.GuildID, "error", err)
 		}
 

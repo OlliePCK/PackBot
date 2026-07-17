@@ -195,15 +195,9 @@ func Poll(d Deps) *Command {
 					})
 				}
 
-				embeds := []*discordgo.MessageEmbed{pollEmbed(poll.Question, poll.Options, poll.Votes, poll.ExpiresAt, false)}
-				components := pollButtons(poll.Options, false)
-				return s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseUpdateMessage,
-					Data: &discordgo.InteractionResponseData{
-						Embeds:     embeds,
-						Components: components,
-					},
-				})
+				return UpdateV2(s, i,
+					[]*discordgo.MessageEmbed{pollEmbed(poll.Question, poll.Options, poll.Votes, poll.ExpiresAt, false)},
+					pollButtons(poll.Options, false))
 			},
 		},
 	}

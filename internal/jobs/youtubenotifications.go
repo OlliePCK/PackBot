@@ -193,9 +193,6 @@ func sendVideoNotification(s *discordgo.Session, notifyChannelID string, video *
 	if video.ThumbnailURL != "" {
 		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: video.ThumbnailURL}
 	}
-	_, err := s.ChannelMessageSendComplex(notifyChannelID, &discordgo.MessageSend{
-		Content: "🔔 New video: " + youtube.WatchURL(video.ID),
-		Embeds:  []*discordgo.MessageEmbed{embed},
-	})
+	_, err := style.Send(s, notifyChannelID, "🔔 New video: "+youtube.WatchURL(video.ID), embed)
 	return err
 }

@@ -136,10 +136,7 @@ func checkBirthdays(ctx context.Context, s *discordgo.Session, store *storage.St
 			Color:       style.ColorBrand,
 			Footer:      style.Footer(),
 		}
-		_, err := s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-			Content: strings.Join(mentions, " "),
-			Embeds:  []*discordgo.MessageEmbed{embed},
-		})
+		_, err := style.Send(s, channelID, strings.Join(mentions, " "), embed)
 		if err != nil {
 			log.Error("failed to send birthday reminder", "channel", channelID, "error", err)
 			continue

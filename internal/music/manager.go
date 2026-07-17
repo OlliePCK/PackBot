@@ -23,6 +23,7 @@ import (
 
 	"github.com/OlliePCK/packbot/internal/spotify"
 	"github.com/OlliePCK/packbot/internal/storage"
+	"github.com/OlliePCK/packbot/internal/style"
 	"github.com/OlliePCK/packbot/internal/youtube"
 )
 
@@ -214,7 +215,7 @@ func (m *Manager) checkAutoLeave(e *discordgo.VoiceStateUpdate) {
 	m.log.Info("no listeners remaining, leaving channel", "guild", e.GuildID)
 	if textChannel != "" {
 		embed := brandTitleEmbed(emoteSuccess+" | No one listening, leaving the channel!", "Thank you for using The Pack music bot.")
-		_, _ = m.session.ChannelMessageSendEmbed(textChannel, embed)
+		_, _ = style.Send(m.session, textChannel, "", embed)
 	}
 	_ = m.Leave(context.Background(), e.GuildID)
 }
@@ -746,7 +747,7 @@ func (m *Manager) sendText(gp *GuildPlayer, embed *discordgo.MessageEmbed) {
 	if channel == "" {
 		return
 	}
-	if _, err := m.session.ChannelMessageSendEmbed(channel, embed); err != nil {
+	if _, err := style.Send(m.session, channel, "", embed); err != nil {
 		m.log.Error("failed to send music embed", "guild", gp.GuildID, "error", err)
 	}
 }

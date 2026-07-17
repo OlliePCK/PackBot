@@ -87,7 +87,7 @@ func (m *Manager) maybeNotifyAuthFailure(message string) {
 		},
 		Footer: style.Footer(),
 	}
-	if _, err := m.session.ChannelMessageSendEmbed(channel.ID, embed); err != nil {
+	if _, err := style.Send(m.session, channel.ID, "", embed); err != nil {
 		m.log.Error("failed to send YouTube auth alert DM", "error", err)
 		return
 	}
