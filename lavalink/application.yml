@@ -55,12 +55,22 @@ lavalink:
 plugins:
   youtube:
     enabled: true
-    # Client mix for playback without OAuth (first match wins). WEB/WEBEMBEDDED
-    # often hit the poToken wall; ANDROID_VR/IOS/MWEB usually stream fine
-    # unauthenticated. If YouTube starts demanding auth, add oauth/pot config
-    # here (see youtube-source README).
+    # OAuth became required in production (grid's IP hit "This video requires
+    # login" on ANDROID_VR). On first start this logs a google.com/device code;
+    # after linking, pin the logged refresh token below so restarts skip the
+    # flow. Use a burner Google account.
+    oauth:
+      enabled: true
+      # SECRET — do not commit the real value (public repo). The deployed
+      # copy on grid carries the actual refresh token; on a fresh setup,
+      # comment these two lines out, boot once, link via the logged
+      # google.com/device code (burner account!), then pin the token that
+      # the log prints.
+      refreshToken: "REDACTED_SET_ON_DEPLOYED_COPY_ONLY"
+      skipInitialization: true
     clients:
       - MUSIC
+      - TV # OAuth's designed pairing per the client table (streams as logged-in)
       - ANDROID_VR
       - IOS
       - MWEB
