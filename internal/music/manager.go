@@ -230,13 +230,29 @@ func (m *Manager) Join(ctx context.Context, guildID, voiceChannelID, textChannel
 	gp.VoiceChannelID = voiceChannelID
 	gp.mu.Unlock()
 
-	if alreadyThere {
+	player := m.client.Player(snowflake.MustParse(guildID))
+
+	// Being in the channel is only sufficient if Lavalink also holds a live
+	// voice connection. After a Lavalink restart the node comes back as a
+	// fresh session with no voice credentials, so trusting our own state
+	// here played audio into the void (found post-cutover: TrackEnd(cleanup)
+	// with voice{} empty). Force a leave+rejoin to mint fresh credentials.
+	if alreadyThere && player.State().Connected {
 		return nil
 	}
+	if alreadyThere {
+		m.log.Warn("in voice channel but Lavalink has no voice connection; rejoining", "guild", guildID)
+		_ = m.session.ChannelVoiceJoinManual(guildID, "", false, false)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond): // let the disconnect land
+		}
+	}
+
 	if err := m.session.ChannelVoiceJoinManual(guildID, voiceChannelID, false, true); err != nil {
 		return fmt.Errorf("music: join voice channel: %w", err)
 	}
-	player := m.client.Player(snowflake.MustParse(guildID))
 	if err := m.waitForVoice(ctx, player); err != nil {
 		return fmt.Errorf("music: voice connection: %w", err)
 	}
