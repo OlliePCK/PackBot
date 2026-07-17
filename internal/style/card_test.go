@@ -138,6 +138,50 @@ func TestFromEmbedsTruncation(t *testing.T) {
 	}
 }
 
+func TestMaskedLinkEmojiHandling(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		url  string
+		want string
+	}{
+		// Live findings: emoji anywhere in link text breaks rendering (F/H/J);
+		// pipes are fine (G/I).
+		{"plain text untouched", "Test Track", "https://e.com", "[Test Track](https://e.com)"},
+		{"pipe kept inside", "Test | Track", "https://e.com", "[Test | Track](https://e.com)"},
+		{"leading emoji+pipe hoisted", "🎵 | Now playing: X", "https://e.com", "🎵 | [Now playing: X](https://e.com)"},
+		{"mid-text emoji stripped", "Song 🔥 (Official)", "https://e.com", "[Song (Official)](https://e.com)"},
+		{"all-emoji text keeps text, loses link", "🔥🔥", "https://e.com", "🔥🔥"},
+		{"brackets escaped", "Track [Live]", "https://e.com", `[Track \[Live\]](https://e.com)`},
+		{"no url passes through", "Just a title", "", "Just a title"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MaskedLink(tt.text, tt.url); got != tt.want {
+				t.Errorf("MaskedLink(%q) = %q, want %q", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeInsideDescriptions(t *testing.T) {
+	// Queue-style lines composed by commands must be sanitized in conversion.
+	e := &discordgo.MessageEmbed{
+		Description: "`1.` [Song 🔥 Title](https://e.com) `[3:45]`\n┗ Ollie",
+	}
+	got := allText(t, FromEmbeds(e))
+	if strings.Contains(got, "[Song 🔥") {
+		t.Errorf("emoji survived inside link text:\n%s", got)
+	}
+	if !strings.Contains(got, "[Song Title](https://e.com)") {
+		t.Errorf("link not preserved after strip:\n%s", got)
+	}
+	// CJK must never be treated as emoji.
+	if got := MaskedLink("日本語タイトル", "https://e.com"); got != "[日本語タイトル](https://e.com)" {
+		t.Errorf("CJK text mangled: %q", got)
+	}
+}
+
 func TestFromEmbedsWithRows(t *testing.T) {
 	row := discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{CustomID: "x", Label: "Vote"},

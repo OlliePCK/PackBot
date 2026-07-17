@@ -13,6 +13,7 @@ package style
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -72,14 +73,10 @@ func fromEmbed(e *discordgo.MessageEmbed, budget *int) discordgo.MessageComponen
 		head = append(head, "-# "+e.Author.Name)
 	}
 	if e.Title != "" {
-		if e.URL != "" {
-			head = append(head, fmt.Sprintf("### [%s](%s)", e.Title, e.URL))
-		} else {
-			head = append(head, "### "+e.Title)
-		}
+		head = append(head, "### "+MaskedLink(e.Title, e.URL))
 	}
 	if e.Description != "" {
-		head = append(head, e.Description)
+		head = append(head, sanitizeMaskedLinks(e.Description))
 	}
 	headText := takeText(strings.Join(head, "\n"), budget)
 	if headText != "" {
@@ -93,7 +90,7 @@ func fromEmbed(e *discordgo.MessageEmbed, budget *int) discordgo.MessageComponen
 		}
 	}
 
-	if fieldsText := takeText(renderFields(e.Fields), budget); fieldsText != "" {
+	if fieldsText := takeText(sanitizeMaskedLinks(renderFields(e.Fields)), budget); fieldsText != "" {
 		children = append(children, discordgo.TextDisplay{Content: fieldsText})
 	}
 
@@ -161,6 +158,77 @@ func renderFields(fields []*discordgo.MessageEmbedField) string {
 	}
 	flush()
 	return strings.Join(lines, "\n")
+}
+
+var maskedLinkRe = regexp.MustCompile(`\[([^\]\n]*)\]\((https?://[^)\s]+)\)`)
+
+// MaskedLink builds a [text](url) link that Discord's V2 text parser will
+// actually render: emoji anywhere inside masked-link text silently break the
+// link (verified live against the API — the raw brackets show instead), so
+// leading emoji hoist outside the brackets and interior emoji are stripped.
+// Square brackets in the text are escaped so titles can't break the syntax.
+func MaskedLink(text, url string) string {
+	if url == "" {
+		return text
+	}
+	text = strings.NewReplacer("[", `\[`, "]", `\]`).Replace(text)
+	return sanitizeMaskedLinks("[" + text + "](" + url + ")")
+}
+
+// sanitizeMaskedLinks rewrites every masked link in md whose text contains
+// emoji (see MaskedLink). Applied to converted descriptions and fields too,
+// since commands compose links over arbitrary track/video titles.
+func sanitizeMaskedLinks(md string) string {
+	return maskedLinkRe.ReplaceAllStringFunc(md, func(m string) string {
+		sub := maskedLinkRe.FindStringSubmatch(m)
+		text, url := sub[1], sub[2]
+		if !strings.ContainsFunc(text, isEmojiRune) {
+			return m
+		}
+
+		// Hoist the leading emoji/pipe run out of the brackets.
+		runes := []rune(text)
+		cut := 0
+		for cut < len(runes) && (isEmojiRune(runes[cut]) || runes[cut] == '|' || runes[cut] == ' ') {
+			cut++
+		}
+		prefix, rest := string(runes[:cut]), string(runes[cut:])
+
+		// Strip whatever emoji remain mid-text; collapse doubled spaces.
+		rest = strings.Join(strings.Fields(strings.Map(func(r rune) rune {
+			if isEmojiRune(r) {
+				return -1
+			}
+			return r
+		}, rest)), " ")
+
+		if rest == "" {
+			return strings.TrimSpace(prefix) // all-emoji text: keep it, lose the link
+		}
+		return prefix + "[" + rest + "](" + url + ")"
+	})
+}
+
+// isEmojiRune covers the symbol blocks Discord renders as emoji. Bounded
+// ranges only — a blanket r >= 0x1F000 would eat CJK Extension B titles.
+func isEmojiRune(r rune) bool {
+	switch {
+	case r >= 0x1F000 && r <= 0x1FAFF: // emoji, flags, transport, supplemental
+		return true
+	case r >= 0x2600 && r <= 0x27BF: // misc symbols, dingbats
+		return true
+	case r >= 0x2B00 && r <= 0x2BFF: // arrows/stars (⭐)
+		return true
+	case r >= 0x2300 && r <= 0x23FF: // media/tech (⏭ ⌚)
+		return true
+	case r >= 0x25A0 && r <= 0x25FF: // geometric (▶)
+		return true
+	case r >= 0x2190 && r <= 0x21FF: // arrows
+		return true
+	case r == 0xFE0F || r == 0x200D || r == 0x20E3: // VS-16, ZWJ, keycap
+		return true
+	}
+	return false
 }
 
 // takeText spends budget on s, truncating rune-safely (byte slicing could

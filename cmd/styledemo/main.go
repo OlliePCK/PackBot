@@ -30,12 +30,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// linktest mode: isolate where masked links fail to render (live finding:
+	// a Section title showed raw [text](url) while a plain TextDisplay didn't).
+	if len(os.Args) > 2 && os.Args[2] == "linktest" {
+		linkTest(s, channelID)
+		return
+	}
+
 	// 1. Converted brand embed with thumbnail, fields, footer + timestamp —
 	// exercises the full FromEmbeds mapping (what every command reply uses).
 	brand := &discordgo.MessageEmbed{
 		Title:       style.Emotes.Play + " | Now playing: Test Track",
 		URL:         "https://example.com",
-		Description: "The standard command reply, converted from a classic embed.",
+		Description: "The standard command reply, converted from a classic embed.\nEmoji-title link: **[Song 🔥 (Official)](https://example.com)** should render clickable.",
 		Color:       style.ColorBrand,
 		Footer:      style.Footer(),
 		Thumbnail:   &discordgo.MessageEmbedThumbnail{URL: style.LogoURL},
@@ -105,4 +112,43 @@ func main() {
 		}
 		fmt.Println("ok:", step.name)
 	}
+}
+
+// linkTest posts variants A–E to pinpoint which combination breaks masked
+// links: Section vs plain TextDisplay, and emoji/pipe inside vs outside the
+// link text.
+func linkTest(s *discordgo.Session, channelID string) {
+	accent := style.ColorBrand
+	thumb := discordgo.Thumbnail{Media: discordgo.UnfurledMediaItem{URL: style.LogoURL}}
+	section := func(md string) discordgo.MessageComponent {
+		return discordgo.Container{AccentColor: &accent, Components: []discordgo.MessageComponent{
+			discordgo.Section{
+				Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: md}},
+				Accessory:  thumb,
+			},
+		}}
+	}
+	plain := func(md string) discordgo.MessageComponent {
+		return discordgo.Container{AccentColor: &accent, Components: []discordgo.MessageComponent{
+			discordgo.TextDisplay{Content: md},
+		}}
+	}
+	variants := []discordgo.MessageComponent{
+		plain("**F** — emoji inside link, no pipe:\n### [🎵 Test Track](https://example.com)"),
+		plain("**G** — pipe inside link, no emoji:\n### [| Test Track](https://example.com)"),
+		plain("**H** — emoji mid-text inside link:\n### [Test 🔥 Track](https://example.com)"),
+		plain("**I** — bold link, pipe inside:\n**[Test | Track](https://example.com)**"),
+		plain("**J** — realistic track title with emoji:\n**[Song 🔥 (Official)](https://example.com)**"),
+	}
+	_ = section
+	payload := struct {
+		Components []discordgo.MessageComponent `json:"components"`
+		Flags      discordgo.MessageFlags       `json:"flags"`
+	}{variants, discordgo.MessageFlagsIsComponentsV2}
+	uri := discordgo.EndpointChannelMessages(channelID)
+	if _, err := s.RequestWithBucketID("POST", uri, payload, uri); err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL linktest:", err)
+		os.Exit(1)
+	}
+	fmt.Println("ok: linktest variants A–E posted")
 }

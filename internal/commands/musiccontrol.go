@@ -437,7 +437,7 @@ func renderNowPlayingCard(d Deps, guildID string) ([]discordgo.MessageComponent,
 
 	position := d.Music.Position(guildID)
 	total := current.Duration
-	bar := progressBar(position.Seconds(), total.Seconds(), 20)
+	bar := progressBar(position.Seconds(), total.Seconds(), 12)
 	snapshot := gp.Snapshot()
 	paused := d.Music.Paused(guildID)
 
@@ -450,7 +450,7 @@ func renderNowPlayingCard(d Deps, guildID string) ([]discordgo.MessageComponent,
 	if paused {
 		status = style.Emotes.Pause + " Paused"
 	}
-	head := fmt.Sprintf("### %s\n**[%s](%s)**\nby %s", status, current.Title, current.DisplayURL(), orUnknown(current.Artist))
+	head := fmt.Sprintf("### %s\n**%s**\nby %s", status, style.MaskedLink(current.Title, current.DisplayURL()), orUnknown(current.Artist))
 
 	var children []discordgo.MessageComponent
 	headText := discordgo.TextDisplay{Content: head}
@@ -463,7 +463,7 @@ func renderNowPlayingCard(d Deps, guildID string) ([]discordgo.MessageComponent,
 		children = append(children, headText)
 	}
 
-	info := fmt.Sprintf("`%s`\n`%s / %s`\n**Volume** `%d%%` · **Loop** %s · **Requested by** %s",
+	info := fmt.Sprintf("%s `%s / %s`\n**Volume** `%d%%` · **Loop** %s · **Requested by** %s",
 		bar, formatSeconds(int(position.Seconds())), formatSeconds(int(total.Seconds())),
 		snapshot.Volume, loop, current.Requester)
 	if len(snapshot.Queue) > 0 {
@@ -687,14 +687,14 @@ func Queue(d Deps) *Command {
 	}
 }
 
+// progressBar renders ▰▰▰▱-style segments — reads cleanly at message font
+// size, unlike box-drawing characters that only line up inside code spans.
 func progressBar(current, total float64, length int) string {
 	if total <= 0 {
-		return strings.Repeat("─", length)
+		return strings.Repeat("▱", length)
 	}
-	progress := min(current/total, 1)
-	filled := int(progress * float64(length))
-	filled = min(filled, length-1)
-	return strings.Repeat("─", filled) + "●" + strings.Repeat("─", length-filled-1)
+	filled := int(min(current/total, 1)*float64(length) + 0.5)
+	return strings.Repeat("▰", filled) + strings.Repeat("▱", length-filled)
 }
 
 func formatSeconds(total int) string {
