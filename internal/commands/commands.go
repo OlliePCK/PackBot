@@ -24,6 +24,8 @@ type Deps struct {
 	YouTube *youtube.Client
 	// Music is nil when the Lavalink node is unavailable.
 	Music *music.Manager
+	// AdminUserID (API_ADMIN_USER_ID) gates owner-only commands (/ytauth).
+	AdminUserID string
 }
 
 // Handler processes a deferred slash-command interaction.
@@ -85,6 +87,7 @@ func All(d Deps) []*Command {
 		NowPlaying(d),
 		Queue(d),
 		Filters(d),
+		YTAuth(d),
 	}
 }
 

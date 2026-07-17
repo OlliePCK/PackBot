@@ -49,6 +49,10 @@ E2EE voice requirement is satisfied by Lavalink.
 - `FRONTEND_URL` — post-login redirect base, e.g. `https://thepck.com`.
 - `API_ADMIN_USER_ID` — Discord user ID of the web super-admin (sees all
   guilds). Was hardcoded in the Node bot; promoted to config in the port.
+  Doubles as the bot-owner identity: receives operational DMs (YouTube
+  OAuth login-wall alerts with re-link steps) and is the only user allowed
+  to run the DM-only `/ytauth` command (push a fresh refresh token into
+  Lavalink at runtime).
 - `NODE_ENV` — `production` enables Secure session cookies behind the
   HTTPS proxy (name kept from the Node deployment for template continuity).
 - `SESSION_SECRET` — **no longer used** (sessions are server-side random

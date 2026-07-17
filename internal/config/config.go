@@ -66,6 +66,8 @@ type API struct {
 
 	// AdminUserID is the super-admin Discord user who sees all guilds
 	// (was hardcoded in Node; promoted to env per the port decisions).
+	// Also the bot-owner identity: receives operational DMs (YouTube OAuth
+	// failure alerts) and gates the owner-only /ytauth command.
 	AdminUserID string // API_ADMIN_USER_ID (optional)
 }
 

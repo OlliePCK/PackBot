@@ -70,7 +70,7 @@ func run() error {
 		slog.Warn("YOUTUBE_API_KEY not set; /youtube and upload notifications disabled")
 	}
 
-	deps := commands.Deps{Store: store, YouTube: yt}
+	deps := commands.Deps{Store: store, YouTube: yt, AdminUserID: cfg.API.AdminUserID}
 	var musicManager *music.Manager
 
 	// Music runs against a Lavalink node; the node being down disables music
@@ -87,7 +87,7 @@ func run() error {
 		} else {
 			slog.Warn("SPOTIFY_CLIENT_ID/SECRET not set; Spotify links disabled")
 		}
-		manager, err := music.NewManager(ctx, session, store, sp, yt, self.ID, cfg.LavalinkAddress, cfg.LavalinkPassword)
+		manager, err := music.NewManager(ctx, session, store, sp, yt, self.ID, cfg.LavalinkAddress, cfg.LavalinkPassword, cfg.API.AdminUserID)
 		if err != nil {
 			slog.Error("lavalink unavailable; music disabled", "error", err)
 		} else {

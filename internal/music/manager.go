@@ -35,6 +35,18 @@ type Manager struct {
 	yt      *youtube.Client // nil when YOUTUBE_API_KEY unset
 	log     *slog.Logger
 
+	// Node coordinates kept for direct HTTP calls to plugin routes that
+	// disgolink doesn't cover (youtube-source's /youtube — see ytauth.go).
+	nodeAddress  string
+	nodePassword string
+
+	// adminUserID (API_ADMIN_USER_ID) receives operational DMs — currently
+	// the YouTube OAuth login-wall alert. Empty disables alerting.
+	adminUserID string
+
+	authMu        sync.Mutex
+	lastAuthAlert time.Time
+
 	mu     sync.Mutex
 	guilds map[string]*GuildPlayer
 
@@ -67,14 +79,17 @@ type GuildPlayer struct {
 }
 
 // NewManager connects to the Lavalink node and wires event listeners.
-func NewManager(ctx context.Context, session *discordgo.Session, store *storage.Store, sp *spotify.Client, yt *youtube.Client, botUserID, address, password string) (*Manager, error) {
+func NewManager(ctx context.Context, session *discordgo.Session, store *storage.Store, sp *spotify.Client, yt *youtube.Client, botUserID, address, password, adminUserID string) (*Manager, error) {
 	m := &Manager{
-		session: session,
-		store:   store,
-		spotify: sp,
-		yt:      yt,
-		log:     slog.With("component", "music"),
-		guilds:  make(map[string]*GuildPlayer),
+		session:      session,
+		store:        store,
+		spotify:      sp,
+		yt:           yt,
+		log:          slog.With("component", "music"),
+		nodeAddress:  address,
+		nodePassword: password,
+		adminUserID:  adminUserID,
+		guilds:       make(map[string]*GuildPlayer),
 	}
 
 	m.client = disgolink.New(snowflake.MustParse(botUserID),
@@ -714,6 +729,9 @@ func (m *Manager) autoplayTrack(ctx context.Context, seed *Track, gp *GuildPlaye
 
 func (m *Manager) onTrackException(player disgolink.Player, event lavalink.TrackExceptionEvent) {
 	m.log.Error("track exception", "guild", player.GuildID(), "error", event.Exception.Message)
+	// Login-wall exceptions mean the YouTube OAuth token died — alert the
+	// admin by DM with the re-link steps (debounced; see ytauth.go).
+	m.maybeNotifyAuthFailure(event.Exception.Message)
 }
 
 func (m *Manager) onTrackStuck(player disgolink.Player, event lavalink.TrackStuckEvent) {
