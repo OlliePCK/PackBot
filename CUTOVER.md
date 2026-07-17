@@ -62,8 +62,9 @@ Everything below runs on grid unless noted.
 7. **Web smoke test**: log in at thepck.com, nowplaying page: server list,
    Live indicator, play a song, page controls (pause/skip/add-to-queue).
 
-8. **Housekeeping** (whenever): delete the `packbot_test` database; drop the
-   dead env vars from the Go template; repo cleanup of the Node code.
+8. **Housekeeping** (done 2026-07-17): `packbot_test` database deleted; dead
+   env vars dropped from the Go template; Node code removed from the repo
+   (lives on in git history pre-cleanup); `/socket.io` nginx block removed.
 
 ## Rollback
 

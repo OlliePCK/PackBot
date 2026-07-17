@@ -1,32 +1,31 @@
-# Unraid Template
+# Unraid Templates
 
-Template file:
-
-- `unraid/my-PackBot.xml`
+- `unraid/my-PackBot-Go.xml` — the bot (`olliepck/packbot-go:latest`)
+- `unraid/my-PackBot-Lavalink.xml` — the Lavalink v4 node the bot needs
 
 ## Install on Unraid
 
-1. Copy the XML to your Unraid host:
-   - `/boot/config/plugins/dockerMan/templates-user/my-PackBot.xml`
-2. In Unraid Docker tab, use **Add Container** and select the `PackBot` template.
-3. Default repository is `olliepck/packbot:latest`; override if needed.
-4. Fill required env vars (`TOKEN`, `CLIENT_ID`, `MYSQL_*`).
-5. Keep PackBot on the same Docker network as your MySQL/MariaDB container.
+1. Copy the XMLs to the Unraid host:
+   `/boot/config/plugins/dockerMan/templates-user/`
+2. In the Unraid Docker tab, **Add Container** and pick the template.
+3. Fill the env vars (contract: `ENVIRONMENT.md`; required: `TOKEN`,
+   `CLIENT_ID`, `MYSQL_*`, plus `LAVALINK_ADDRESS`/`LAVALINK_PASSWORD` for
+   music).
 
 ## Notes
 
-- The template defaults to network `host` for Discord voice reliability (UDP path is most reliable on host mode).
-- If you switch to a custom bridge network, ensure outbound UDP is allowed end-to-end or voice playback may connect but produce no audio.
-- It follows the canonical env contract in `ENVIRONMENT.md` (excluding internal-only vars like `XDG_CONFIG_HOME`).
-- It intentionally does not publish host ports; API traffic is expected through internal Docker networking (for example via nginx reverse proxy).
-- For env path vars, use container paths (for example `YTDLP_COOKIES_PATH=/usr/src/app/cookies.txt`), not host paths like `/mnt/user/...`.
+- Run both containers on the same custom Docker network as MariaDB and the
+  nginx reverse proxy (e.g. `laserproxy`) so container-name DNS works
+  (`MYSQL_HOST=mariadb`, nginx upstream `PackBot-Go:3001`). If Lavalink sits
+  on a different network, point `LAVALINK_ADDRESS` at the host IP instead.
+- Lavalink's config lives at
+  `/mnt/user/appdata/packbot-lavalink/application.yml` (reference copy:
+  `lavalink/application.yml` — the deployed copy carries the real YouTube
+  OAuth refresh token; never commit that).
+- Pull+restart does NOT apply a new image on Unraid — recreate the container
+  (Docker UI "apply update" or the `update_container` script).
 
-## Icon for Unraid
+## Icon
 
-The template is already configured with:
-
-- `https://raw.githubusercontent.com/OlliePCK/PackBot/master/unraid/packbot-icon.jpg`
-
-If you want to replace it, update `unraid/packbot-icon.jpg` in this repo (or switch to jsDelivr):
-
-- `https://cdn.jsdelivr.net/gh/OlliePCK/PackBot@master/unraid/packbot-icon.jpg`
+Templates reference
+`https://raw.githubusercontent.com/OlliePCK/PackBot/master/unraid/packbot-icon.jpg`.

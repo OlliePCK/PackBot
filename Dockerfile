@@ -1,56 +1,29 @@
-FROM node:22.13.1
+# PackBot — multi-stage build to a static binary on distroless.
+#   docker build -t olliepck/packbot-go .
 
-WORKDIR /usr/src/app
+FROM golang:1.26 AS build
 
-COPY package*.json ./
+WORKDIR /src
 
-RUN apt-get update -y \
-  && apt-get upgrade -y \
-  && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    python3 \
-    python3-pip \
-    libnspr4 \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdrm2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libx11-xcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libxshmfence1 \
-    libasound2 \
-    libxss1 \
-    fonts-liberation \
-    ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+# Cache module downloads separately from source changes. third_party must be
+# present before `go mod download`: go.mod's replace directive points into it
+# (locally patched disgolink — see third_party/disgolink/README.md).
+COPY go.mod go.sum ./
+COPY third_party/ third_party/
+RUN go mod download
 
-# Install yt-dlp via pip (installs to /usr/local/bin/yt-dlp)
-RUN pip3 install --break-system-packages yt-dlp
+COPY cmd/ cmd/
+COPY internal/ internal/
 
-RUN npm install
+# CGO_ENABLED=0 → fully static binary, safe on distroless/static.
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /packbot ./cmd/packbot
 
-COPY . .
+# distroless/static ships CA certificates and tzdata (needed for Discord TLS
+# and the Australia/Melbourne cron schedules) but no shell or libc.
+FROM gcr.io/distroless/static-debian12:nonroot
 
-# Set environment variable for yt-dlp path
-ENV YTDLP_PATH=/usr/local/bin/yt-dlp
+COPY --from=build /packbot /packbot
 
-# Logger configuration
-ENV LOG_LEVEL=info
-ENV LOG_FORMAT=text
-ENV LOG_COLORS=false
-ENV LOG_DIR=logs
-ENV LOG_MAX_SIZE_MB=5
-ENV LOG_MAX_FILES=5
+ENV TZ=Australia/Sydney
 
-# Voice commands use Deepgram API (set DEEPGRAM_API_KEY in environment)
-
-# Web API port
-ENV API_PORT=3001
-EXPOSE 3001
-
-CMD ["node", "index.js"]
+ENTRYPOINT ["/packbot"]

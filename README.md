@@ -1,306 +1,125 @@
 # PackBot
 
-> **Go rewrite (current):** PackBot has been rewritten in Go (`cmd/packbot`,
-> `internal/`) — discordgo gateway, Lavalink v4 music (DAVE-compliant voice),
-> stdlib web API with a plain-WebSocket realtime feed. The feature-parity
-> contract and port decisions live in [FEATURES.md](FEATURES.md); env vars in
-> [ENVIRONMENT.md](ENVIRONMENT.md); deployment switch-over in
-> [CUTOVER.md](CUTOVER.md). The Node code below remains in-tree until the
-> post-cutover cleanup, and the feature tables below describe both bots
-> except where FEATURES.md notes a dropped feature.
+PackBot is a Discord bot for The Pack: music playback, playtime leaderboards,
+YouTube upload notifications, streaming alerts, birthdays, polls, and a web
+API/dashboard at [thepck.com](https://thepck.com).
 
-PackBot is a versatile Discord bot designed to enhance your server with music playback, voice commands, playtime tracking, YouTube notifications, streaming alerts, and more. Built with Discord.js v14 and a custom yt-dlp audio system.
+It's written in Go (`cmd/packbot`, `internal/`) on a small, explicit stack:
+
+- **[discordgo](https://github.com/bwmarrin/discordgo)** — gateway and REST.
+- **Lavalink v4 sidecar** — owns Discord voice (including DAVE E2EE), audio
+  sourcing and filters; the bot talks to it via
+  [disgolink](https://github.com/disgoorg/disgolink) (locally forked in
+  `third_party/`, see its README). Node config lives in `lavalink/`.
+- **stdlib `net/http`** web API with Discord OAuth login and a plain-WebSocket
+  realtime feed (`/api/ws`); the frontend (PackSite) is a separate repo nested
+  at `PackSite/`.
+- **MySQL/MariaDB** via `database/sql`; schema in `database/`.
+
+The bot was originally Node.js (discord.js v14 + yt-dlp/FFmpeg); the Go
+rewrite reached feature parity and replaced it in production in July 2026.
+[FEATURES.md](FEATURES.md) is the parity contract with all port decisions,
+[ENVIRONMENT.md](ENVIRONMENT.md) the env-var reference, and
+[CUTOVER.md](CUTOVER.md) the executed switch-over runbook. The Node source
+was removed after the cutover — it's all in git history before that point.
 
 ## Features
 
-### 🎵 Music System
-Full-featured music playback using yt-dlp and @discordjs/voice.
+### 🎵 Music
+`/play` (YouTube, YouTube Music, Spotify links/albums/playlists, SoundCloud,
+plain-text search with Spotify-informed matching), full queue control
+(`/queue`, `/skip`, `/previous`, `/shuffle`, `/repeat`, `/jump`, `/swap`,
+`/push`, `/undo`, `/seek`, `/volume`, `/pause`), `/autoplay` (YouTube Mix
+based related tracks), `/nowplaying`, and `/filters` — live Lavalink filters
+including bassboost, nightcore, vaporwave, 8D, slowed + reverb, and earrape.
 
-| Command | Description |
-|---------|-------------|
-| `/play <query>` | Play a song from YouTube, Spotify, or direct URL |
-| `/pause` | Pause/resume playback |
-| `/stop` | Stop playback and clear queue |
-| `/skip` | Skip to the next track |
-| `/previous` | Play the previous track from history |
-| `/queue` | View the current queue (paginated) |
-| `/shuffle` | Shuffle the queue |
-| `/repeat <off\|song\|queue>` | Set repeat mode |
-| `/autoplay` | Toggle autoplay related songs |
-| `/volume <0-200>` | Adjust playback volume |
-| `/seek <time>` | Seek to a timestamp (e.g., 1:30) |
-| `/jump <position>` | Jump to a specific queue position |
-| `/swap <pos1> <pos2>` | Swap two tracks in the queue |
-| `/push <position>` | Move a track to the front |
-| `/undo` | Remove the last added track |
-| `/filters [filter]` | Apply audio filters (bassboost, nightcore, etc.) |
-| `/join` | Join your voice channel |
-| `/leave` | Disconnect from voice channel |
+### 📊 Tracking & community
+- `/leaderboard` — playtime leaderboards (total, per-game, per-user).
+- `/wrapped` — yearly listening recap; `/playlist` — saved playlists.
+- `/youtube` — YouTube upload notifications for subscribed channels.
+- `/birthday` — birthday reminders (09:00 Melbourne time).
+- `/poll` — polls with stateful votes that survive restarts.
+- Game-expose (6h+ session callouts) and Discord streaming alerts.
+- `/settings` — per-guild channels/roles/toggles; `/purge`, `/ping`.
+- `/ytauth` — owner-only (DM) YouTube OAuth token rotation for Lavalink.
 
-**Supported Sources:**
-- YouTube (videos, playlists, search)
-- Spotify (tracks, albums, playlists - converted via YouTube)
-- Direct URLs (any yt-dlp supported source)
+### 🌐 Web API
+REST under `/api` (stats, OAuth login, guild settings, leaderboards,
+listening history, playlists, wrapped, music control) plus WebSocket
+now-playing/queue updates. Serves the PackSite dashboard.
 
-### 🎤 Voice Commands
-Control the music bot hands-free using voice commands powered by Deepgram speech recognition.
-
-| Command | Description |
-|---------|-------------|
-| `/voice enable` | Enable voice commands in your channel |
-| `/voice disable` | Disable voice commands |
-| `/voice status` | Check voice command status |
-| `/voice autoenable <on\|off>` | Auto-enable voice commands when bot joins (Admin) |
-
-**Voice Commands (say "Pack Bot" followed by):**
-- `play [song name]` - Queue a song
-- `skip` / `next` - Skip current track
-- `stop` - Stop playback and clear queue
-- `pause` / `resume` - Pause/resume playback
-- `volume [0-200]` - Set volume level
-- `previous` - Play previous track
-- `shuffle` - Shuffle the queue
-
-> **Note:** Voice commands require server whitelisting (paid Deepgram API). Contact the bot owner to enable for your server.
-
-### 📊 Playtime Tracking & Leaderboards
-Track how long members play games and compete on leaderboards.
-
-| Command | Description |
-|---------|-------------|
-| `/leaderboard total` | Top players by total playtime |
-| `/leaderboard game <name>` | Top players for a specific game |
-| `/leaderboard user [member]` | A user's most played games |
-| `/leaderboard games` | Most played games in the server |
-
-### 📺 YouTube Notifications
-Automatic notifications when subscribed YouTube channels upload new videos.
-
-| Command | Description |
-|---------|-------------|
-| `/youtube add <handle>` | Subscribe to a YouTube channel |
-| `/youtube remove <handle>` | Unsubscribe from a channel |
-| `/youtube list` | List all subscriptions |
-
-### 🎮 Event Functions
-Automatic notifications and tracking:
-
-- **Game Expose**: Announces when someone plays a game for 6+ hours
-- **Live Notifications**: Alerts when members start streaming on Discord
-
-### ⚙️ Server Settings
-| Command | Description |
-|---------|-------------|
-| `/settings info` | View current bot settings |
-| `/settings set-live-channel` | Set channel for stream notifications |
-| `/settings set-general-channel` | Set general announcement channel |
-| `/settings set-live-role` | Set role for stream mentions |
-| `/settings set-youtube-channel` | Set channel for YouTube notifications |
-
-### 🛠️ Utility
-| Command | Description |
-|---------|-------------|
-| `/ping` | Check bot latency |
-| `/purge <amount>` | Bulk delete messages |
-
-## Getting Started
+## Running it
 
 ### Prerequisites
-- Node.js v22+
-- npm
-- Discord bot token
-- MySQL/MariaDB database
-- yt-dlp (installed automatically in Docker)
-- ffmpeg
+- A Lavalink v4 node with the `youtube-source` and `lavalink-filter-plugin`
+  plugins — `lavalink/application.yml` is the reference config (YouTube
+  OAuth setup steps are commented inline).
+- MySQL/MariaDB with the schema applied.
+- A Discord application (bot token + OAuth client secret).
 
-### Installation
-
-1. **Clone the repository:**
-   ```sh
-   git clone https://github.com/OlliePCK/PackBot.git
-   cd PackBot
-   ```
-
-2. **Install dependencies:**
-   ```sh
-   npm install
-   ```
-   For Discord voice playback, keep `@discordjs/voice` and `@snazzah/davey` installed so modern encrypted voice channels can negotiate successfully.
-
-3. **Configure environment variables:**
-   
-   Create a `.env` file:
-   ```env
-   # Discord
-   TOKEN=your_discord_bot_token
-   CLIENT_ID=your_client_id
-   
-   # Database
-   MYSQL_HOST=your_mysql_host
-   MYSQL_PORT=3306
-   MYSQL_USER=your_mysql_user
-   MYSQL_PASSWORD=your_mysql_password
-   MYSQL_DB=your_mysql_database
-   
-   # APIs (Optional)
-   YOUTUBE_API_KEY=your_youtube_api_key      # For YouTube notifications
-   DEEPGRAM_API_KEY=your_deepgram_api_key    # For voice commands
-   SPOTIFY_CLIENT_ID=your_spotify_client_id  # For Spotify support
-   SPOTIFY_CLIENT_SECRET=your_spotify_secret
-   
-   # Logging (Optional)
-   LOG_LEVEL=info          # debug, info, warn, error
-   LOG_FORMAT=text         # text, json
-   LOG_COLORS=false        # true/false
-   LOG_DIR=logs
-   LOG_MAX_SIZE_MB=5
-   LOG_MAX_FILES=5
-   ```
-
-   Full canonical env reference: `ENVIRONMENT.md`.
-
-4. **Set up the database:**
-   
-   Option A - Run the migration script:
-   ```sh
-   node database/migrate.js
-   ```
-   
-   Option B - Run the full schema manually:
-   ```sh
-   mysql -u your_user -p your_database < database/schema.sql
-   ```
-   
-   This creates the following tables:
-   - `Guilds` - Server settings (channels, roles, voice command preferences)
-   - `Youtube` - YouTube channel subscriptions
-   - `Playtime` - User gaming session tracking
-   - `VoiceWhitelist` - Servers enabled for voice commands
-
-5. **Deploy slash commands:**
-   ```sh
-   node deploy-commands.js
-   ```
-
-6. **Start the bot:**
-   ```sh
-   node index.js
-   ```
-
-## Docker Deployment
-
-### Build and run locally:
+### Local development
 ```sh
-docker build -t packbot .
-docker run --env-file .env packbot
+cp .env.example .env   # fill it in (Go doesn't auto-load .env; export the
+                       # vars or run via your IDE/wrapper of choice)
+go test ./...
+go run ./cmd/packbot
 ```
 
-### Pull from Docker Hub:
+Set `REGISTER_COMMANDS=true` with a `DEV_GUILD_ID` on first run against a
+dev Discord application (guild-scoped registration propagates instantly).
+
+### Database setup
+Apply `database/schema.sql` for a fresh install, or the numbered files in
+`database/migrations/` incrementally — e.g.:
 ```sh
-docker pull olliepck/packbot:latest
+mariadb -u user -p dbname < database/schema.sql
 ```
 
-### CI/CD (Automatic DockerHub builds)
-This repo includes a GitHub Actions workflow that builds and pushes the PackBot image to DockerHub on every push to `master`/`main` (`.github/workflows/docker-image.yml`).
+### Docker
+```sh
+docker build -t olliepck/packbot-go .
+docker run --env-file .env olliepck/packbot-go
+```
 
-1. Create a DockerHub access token (Account Settings → Security → New Access Token).
+CI (`.github/workflows/go-image.yml`) vets, tests, and publishes
+`olliepck/packbot-go:latest` + `:sha-<commit>` to DockerHub on every push to
+master. Requires `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` repo secrets.
 
-## CI/CD Overview (PackBot + PackSite)
+### Unraid
+Templates in `unraid/`: `my-PackBot-Go.xml` (the bot) and
+`my-PackBot-Lavalink.xml` (the Lavalink node). Note that pulling a new image
+and restarting is NOT enough on Unraid — recreate the container (Docker UI
+"apply update", or
+`/usr/local/emhttp/plugins/dynamix.docker.manager/scripts/update_container`).
 
-You have two separate deployment processes:
-
-### 1) PackBot (Docker image → DockerHub)
-This repo builds and pushes the Docker image to DockerHub via:
-- `.github/workflows/docker-image.yml`
-
-**Required GitHub secrets:**
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-
-On Unraid you can then pull/update the container using the Unraid Docker UI (or an auto-updater if you prefer).
-
-### 2) PackSite (files → nginx directory on Unraid)
-PackSite deploy is done locally (Windows) via a script that runs `vite build` and then uploads the `dist/` output via `scp` to:
-`/mnt/user/appdata/binhex-nginx/nginx/html/the-pack/`
-
-**One-time setup:**
+### PackSite deploy
+The frontend builds locally and ships via scp:
 ```powershell
 Copy-Item .\scripts\deploy.config.example.json .\scripts\deploy.config.json
-```
-Edit `scripts/deploy.config.json` and set `host`, `user`, and `targetPath`.
-
-**Deploy:**
-```powershell
+# edit host/user/targetPath, then:
 ./scripts/deploy-packsite.ps1
 ```
 
-Notes:
-- Requires Node.js/npm on your PC.
-- Requires `scp` (Windows OpenSSH client).
-
-
-2. In GitHub → Repo Settings → Secrets and variables → Actions, add:
-   - `DOCKERHUB_USERNAME` = your DockerHub username
-   - `DOCKERHUB_TOKEN` = your DockerHub access token
-3. Push to `master` (or `main`). A new image is published as:
-   - `<username>/packbot:latest`
-   - `<username>/packbot:sha-<commit>`
-4. On Unraid, point the container to `<username>/packbot:latest` and enable automatic updates via CA Auto Update Applications or watchtower.
-
-### Docker Compose example:
-```yaml
-version: '3.8'
-services:
-  packbot:
-    image: olliepck/packbot:latest
-    restart: unless-stopped
-    environment:
-      - TOKEN=${TOKEN}
-      - CLIENT_ID=${CLIENT_ID}
-      - MYSQL_HOST=${MYSQL_HOST}
-      - MYSQL_PORT=${MYSQL_PORT}
-      - MYSQL_USER=${MYSQL_USER}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
-      - MYSQL_DB=${MYSQL_DB}
-    volumes:
-      - ./logs:/usr/src/app/logs
-      - ./cookies.json:/usr/src/app/cookies.json:ro
-```
-
-### Unraid Setup:
-Template available at `unraid/my-PackBot.xml`.
-
-1. Add container from Docker Hub: `olliepck/packbot:latest`
-2. Add environment variables in container settings
-3. Mount `/app/logs` for persistent logs
-4. Mount `cookies.json` if needed for age-restricted videos
-
-## Project Structure
+## Project structure
 ```
 PackBot/
-├── commands/           # Slash command handlers
-├── database/           # Database connection and migrations
-│   ├── db.js           # Connection pool
-│   ├── schema.sql      # Full database schema
-│   └── migrations/     # Incremental migrations
-├── events/
-│   ├── client/         # Discord.js event handlers
-│   └── event-functions/ # Background services (game-expose, live-noti)
-├── music/              # Music system
-│   ├── Subscription.js # Audio player and queue management
-│   ├── Track.js        # Track model
-│   ├── QueryResolver.js # YouTube/Spotify/URL resolution
-│   └── VoiceCommandListener.js # Deepgram voice recognition
-├── services/           # Background services
-├── scripts/            # Background scripts (YouTube notifications)
-├── logs/               # Log files (auto-created)
-├── index.js            # Main entry point
-├── logger.js           # Structured logging system
-└── Dockerfile          # Docker configuration
+├── cmd/packbot/        # Entry point (config, wiring, graceful shutdown)
+├── cmd/wstest/         # WebSocket diagnostic client
+├── internal/
+│   ├── bot/            # Gateway session, command registration & dispatch
+│   ├── commands/       # Slash commands
+│   ├── music/          # Queues, resolution, filters, Lavalink glue
+│   ├── api/            # Web API + WebSocket hub
+│   ├── storage/        # MySQL data access
+│   ├── jobs/           # Background jobs (birthdays, polls, YouTube)
+│   ├── trackers/       # Presence trackers (game-expose, live-noti)
+│   ├── spotify/ youtube/ config/ logging/ style/
+├── third_party/        # Vendored disgolink fork (RotationHz fix)
+├── lavalink/           # Lavalink node reference config
+├── database/           # schema.sql + numbered migrations
+├── unraid/             # Unraid container templates
+└── scripts/            # PackSite deploy script
 ```
 
-## Contributing
-Contributions are welcome! Please fork the repository and create a pull request with your changes.
-
 ## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE).
