@@ -50,6 +50,10 @@ Everything below runs on grid unless noted.
    (ships the plain-WebSocket client).
 
 6. **nginx tweaks** (Nginx-Proxy-Manager / nginx config for thepck.com):
+   - Point the `/api` upstream at the Go container: `proxy_pass
+     http://packbot:3001` → the new container's name (e.g. `PackBot-Go`),
+     and make sure PackBot-Go is on the same Docker network nginx uses for
+     name resolution (laserproxy).
    - Add `proxy_read_timeout 86400;` to the `/api` proxy location (long-lived
      WebSocket at `/api/ws` dies at the default 60s otherwise).
    - The `/socket.io` location block is dead; remove whenever convenient.
