@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>PackBot-Lavalink</Name>
+  <Repository>ghcr.io/lavalink-devs/lavalink:4</Repository>
+  <Registry>https://ghcr.io/</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/OlliePCK/PackBot/issues</Support>
+  <Project>https://github.com/lavalink-devs/Lavalink</Project>
+  <Overview>Lavalink v4 audio node for PackBot-Go. Owns the Discord voice connections (DAVE E2EE), YouTube/SoundCloud sourcing (youtube-source plugin), and live audio filters (lavalink-filter-plugin reverb). Configure via application.yml.</Overview>
+  <Category>Network:Other MediaServer:Music</Category>
+  <WebUI/>
+  <TemplateURL>https://raw.githubusercontent.com/OlliePCK/PackBot/master/unraid/my-PackBot-Lavalink.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/OlliePCK/PackBot/master/unraid/packbot-icon.jpg</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+
+  <Config Name="Port: Lavalink" Target="2333" Default="2333" Mode="tcp" Description="Lavalink REST/WebSocket port" Type="Port" Display="always" Required="true" Mask="false">2333</Config>
+  <Config Name="application.yml" Target="/opt/Lavalink/application.yml" Default="/mnt/user/appdata/packbot-lavalink/application.yml" Mode="ro" Description="Node config (copy from repo lavalink/application.yml; keep the password in sync with PackBot-Go's LAVALINK_PASSWORD)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/packbot-lavalink/application.yml</Config>
+
+  <TailscaleStateDir/>
+</Container>

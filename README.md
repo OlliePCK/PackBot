@@ -1,5 +1,14 @@
 # PackBot
 
+> **Go rewrite (current):** PackBot has been rewritten in Go (`cmd/packbot`,
+> `internal/`) — discordgo gateway, Lavalink v4 music (DAVE-compliant voice),
+> stdlib web API with a plain-WebSocket realtime feed. The feature-parity
+> contract and port decisions live in [FEATURES.md](FEATURES.md); env vars in
+> [ENVIRONMENT.md](ENVIRONMENT.md); deployment switch-over in
+> [CUTOVER.md](CUTOVER.md). The Node code below remains in-tree until the
+> post-cutover cleanup, and the feature tables below describe both bots
+> except where FEATURES.md notes a dropped feature.
+
 PackBot is a versatile Discord bot designed to enhance your server with music playback, voice commands, playtime tracking, YouTube notifications, streaming alerts, and more. Built with Discord.js v14 and a custom yt-dlp audio system.
 
 ## Features
