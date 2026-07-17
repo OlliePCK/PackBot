@@ -1,0 +1,73 @@
+# Lavalink v4 configuration for PackBot (Go rewrite).
+# Used by the local dev container and, at cutover, the grid deployment.
+#
+# Lavalink handles the Discord voice connection (including DAVE E2EE),
+# audio sourcing, decoding, and filters. The Go bot talks to it over
+# REST + WebSocket via disgolink.
+
+server:
+  port: 2333
+  address: 0.0.0.0
+
+lavalink:
+  plugins:
+    # youtube-source replaces Lavaplayer's deprecated built-in YouTube support.
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.1"
+      repository: "https://maven.lavalink.dev/releases"
+    # lavalink-filter-plugin adds true comb-filter reverb (and echo) —
+    # reverb powers the "Slowed + Reverb" preset.
+    - dependency: "com.github.rohank05:lavalink-filter-plugin:0.0.4"
+      repository: "https://jitpack.io"
+  server:
+    password: "packbot-lavalink"
+    sources:
+      youtube: false # deprecated built-in; the plugin above replaces it
+      soundcloud: true
+      bandcamp: true
+      twitch: false
+      vimeo: false
+      http: true
+      local: false
+    filters:
+      volume: true
+      equalizer: true
+      karaoke: true
+      timescale: true
+      tremolo: true
+      vibrato: true
+      distortion: true
+      rotation: true
+      channelMix: true
+      lowPass: true
+    # Buffer tuning balances two live-testing findings: too small → audio
+    # cutouts; too large → filter changes only become audible after BOTH
+    # buffers drain (frameBuffer + NAS send buffer ≈ filter latency).
+    # 400+2000 ≈ 2.4s filter response; raise if cutouts return.
+    bufferDurationMs: 400
+    frameBufferDurationMs: 2000
+    opusEncodingQuality: 10
+    resamplingQuality: MEDIUM
+    useSeekGhosting: true
+    # 1s so the bot learns voice-connected state quickly (gates track start)
+    # and /nowplaying progress stays accurate.
+    playerUpdateInterval: 1
+
+plugins:
+  youtube:
+    enabled: true
+    # Client mix for playback without OAuth (first match wins). WEB/WEBEMBEDDED
+    # often hit the poToken wall; ANDROID_VR/IOS/MWEB usually stream fine
+    # unauthenticated. If YouTube starts demanding auth, add oauth/pot config
+    # here (see youtube-source README).
+    clients:
+      - MUSIC
+      - ANDROID_VR
+      - IOS
+      - MWEB
+      - WEB
+      - WEBEMBEDDED
+
+logging:
+  level:
+    root: INFO
+    lavalink: INFO

@@ -113,3 +113,6 @@ cookies.txt
 PackSite/
 
 .claude/
+# Go build artifacts
+packbot.exe
+packbot
