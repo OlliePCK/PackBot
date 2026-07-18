@@ -102,6 +102,7 @@ func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
 	user.RefreshToken = tokens.RefreshToken
 	user.Guilds = guilds
 	sess.user = user
+	s.sessions.persist(sess)
 
 	s.log.Info("user authenticated via OAuth", "userId", user.ID, "username", user.Username)
 	s.frontendRedirect(w, r, "/dashboard")

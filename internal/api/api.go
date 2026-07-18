@@ -49,7 +49,7 @@ func New(cfg config.API, store *storage.Store, discord *discordgo.Session, yt *y
 		store:     store,
 		discord:   discord,
 		yt:        yt,
-		sessions:  newSessionStore(),
+		sessions:  newSessionStore(store),
 		music:     musicManager,
 		ws:        newWSHub(),
 		startedAt: time.Now(),

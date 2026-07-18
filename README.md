@@ -69,11 +69,10 @@ Set `REGISTER_COMMANDS=true` with a `DEV_GUILD_ID` on first run against a
 dev Discord application (guild-scoped registration propagates instantly).
 
 ### Database setup
-Apply `database/schema.sql` for a fresh install, or the numbered files in
-`database/migrations/` incrementally — e.g.:
-```sh
-mariadb -u user -p dbname < database/schema.sql
-```
+Point the bot at an empty database — it applies the numbered migrations in
+`database/migrations/` automatically at startup (they're embedded in the
+binary and tracked in a `SchemaMigrations` table). `database/schema.sql`
+remains as a point-in-time reference of the full schema.
 
 ### Docker
 ```sh

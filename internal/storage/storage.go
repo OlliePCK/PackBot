@@ -19,7 +19,8 @@ import (
 
 // Store wraps the connection pool and all repository methods.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	cfg config.MySQL // kept for Migrate's separate multiStatements connection
 
 	guildCache guildCache
 }
@@ -46,7 +47,7 @@ func Open(cfg config.MySQL) (*Store, error) {
 		return nil, fmt.Errorf("storage: ping %s:%s/%s: %w", cfg.Host, cfg.Port, cfg.DB, err)
 	}
 
-	return &Store{db: db, guildCache: newGuildCache()}, nil
+	return &Store{db: db, cfg: cfg, guildCache: newGuildCache()}, nil
 }
 
 // Close releases the connection pool.

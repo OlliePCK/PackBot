@@ -52,6 +52,12 @@ func run() error {
 	}
 	defer store.Close()
 
+	// Schema migrations apply at startup (embedded SQL, tracked in
+	// SchemaMigrations). Failing fast beats running on a half-migrated schema.
+	if err := store.Migrate(ctx); err != nil {
+		return err
+	}
+
 	// The discordgo session is created here so it can be injected into both
 	// the music manager and the bot (explicit dependency wiring).
 	session, err := discordgo.New("Bot " + cfg.Token)

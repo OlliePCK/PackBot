@@ -4,9 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/OlliePCK/packbot/internal/storage"
 )
 
 // Session lifetime and cookie name. Session IDs are 32 random bytes, so
@@ -46,13 +50,19 @@ type session struct {
 	expiresAt  time.Time
 }
 
+// sessionStore keeps sessions in memory with the authenticated ones written
+// through to the Sessions table, so dashboard logins survive bot restarts
+// (previously memory-only — every deploy logged everyone out). Pre-OAuth
+// sessions (just a CSRF state) stay memory-only; losing one mid-login merely
+// means clicking "Login" again.
 type sessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*session
+	store    *storage.Store // nil disables persistence (tests)
 }
 
-func newSessionStore() *sessionStore {
-	return &sessionStore{sessions: make(map[string]*session)}
+func newSessionStore(store *storage.Store) *sessionStore {
+	return &sessionStore{sessions: make(map[string]*session), store: store}
 }
 
 func randomHex(bytes int) string {
@@ -78,16 +88,71 @@ func (st *sessionStore) get(id string) *session {
 	st.mu.RLock()
 	sess, ok := st.sessions[id]
 	st.mu.RUnlock()
-	if !ok || time.Now().After(sess.expiresAt) {
+	if ok {
+		if time.Now().After(sess.expiresAt) {
+			return nil
+		}
+		return sess
+	}
+	return st.rehydrate(id)
+}
+
+// rehydrate restores a persisted session after a restart (memory miss).
+func (st *sessionStore) rehydrate(id string) *session {
+	if st.store == nil || len(id) != 64 {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	data, expiresAt, err := st.store.LoadSession(ctx, id)
+	if err != nil {
+		if err != storage.ErrSessionNotFound {
+			slog.Error("failed to load persisted session", "error", err)
+		}
+		return nil
+	}
+	var user SessionUser
+	if err := json.Unmarshal(data, &user); err != nil {
+		slog.Error("corrupt persisted session, discarding", "error", err)
+		_ = st.store.DeleteSession(ctx, id)
+		return nil
+	}
+	sess := &session{id: id, user: &user, expiresAt: expiresAt}
+	st.mu.Lock()
+	st.sessions[id] = sess
+	st.mu.Unlock()
 	return sess
+}
+
+// persist writes an authenticated session through to the database. Call
+// after attaching the user.
+func (st *sessionStore) persist(sess *session) {
+	if st.store == nil || sess.user == nil {
+		return
+	}
+	data, err := json.Marshal(sess.user)
+	if err != nil {
+		slog.Error("failed to serialize session", "error", err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := st.store.SaveSession(ctx, sess.id, sess.user.ID, data, sess.expiresAt); err != nil {
+		slog.Error("failed to persist session", "error", err)
+	}
 }
 
 func (st *sessionStore) destroy(id string) {
 	st.mu.Lock()
 	delete(st.sessions, id)
 	st.mu.Unlock()
+	if st.store != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := st.store.DeleteSession(ctx, id); err != nil {
+			slog.Error("failed to delete persisted session", "error", err)
+		}
+	}
 }
 
 func (st *sessionStore) cleanupLoop(ctx context.Context) {
@@ -106,6 +171,11 @@ func (st *sessionStore) cleanupLoop(ctx context.Context) {
 				}
 			}
 			st.mu.Unlock()
+			if st.store != nil {
+				if _, err := st.store.DeleteExpiredSessions(ctx); err != nil {
+					slog.Error("failed to prune expired sessions", "error", err)
+				}
+			}
 		}
 	}
 }
