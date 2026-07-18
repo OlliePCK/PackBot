@@ -39,6 +39,16 @@ E2EE voice requirement is satisfied by Lavalink.
 - `YOUTUBE_API_KEY` — scored Spotify→YouTube matching fallback, `/youtube`
   command, upload-notifications job (optional; features degrade gracefully).
 
+## AFL predictions
+
+- `AFL_API_URL` — base URL of the AFL prediction model's dashboard (e.g.
+  `http://192.168.1.16:3002`); the bot reads its `/api/predictions` route.
+  Empty disables `/tips`, the weekly round-preview post (Thursday 19:00
+  Sydney, after the model's post-team-announcement refresh), and the
+  5-minutes-before-kickoff pings. Guilds opt in with
+  `/settings set-afl-channel`; club-logo application emojis self-sync on
+  startup.
+
 ## Web API
 
 - `ENABLE_API` — default `true`; `false` disables the whole web API.

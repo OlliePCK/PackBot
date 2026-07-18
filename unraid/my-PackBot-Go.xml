@@ -32,6 +32,7 @@
 
   <Config Name="LAVALINK_ADDRESS" Target="LAVALINK_ADDRESS" Default="localhost:2333" Mode="" Description="Lavalink node address (empty disables music)" Type="Variable" Display="always" Required="false" Mask="false">localhost:2333</Config>
   <Config Name="LAVALINK_PASSWORD" Target="LAVALINK_PASSWORD" Default="" Mode="" Description="Lavalink node password" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="AFL_API_URL" Target="AFL_API_URL" Default="" Mode="" Description="AFL prediction dashboard base URL (empty disables /tips and AFL announcements)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="SPOTIFY_CLIENT_ID" Target="SPOTIFY_CLIENT_ID" Default="" Mode="" Description="Spotify client ID (link resolution + search enrichment)" Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="SPOTIFY_CLIENT_SECRET" Target="SPOTIFY_CLIENT_SECRET" Default="" Mode="" Description="Spotify client secret" Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="YOUTUBE_API_KEY" Target="YOUTUBE_API_KEY" Default="" Mode="" Description="YouTube Data API key (scored matching, /youtube, upload notifications)" Type="Variable" Display="always" Required="false" Mask="true"></Config>
