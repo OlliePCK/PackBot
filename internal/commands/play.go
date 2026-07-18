@@ -114,7 +114,7 @@ func playQuery(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.I
 			embed.URL = playlistInfo.URL
 		}
 		if playlistInfo.Thumbnail != "" {
-			embed.Image = &discordgo.MessageEmbedImage{URL: playlistInfo.Thumbnail}
+			embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: playlistInfo.Thumbnail}
 		}
 		return Respond(s, i, embed)
 	}

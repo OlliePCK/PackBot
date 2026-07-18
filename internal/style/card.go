@@ -79,19 +79,29 @@ func fromEmbed(e *discordgo.MessageEmbed, budget *int) discordgo.MessageComponen
 		head = append(head, sanitizeMaskedLinks(e.Description))
 	}
 	headText := takeText(strings.Join(head, "\n"), budget)
-	if headText != "" {
-		if e.Thumbnail != nil && e.Thumbnail.URL != "" {
-			children = append(children, discordgo.Section{
-				Components: []discordgo.MessageComponent{discordgo.TextDisplay{Content: headText}},
-				Accessory:  discordgo.Thumbnail{Media: discordgo.UnfurledMediaItem{URL: e.Thumbnail.URL}},
-			})
-		} else {
+	fieldsText := takeText(sanitizeMaskedLinks(renderFields(e.Fields)), budget)
+
+	// With a thumbnail, head AND fields share the Section (up to 3 text
+	// blocks) so the text column fills the space beside the artwork — a
+	// title-only section leaves a mostly-empty row at thumbnail height.
+	if e.Thumbnail != nil && e.Thumbnail.URL != "" && (headText != "" || fieldsText != "") {
+		var texts []discordgo.MessageComponent
+		for _, t := range []string{headText, fieldsText} {
+			if t != "" {
+				texts = append(texts, discordgo.TextDisplay{Content: t})
+			}
+		}
+		children = append(children, discordgo.Section{
+			Components: texts,
+			Accessory:  discordgo.Thumbnail{Media: discordgo.UnfurledMediaItem{URL: e.Thumbnail.URL}},
+		})
+	} else {
+		if headText != "" {
 			children = append(children, discordgo.TextDisplay{Content: headText})
 		}
-	}
-
-	if fieldsText := takeText(sanitizeMaskedLinks(renderFields(e.Fields)), budget); fieldsText != "" {
-		children = append(children, discordgo.TextDisplay{Content: fieldsText})
+		if fieldsText != "" {
+			children = append(children, discordgo.TextDisplay{Content: fieldsText})
+		}
 	}
 
 	if e.Image != nil && e.Image.URL != "" {
@@ -102,8 +112,11 @@ func fromEmbed(e *discordgo.MessageEmbed, budget *int) discordgo.MessageComponen
 
 	// Footer + timestamp → subtext; timestamps upgrade to live-updating
 	// relative form ("Ends · in 4 minutes" counts down, unlike embeds).
+	// The bare brand footer is dropped: Discord already shows the app name
+	// on every message, and the divider+subtext just bulked out small cards
+	// (live styling feedback). Footers carrying real info still render.
 	foot := ""
-	if e.Footer != nil {
+	if e.Footer != nil && !(e.Footer.Text == FooterText && e.Timestamp == "") {
 		foot = e.Footer.Text
 	}
 	if e.Timestamp != "" {

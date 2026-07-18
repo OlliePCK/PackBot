@@ -106,6 +106,9 @@ func TestFromEmbedThumbnailBecomesSection(t *testing.T) {
 	e := &discordgo.MessageEmbed{
 		Title:     "T",
 		Thumbnail: &discordgo.MessageEmbedThumbnail{URL: "https://img"},
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "Duration", Value: "`3:11`", Inline: true},
+		},
 	}
 	cont := container(t, FromEmbeds(e)[0])
 	sec, ok := cont.Components[0].(discordgo.Section)
@@ -115,6 +118,38 @@ func TestFromEmbedThumbnailBecomesSection(t *testing.T) {
 	thumb, ok := sec.Accessory.(discordgo.Thumbnail)
 	if !ok || thumb.Media.URL != "https://img" {
 		t.Errorf("thumbnail accessory wrong: %+v", sec.Accessory)
+	}
+	// Fields share the section so text fills the space beside the artwork.
+	if len(sec.Components) != 2 {
+		t.Fatalf("section should hold head + fields, got %d blocks", len(sec.Components))
+	}
+	if got := textOf(t, sec.Components[1]); !strings.Contains(got, "**Duration**") {
+		t.Errorf("fields not inside section: %q", got)
+	}
+	if len(cont.Components) != 1 {
+		t.Errorf("no blocks should trail the section, got %d", len(cont.Components))
+	}
+}
+
+func TestBrandFooterSuppressed(t *testing.T) {
+	tests := []struct {
+		name       string
+		footer     *discordgo.MessageEmbedFooter
+		timestamp  string
+		wantFooter bool
+	}{
+		{"bare brand footer dropped", &discordgo.MessageEmbedFooter{Text: FooterText}, "", false},
+		{"informative footer kept", &discordgo.MessageEmbedFooter{Text: "Page 1/3"}, "", true},
+		{"brand footer with timestamp kept", &discordgo.MessageEmbedFooter{Text: FooterText}, time.Now().Format(time.RFC3339), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &discordgo.MessageEmbed{Description: "x", Footer: tt.footer, Timestamp: tt.timestamp}
+			got := strings.Contains(allText(t, FromEmbeds(e)), "-# ")
+			if got != tt.wantFooter {
+				t.Errorf("footer rendered = %v, want %v", got, tt.wantFooter)
+			}
+		})
 	}
 }
 

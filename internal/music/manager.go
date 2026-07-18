@@ -579,7 +579,9 @@ func (m *Manager) onTrackStart(player disgolink.Player, event lavalink.TrackStar
 		{Name: "Loop", Value: loop, Inline: true},
 	}
 	if current.Thumbnail != "" {
-		embed.Image = &discordgo.MessageEmbedImage{URL: current.Thumbnail}
+		// Thumbnail, not full-width image: V2 galleries dominate the card,
+		// and the artwork belongs beside the text (live styling feedback).
+		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: current.Thumbnail}
 	}
 	m.sendText(gp, embed)
 
