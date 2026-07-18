@@ -126,6 +126,15 @@ func TestFromEmbedThumbnailBecomesSection(t *testing.T) {
 	if got := textOf(t, sec.Components[1]); !strings.Contains(got, "**Duration**") {
 		t.Errorf("fields not inside section: %q", got)
 	}
+	// Beside a thumbnail, inline fields stack one per line instead of
+	// joining with dots (uses the artwork's vertical space).
+	e.Fields = append(e.Fields, &discordgo.MessageEmbedField{Name: "Requested by", Value: "@Ollie", Inline: true})
+	cont = container(t, FromEmbeds(e)[0])
+	sec = cont.Components[0].(discordgo.Section)
+	stacked := textOf(t, sec.Components[1])
+	if strings.Contains(stacked, " · ") || !strings.Contains(stacked, "\n") {
+		t.Errorf("thumbnail fields should stack vertically, got %q", stacked)
+	}
 	if len(cont.Components) != 1 {
 		t.Errorf("no blocks should trail the section, got %d", len(cont.Components))
 	}

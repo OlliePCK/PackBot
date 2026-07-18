@@ -79,12 +79,15 @@ func fromEmbed(e *discordgo.MessageEmbed, budget *int) discordgo.MessageComponen
 		head = append(head, sanitizeMaskedLinks(e.Description))
 	}
 	headText := takeText(strings.Join(head, "\n"), budget)
-	fieldsText := takeText(sanitizeMaskedLinks(renderFields(e.Fields)), budget)
+	hasThumb := e.Thumbnail != nil && e.Thumbnail.URL != ""
+	// Beside a thumbnail, fields stack one per line to spend the artwork's
+	// height; full-width cards join inline runs three-up like the embed grid.
+	fieldsText := takeText(sanitizeMaskedLinks(renderFields(e.Fields, hasThumb)), budget)
 
 	// With a thumbnail, head AND fields share the Section (up to 3 text
 	// blocks) so the text column fills the space beside the artwork — a
 	// title-only section leaves a mostly-empty row at thumbnail height.
-	if e.Thumbnail != nil && e.Thumbnail.URL != "" && (headText != "" || fieldsText != "") {
+	if hasThumb && (headText != "" || fieldsText != "") {
 		var texts []discordgo.MessageComponent
 		for _, t := range []string{headText, fieldsText} {
 			if t != "" {
@@ -144,9 +147,15 @@ func fromEmbed(e *discordgo.MessageEmbed, budget *int) discordgo.MessageComponen
 	return discordgo.Container{AccentColor: &accent, Components: children}
 }
 
-// renderFields lays fields out as text: consecutive inline fields join on one
-// line (up to 3, echoing the embed grid), block fields get name-over-value.
-func renderFields(fields []*discordgo.MessageEmbedField) string {
+// renderFields lays fields out as text. stacked puts every inline field on
+// its own line (for thumbnail sections, filling the artwork's height);
+// otherwise consecutive inline fields join up to 3 per line, echoing the
+// embed grid. Block (multiline/non-inline) fields get name-over-value.
+func renderFields(fields []*discordgo.MessageEmbedField, stacked bool) string {
+	perLine := 3
+	if stacked {
+		perLine = 1
+	}
 	var lines []string
 	var run []string
 	flush := func() {
@@ -161,7 +170,7 @@ func renderFields(fields []*discordgo.MessageEmbedField) string {
 		}
 		if f.Inline && !strings.Contains(f.Value, "\n") {
 			run = append(run, fmt.Sprintf("**%s** %s", f.Name, f.Value))
-			if len(run) == 3 {
+			if len(run) == perLine {
 				flush()
 			}
 			continue
