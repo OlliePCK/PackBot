@@ -24,6 +24,7 @@ var settingsSetters = map[string]settingsSetter{
 	"set-live-channel":    {option: "live-channel", column: "liveChannelID", title: "Set live channel!", fieldName: "Channel"},
 	"set-general-channel": {option: "general-channel", column: "generalChannelID", title: "Set general channel!", fieldName: "Channel"},
 	"set-youtube-channel": {option: "youtube-channel", column: "youtubeChannelID", title: "Set YouTube channel!", fieldName: "Channel"},
+	"set-afl-channel":     {option: "afl-channel", column: "aflChannelID", title: "Set AFL tips channel!", fieldName: "Channel"},
 }
 
 // Settings is /settings — admin-only, ephemeral guild configuration.
@@ -58,6 +59,7 @@ func Settings(d Deps) *Command {
 				channelSub("set-live-channel", "Channel for live notifications", "live-channel"),
 				channelSub("set-general-channel", "Channel for general notifications", "general-channel"),
 				channelSub("set-youtube-channel", "Channel for YouTube notifications", "youtube-channel"),
+				channelSub("set-afl-channel", "Channel for AFL model tips and kickoff pings", "afl-channel"),
 				{Type: discordgo.ApplicationCommandOptionSubCommand, Name: "info", Description: "View current settings"},
 				{Type: discordgo.ApplicationCommandOptionSubCommand, Name: "toggle-247", Description: "Toggle 24/7 mode (bot stays in voice channel when alone)"},
 			},
@@ -92,6 +94,7 @@ func Settings(d Deps) *Command {
 						{Name: "Live Channel", Value: display(profile.LiveChannelID, "<#%s>"), Inline: true},
 						{Name: "General Chan", Value: display(profile.GeneralChannelID, "<#%s>"), Inline: true},
 						{Name: "YouTube Chan", Value: display(profile.YouTubeChannelID, "<#%s>"), Inline: true},
+						{Name: "AFL Channel", Value: display(profile.AflChannelID, "<#%s>"), Inline: true},
 						{Name: "24/7 Mode", Value: mode, Inline: true},
 					},
 				}

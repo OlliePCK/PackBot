@@ -49,6 +49,10 @@ type Config struct {
 	// Spotify app credentials for track/album/playlist resolution (optional).
 	SpotifyClientID     string // SPOTIFY_CLIENT_ID
 	SpotifyClientSecret string // SPOTIFY_CLIENT_SECRET
+
+	// AFLAPIURL points at the AFL prediction model's dashboard (e.g.
+	// "http://192.168.1.16:3002"). Empty disables /tips and AFL announcements.
+	AFLAPIURL string // AFL_API_URL (optional)
 }
 
 // API configures the web API server (Express + Socket.io in Node).
@@ -145,6 +149,7 @@ func Load() (*Config, error) {
 	cfg.LavalinkPassword = os.Getenv("LAVALINK_PASSWORD")
 	cfg.SpotifyClientID = strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_ID"))
 	cfg.SpotifyClientSecret = strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_SECRET"))
+	cfg.AFLAPIURL = strings.TrimRight(strings.TrimSpace(os.Getenv("AFL_API_URL")), "/")
 
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))
 	if err != nil {

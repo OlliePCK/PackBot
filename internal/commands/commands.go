@@ -12,6 +12,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/OlliePCK/packbot/internal/afl"
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/storage"
 	"github.com/OlliePCK/packbot/internal/style"
@@ -27,6 +28,8 @@ type Deps struct {
 	YouTube *youtube.Client
 	// Music is nil when the Lavalink node is unavailable.
 	Music *music.Manager
+	// AFL is nil when AFL_API_URL is unset; /tips degrades gracefully.
+	AFL *afl.Service
 	// AdminUserID (API_ADMIN_USER_ID) gates owner-only commands (/ytauth).
 	AdminUserID string
 }
@@ -91,6 +94,7 @@ func All(d Deps) []*Command {
 		Queue(d),
 		Filters(d),
 		YTAuth(d),
+		Tips(d),
 	}
 }
 

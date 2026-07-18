@@ -19,6 +19,20 @@ func Send(s *discordgo.Session, channelID, lead string, embeds ...*discordgo.Mes
 	if lead != "" {
 		components = append([]discordgo.MessageComponent{discordgo.TextDisplay{Content: lead}}, components...)
 	}
+	msg, err := SendComponents(s, channelID, components)
+	if err == nil {
+		return msg, nil
+	}
+	slog.Warn("V2 send rejected, falling back to embeds", "channel", channelID, "error", err)
+	return s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
+		Content: lead,
+		Embeds:  embeds,
+	})
+}
+
+// SendComponents posts a hand-composed V2 component tree to a channel (no
+// embed fallback — callers own the layout).
+func SendComponents(s *discordgo.Session, channelID string, components []discordgo.MessageComponent) (*discordgo.Message, error) {
 	payload := struct {
 		Components []discordgo.MessageComponent `json:"components"`
 		Flags      discordgo.MessageFlags       `json:"flags"`
@@ -26,18 +40,14 @@ func Send(s *discordgo.Session, channelID, lead string, embeds ...*discordgo.Mes
 
 	uri := discordgo.EndpointChannelMessages(channelID)
 	body, err := s.RequestWithBucketID("POST", uri, payload, uri)
-	if err == nil {
-		var msg discordgo.Message
-		if jsonErr := json.Unmarshal(body, &msg); jsonErr != nil {
-			return nil, jsonErr
-		}
-		return &msg, nil
+	if err != nil {
+		return nil, err
 	}
-	slog.Warn("V2 send rejected, falling back to embeds", "channel", channelID, "error", err)
-	return s.ChannelMessageSendComplex(channelID, &discordgo.MessageSend{
-		Content: lead,
-		Embeds:  embeds,
-	})
+	var msg discordgo.Message
+	if err := json.Unmarshal(body, &msg); err != nil {
+		return nil, err
+	}
+	return &msg, nil
 }
 
 // EditCard rewrites an existing message as a V2 card (used by the poll-expiry

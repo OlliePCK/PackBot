@@ -16,6 +16,7 @@ type GuildProfile struct {
 	LiveChannelID       *string
 	GeneralChannelID    *string
 	YouTubeChannelID    *string
+	AflChannelID        *string
 	TwentyFourSevenMode bool
 }
 
@@ -53,9 +54,9 @@ func (s *Store) GuildProfile(ctx context.Context, guildID string) (*GuildProfile
 	p := &GuildProfile{GuildID: guildID}
 	var twentyFourSeven sql.NullBool
 	err := s.db.QueryRowContext(ctx,
-		`SELECT liveRoleID, liveChannelID, generalChannelID, youtubeChannelID, twentyFourSevenMode
+		`SELECT liveRoleID, liveChannelID, generalChannelID, youtubeChannelID, aflChannelID, twentyFourSevenMode
 		   FROM Guilds WHERE guildId = ? LIMIT 1`, guildID).
-		Scan(&p.LiveRoleID, &p.LiveChannelID, &p.GeneralChannelID, &p.YouTubeChannelID, &twentyFourSeven)
+		Scan(&p.LiveRoleID, &p.LiveChannelID, &p.GeneralChannelID, &p.YouTubeChannelID, &p.AflChannelID, &twentyFourSeven)
 	if err != nil {
 		return nil, fmt.Errorf("storage: load guild profile: %w", err)
 	}
@@ -81,7 +82,47 @@ var guildSettingColumns = map[string]bool{
 	"liveChannelID":       true,
 	"generalChannelID":    true,
 	"youtubeChannelID":    true,
+	"aflChannelID":        true,
 	"twentyFourSevenMode": true,
+}
+
+// AflGuild is one guild opted into AFL prediction announcements.
+type AflGuild struct {
+	GuildID   string
+	ChannelID string
+	LastRound string // last round-preview posted ("" if none yet)
+}
+
+// AflGuilds lists every guild with an AFL channel configured. Uncached —
+// the announcer polls once a minute and must see fresh opt-ins.
+func (s *Store) AflGuilds(ctx context.Context) ([]AflGuild, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT guildId, aflChannelID, COALESCE(aflLastRound, '')
+		   FROM Guilds WHERE aflChannelID IS NOT NULL AND aflChannelID != ''`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list afl guilds: %w", err)
+	}
+	defer rows.Close()
+	var out []AflGuild
+	for rows.Next() {
+		var g AflGuild
+		if err := rows.Scan(&g.GuildID, &g.ChannelID, &g.LastRound); err != nil {
+			return nil, fmt.Errorf("storage: scan afl guild: %w", err)
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// SetAflLastRound records the round preview just posted to a guild.
+func (s *Store) SetAflLastRound(ctx context.Context, guildID, round string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE Guilds SET aflLastRound = ? WHERE guildId = ?`, round, guildID)
+	if err != nil {
+		return fmt.Errorf("storage: set afl last round: %w", err)
+	}
+	s.InvalidateGuild(guildID)
+	return nil
 }
 
 // UpdateGuildSetting sets one whitelisted settings column and invalidates the

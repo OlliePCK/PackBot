@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/OlliePCK/packbot/internal/afl"
 	"github.com/OlliePCK/packbot/internal/style"
 )
 
@@ -34,6 +36,14 @@ func main() {
 	// a Section title showed raw [text](url) while a plain TextDisplay didn't).
 	if len(os.Args) > 2 && os.Args[2] == "linktest" {
 		linkTest(s, channelID)
+		return
+	}
+
+	// afl mode: full AFL pipeline against the live model API — emoji sync to
+	// this app, fetch real predictions, post the round preview + one kickoff
+	// ping card. Usage: TOKEN=... styledemo <channelID> afl <appID> <apiURL>
+	if len(os.Args) > 4 && os.Args[2] == "afl" {
+		aflDemo(s, channelID, os.Args[3], os.Args[4])
 		return
 	}
 
@@ -112,6 +122,38 @@ func main() {
 		}
 		fmt.Println("ok:", step.name)
 	}
+}
+
+// aflDemo runs the real AFL pipeline end to end for visual review.
+func aflDemo(s *discordgo.Session, channelID, appID, apiURL string) {
+	svc := afl.New(apiURL, nil)
+	if err := svc.SyncEmojis(s, appID); err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL emoji sync:", err)
+		os.Exit(1)
+	}
+	fmt.Println("ok: club emojis synced")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	matches, err := svc.Predictions(ctx)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL predictions:", err)
+		os.Exit(1)
+	}
+	round, roundMatches := afl.CurrentRound(matches, time.Now())
+	fmt.Printf("ok: %d predictions fetched (%s: %d matches)\n", len(matches), round, len(roundMatches))
+
+	if _, err := style.SendComponents(s, channelID, svc.RoundCards(round, roundMatches)); err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL round preview:", err)
+		os.Exit(1)
+	}
+	fmt.Println("ok: round preview posted")
+
+	if _, err := style.SendComponents(s, channelID, svc.KickoffCard(roundMatches[0])); err != nil {
+		fmt.Fprintln(os.Stderr, "FAIL kickoff card:", err)
+		os.Exit(1)
+	}
+	fmt.Println("ok: kickoff ping card posted")
 }
 
 // linkTest posts variants A–E to pinpoint which combination breaks masked

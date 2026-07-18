@@ -12,6 +12,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
+	"github.com/OlliePCK/packbot/internal/afl"
 	"github.com/OlliePCK/packbot/internal/api"
 	"github.com/OlliePCK/packbot/internal/bot"
 	"github.com/OlliePCK/packbot/internal/commands"
@@ -72,6 +73,20 @@ func run() error {
 
 	deps := commands.Deps{Store: store, YouTube: yt, AdminUserID: cfg.API.AdminUserID}
 	var musicManager *music.Manager
+
+	// AFL predictions: reads the model dashboard on grid; disabled without a URL.
+	if cfg.AFLAPIURL != "" {
+		aflService := afl.New(cfg.AFLAPIURL, store)
+		deps.AFL = aflService
+		go func() {
+			if err := aflService.SyncEmojis(session, cfg.ClientID); err != nil {
+				slog.Error("AFL club emoji sync failed; cards render without logos", "error", err)
+			}
+		}()
+		go aflService.Run(ctx, session)
+	} else {
+		slog.Warn("AFL_API_URL not set; /tips and AFL announcements disabled")
+	}
 
 	// Music runs against a Lavalink node; the node being down disables music
 	// but leaves the rest of the bot up. The bot's user ID comes from a REST
