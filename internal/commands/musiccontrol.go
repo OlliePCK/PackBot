@@ -602,10 +602,15 @@ func Queue(d Deps) *Command {
 			Description: sb.String(),
 			Color:       style.ColorBrand,
 			Footer: &discordgo.MessageEmbedFooter{
-				Text: fmt.Sprintf("Page %d/%d • %d song%s • %s total • Loop: %s",
-					page+1, totalPages, len(snapshot.Queue), plural(len(snapshot.Queue)), duration, snapshot.RepeatMode),
+				Text: fmt.Sprintf("Page %d/%d • %d in queue • %s total • Loop: %s",
+					page+1, totalPages, len(snapshot.Queue), duration, snapshot.RepeatMode),
 				IconURL: style.LogoURL,
 			},
+		}
+		// Current-track art keeps the queue card from being the one bare
+		// music card (styling review).
+		if snapshot.Current != nil && snapshot.Current.Thumbnail != "" {
+			embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: snapshot.Current.Thumbnail}
 		}
 
 		var components []discordgo.MessageComponent

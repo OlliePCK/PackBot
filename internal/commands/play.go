@@ -114,7 +114,7 @@ func playQuery(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.I
 			embed.URL = playlistInfo.URL
 		}
 		if playlistInfo.Thumbnail != "" {
-			embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: playlistInfo.Thumbnail}
+			embed.Image = &discordgo.MessageEmbedImage{URL: playlistInfo.Thumbnail}
 		}
 		return Respond(s, i, embed)
 	}
@@ -128,7 +128,7 @@ func playQuery(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.I
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "Duration", Value: "`" + track.FormattedDuration() + "`", Inline: true},
 			{Name: "Requested by", Value: user.Mention(), Inline: true},
-			{Name: "Position in queue", Value: fmt.Sprintf("%d", queueLen), Inline: true},
+			{Name: "Position in queue", Value: fmt.Sprintf("`%d`", queueLen), Inline: true},
 		},
 	}
 	if track.Thumbnail != "" {
