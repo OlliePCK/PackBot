@@ -14,6 +14,9 @@ RUN go mod download
 
 COPY cmd/ cmd/
 COPY internal/ internal/
+# database/ carries the embedded SQL migrations (database/embed.go's
+# //go:embed); the binary applies them at startup.
+COPY database/ database/
 
 # CGO_ENABLED=0 → fully static binary, safe on distroless/static.
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /packbot ./cmd/packbot
