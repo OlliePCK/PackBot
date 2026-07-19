@@ -53,9 +53,19 @@ type Config struct {
 	ViewerAliases       map[string]string
 	UnknownViewerPolicy UnknownViewerPolicy
 
-	// Channels maps Jellyfin channel item IDs to safe public metadata. Any
-	// channel not present here is ignored.
+	// Channels maps Jellyfin channel item IDs to safe public metadata. When
+	// AllowAllChannels is false, any channel not present here is ignored.
 	Channels map[string]ChannelConfig
+
+	// AllowAllChannels surfaces every active Live TV channel rather than only
+	// the curated ones — the single-connection "the tuner is occupied" alert.
+	// Non-curated channels take their display name from the Jellyfin session
+	// and a generated token-free watch URL, so PublicBaseURL is required.
+	AllowAllChannels bool
+	// PublicBaseURL builds watch URLs for non-curated channels in
+	// AllowAllChannels mode (the same public HTTPS Jellyfin base as the
+	// curated channels' URLs).
+	PublicBaseURL string
 
 	// ConfirmationPolls is the number of consecutive snapshots required before
 	// a new channel lifecycle produces an upsert. It must be at least two.
@@ -125,7 +135,14 @@ func normalizeConfig(cfg Config) (Config, error) {
 	}
 	cfg.ViewerAliases = aliases
 
-	if len(cfg.Channels) == 0 {
+	cfg.PublicBaseURL = strings.TrimSpace(cfg.PublicBaseURL)
+	if cfg.AllowAllChannels {
+		// Every channel needs a generated watch URL, so the public base must
+		// be valid up front rather than failing per-channel at runtime.
+		if _, err := PublicChannelURL(cfg.PublicBaseURL, "validation"); err != nil {
+			return Config{}, fmt.Errorf("media: public base URL is required to allow all channels: %w", err)
+		}
+	} else if len(cfg.Channels) == 0 {
 		return Config{}, fmt.Errorf("media: at least one channel must be allowlisted")
 	}
 	channels := make(map[string]ChannelConfig, len(cfg.Channels))

@@ -67,11 +67,16 @@ media settings disable this integration without stopping the rest of PackBot.
 - `MEDIA_USER_ALIASES_JSON` - JSON object mapping allowlisted Jellyfin user IDs
   to the friendly names shown in Discord. Unknown users are ignored.
   Example: `{"stable-user-id":"Ollie"}`.
-- `MEDIA_CHANNELS_JSON` - JSON object mapping allowlisted Jellyfin channel IDs
-  to safe display names. Other channels are ignored. Example:
-  `{"stable-channel-id":"Fox Sports 503"}`.
-- `MEDIA_AFL_CHANNEL_IDS` - comma-separated, ordered subset of the channel-map
-  keys used for AFL guide matching; the first matching channel wins.
+- `MEDIA_CHANNELS_JSON` - JSON object mapping Jellyfin channel IDs to safe
+  display names. **Leave it empty (`{}`) to surface every Live TV channel** —
+  the intended mode when the provider has a single connection, so any viewing
+  means the tuner is occupied. A non-empty map instead restricts cards to those
+  channels and gives them curated names; other channels are then ignored.
+  Uncurated channels use the Jellyfin session's own channel name.
+  Example: `{"stable-channel-id":"Fox Sports 503"}`.
+- `MEDIA_AFL_CHANNEL_IDS` - comma-separated, ordered Jellyfin channel IDs used
+  for AFL guide matching; the first matching channel wins. When
+  `MEDIA_CHANNELS_JSON` is non-empty these must be a subset of it.
 - `MEDIA_POLL_INTERVAL` - Jellyfin session poll interval (default `15s`,
   minimum `5s`).
 - `MEDIA_ANNOUNCE_DELAY` - required continuous viewing before a new card is

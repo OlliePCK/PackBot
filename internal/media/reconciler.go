@@ -140,11 +140,34 @@ type channelGroup struct {
 	programs map[programChoice]int
 }
 
+// resolveChannel returns the public metadata for a channel: the curated entry
+// when one exists, otherwise (in AllowAllChannels mode) metadata derived from
+// the Jellyfin session itself — the raw channel name and a generated token-
+// free watch URL. Returns ok=false when the channel must be ignored.
+func (r *Reconciler) resolveChannel(channelID string, session LiveTVSession) (ChannelConfig, bool) {
+	if channel, ok := r.cfg.Channels[channelID]; ok {
+		return channel, true
+	}
+	if !r.cfg.AllowAllChannels {
+		return ChannelConfig{}, false
+	}
+	name := cleanText(session.ChannelName)
+	if name == "" {
+		name = "Live TV"
+	}
+	watchURL := ""
+	if built, err := PublicChannelURL(r.cfg.PublicBaseURL, channelID); err == nil {
+		watchURL = built // absent URL just drops the button; occupancy still shows
+	}
+	return ChannelConfig{DisplayName: name, WatchURL: watchURL}, true
+}
+
 func (r *Reconciler) groupSessions(now time.Time, sessions []LiveTVSession) map[string]ChannelView {
 	groups := make(map[string]*channelGroup)
+	meta := make(map[string]ChannelConfig)
 	for _, session := range sessions {
 		channelID := canonicalJellyfinID(session.ChannelID)
-		channel, allowed := r.cfg.Channels[channelID]
+		channel, allowed := r.resolveChannel(channelID, session)
 		if !allowed {
 			continue
 		}
@@ -170,6 +193,7 @@ func (r *Reconciler) groupSessions(now time.Time, sessions []LiveTVSession) map[
 				programs: make(map[programChoice]int),
 			}
 			groups[channelID] = group
+			meta[channelID] = channel
 		}
 		group.viewers[viewerID] = alias
 		choice := programChoice{
@@ -177,13 +201,11 @@ func (r *Reconciler) groupSessions(now time.Time, sessions []LiveTVSession) map[
 			name: cleanText(session.ProgramName),
 		}
 		group.programs[choice]++
-
-		_ = channel // used while constructing the public view below
 	}
 
 	views := make(map[string]ChannelView, len(groups))
 	for channelID, group := range groups {
-		channel := r.cfg.Channels[channelID]
+		channel := meta[channelID]
 		viewers := make([]string, 0, len(group.viewers))
 		for _, alias := range group.viewers {
 			viewers = append(viewers, alias)

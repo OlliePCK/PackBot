@@ -85,20 +85,20 @@ func loadMedia() Media {
 		media.ValidationError = err
 		return media
 	}
-	if len(media.Channels) == 0 {
-		media.ValidationError = fmt.Errorf(
-			"config: MEDIA_CHANNELS_JSON must allowlist at least one Jellyfin channel",
-		)
-		return media
-	}
+	// An empty MEDIA_CHANNELS_JSON surfaces ALL Live TV channels — the
+	// single-connection occupancy alert. A non-empty map restricts to those
+	// channels and supplies curated display names (and then the AFL channels
+	// must be within it).
 	for index, channelID := range media.AFLChannelIDs {
 		channelID = canonicalJellyfinConfigID(channelID)
 		media.AFLChannelIDs[index] = channelID
-		if _, ok := media.Channels[channelID]; !ok {
-			media.ValidationError = fmt.Errorf(
-				"config: MEDIA_AFL_CHANNEL_IDS contains a channel not present in MEDIA_CHANNELS_JSON",
-			)
-			return media
+		if len(media.Channels) > 0 {
+			if _, ok := media.Channels[channelID]; !ok {
+				media.ValidationError = fmt.Errorf(
+					"config: MEDIA_AFL_CHANNEL_IDS contains a channel not present in MEDIA_CHANNELS_JSON",
+				)
+				return media
+			}
 		}
 	}
 	return media

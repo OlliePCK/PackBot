@@ -148,7 +148,8 @@ func (s *Service) restore(ctx context.Context) error {
 			continue
 		}
 
-		_, allowed := s.cfg.Channels[channelID]
+		_, curated := s.cfg.Channels[channelID]
+		allowed := curated || s.cfg.AllowAllChannels
 		if card.Status == storage.MediaCardActive && !allowed {
 			if card.DiscordMessageID != "" {
 				if err := s.messenger.Delete(card.DiscordChannelID, card.DiscordMessageID); err != nil {

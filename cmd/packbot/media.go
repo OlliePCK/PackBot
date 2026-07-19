@@ -129,6 +129,8 @@ func startMediaIntegration(
 		ViewerAliases:        cfg.ViewerAliases,
 		UnknownViewerPolicy:  media.IgnoreUnknownViewers,
 		Channels:             channels,
+		AllowAllChannels:     len(cfg.Channels) == 0,
+		PublicBaseURL:        cfg.JellyfinPublicURL,
 		ConfirmationPolls:    confirmationPolls(cfg.AnnounceDelay, cfg.PollInterval),
 		EndAfterMissingPolls: missingPolls(cfg.StopGrace, cfg.PollInterval),
 	}, cfg.PollInterval, jellyfin, store, session)

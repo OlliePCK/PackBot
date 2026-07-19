@@ -46,6 +46,37 @@ func TestLoadMediaValidAndCanonical(t *testing.T) {
 	}
 }
 
+func TestLoadMediaAllChannelsWhenAllowlistEmpty(t *testing.T) {
+	setRequiredConfig(t)
+	// No MEDIA_CHANNELS_JSON = surface every channel (occupancy alert). AFL
+	// channels no longer have to appear in an allowlist that isn't there.
+	for name, value := range map[string]string{
+		"MEDIA_ENABLED":           "true",
+		"MEDIA_GUILD_ID":          "773732791585865769",
+		"JELLYFIN_URL":            "http://binhex-jellyfin:8096",
+		"JELLYFIN_PUBLIC_URL":     "https://jellyfin.example",
+		"JELLYFIN_API_KEY":        "secret-not-logged",
+		"MEDIA_USER_ALIASES_JSON": `{"AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE":"Ollie"}`,
+		"MEDIA_AFL_CHANNEL_IDS":   "1427888D-1CDC-DCD3-57DC-9E3B398696F4",
+	} {
+		t.Setenv(name, value)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Media.ValidationError != nil {
+		t.Fatalf("empty channel allowlist should be valid: %v", cfg.Media.ValidationError)
+	}
+	if len(cfg.Media.Channels) != 0 {
+		t.Errorf("channels = %#v, want empty (all channels)", cfg.Media.Channels)
+	}
+	if len(cfg.Media.AFLChannelIDs) != 1 {
+		t.Errorf("AFL channel IDs = %#v, want one accepted without an allowlist", cfg.Media.AFLChannelIDs)
+	}
+}
+
 func TestInvalidMediaConfigDoesNotTakeDownBot(t *testing.T) {
 	setRequiredConfig(t)
 	t.Setenv("MEDIA_ENABLED", "true")
