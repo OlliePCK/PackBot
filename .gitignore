@@ -17,3 +17,7 @@ node_modules/
 cookies.txt
 logs/
 *.log
+
+# Codex scratch patches and stray build binaries (never commit)
+.codex_*.patch
+/styledemo.exe

@@ -79,17 +79,17 @@ func run() error {
 
 	deps := commands.Deps{Store: store, YouTube: yt, AdminUserID: cfg.API.AdminUserID}
 	var musicManager *music.Manager
+	var aflService *afl.Service
 
 	// AFL predictions: reads the model dashboard on grid; disabled without a URL.
 	if cfg.AFLAPIURL != "" {
-		aflService := afl.New(cfg.AFLAPIURL, store)
+		aflService = afl.New(cfg.AFLAPIURL, store)
 		deps.AFL = aflService
 		go func() {
 			if err := aflService.SyncEmojis(session, cfg.ClientID); err != nil {
 				slog.Error("AFL club emoji sync failed; cards render without logos", "error", err)
 			}
 		}()
-		go aflService.Run(ctx, session)
 	} else {
 		slog.Warn("AFL_API_URL not set; /tips and AFL announcements disabled")
 	}
@@ -122,6 +122,13 @@ func run() error {
 	b, err := bot.New(cfg, session, deps)
 	if err != nil {
 		return err
+	}
+
+	if err := startMediaIntegration(ctx, cfg.Media, store, session, aflService); err != nil {
+		slog.Error("Jellyfin media integration disabled", "error", err)
+	}
+	if aflService != nil {
+		go aflService.Run(ctx, session)
 	}
 
 	// Background jobs run until ctx is cancelled; they only use REST calls,

@@ -40,6 +40,8 @@ including bassboost, nightcore, vaporwave, 8D, slowed + reverb, and earrape.
 - `/birthday` — birthday reminders (09:00 Melbourne time).
 - `/poll` — polls with stateful votes that survive restarts.
 - Game-expose (6h+ session callouts) and Discord streaming alerts.
+- Main-guild-only Jellyfin Live TV cards, with privacy allowlists and safe AFL
+  watch/join links on the five-minute reminder.
 - `/settings` — per-guild channels/roles/toggles; `/purge`, `/ping`.
 - `/ytauth` — owner-only (DM) YouTube OAuth token rotation for Lavalink.
 
@@ -56,6 +58,8 @@ now-playing/queue updates. Serves the PackSite dashboard.
   OAuth setup steps are commented inline).
 - MySQL/MariaDB with the schema applied.
 - A Discord application (bot token + OAuth client secret).
+- Optional: Jellyfin Live TV plus a dedicated API key for the private media
+  integration described in [ENVIRONMENT.md](ENVIRONMENT.md).
 
 ### Local development
 ```sh
@@ -90,6 +94,9 @@ Templates in `unraid/`: `my-PackBot-Go.xml` (the bot) and
 and restarting is NOT enough on Unraid — recreate the container (Docker UI
 "apply update", or
 `/usr/local/emhttp/plugins/dynamix.docker.manager/scripts/update_container`).
+Both production templates use the `laserproxy` Docker network. PackBot's
+fresh-install Lavalink address is therefore `PackBot-Lavalink:2333`, and it
+can also resolve Jellyfin and the other media containers by name.
 
 ### PackSite deploy
 The frontend builds locally and ships via scp:

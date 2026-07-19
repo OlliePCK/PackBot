@@ -3,7 +3,7 @@
   <Name>PackBot-Lavalink</Name>
   <Repository>ghcr.io/lavalink-devs/lavalink:4</Repository>
   <Registry>https://ghcr.io/</Registry>
-  <Network>bridge</Network>
+  <Network>laserproxy</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>

@@ -21,10 +21,11 @@ type Service struct {
 	log    *slog.Logger
 	emojis emojiRegistry
 
+	broadcastResolver BroadcastResolver
+
 	mu       sync.Mutex
 	cache    []Match
 	cachedAt time.Time
-	pinged   map[string]bool // game IDs already kickoff-pinged
 }
 
 // New builds the service; baseURL points at the model dashboard.
@@ -34,7 +35,6 @@ func New(baseURL string, store *storage.Store) *Service {
 		store:  store,
 		log:    slog.With("component", "afl"),
 		emojis: emojiRegistry{tags: make(map[string]string)},
-		pinged: make(map[string]bool),
 	}
 }
 
@@ -58,16 +58,6 @@ func (s *Service) Predictions(ctx context.Context) ([]Match, error) {
 	}
 	s.mu.Lock()
 	s.cache, s.cachedAt = matches, time.Now()
-	// Prune ping markers for games no longer in the feed.
-	current := make(map[string]bool, len(matches))
-	for _, m := range matches {
-		current[m.GameID] = true
-	}
-	for id := range s.pinged {
-		if !current[id] {
-			delete(s.pinged, id)
-		}
-	}
 	s.mu.Unlock()
 	return matches, nil
 }
@@ -100,33 +90,8 @@ func (s *Service) Run(ctx context.Context, session *discordgo.Session) {
 			continue
 		}
 
-		s.kickoffPings(session, guilds, matches)
+		s.kickoffPings(ctx, session, guilds, matches)
 		s.weeklyPost(ctx, session, guilds, matches)
-	}
-}
-
-// kickoffPings posts a single-match card when a game starts within 5 minutes.
-func (s *Service) kickoffPings(session *discordgo.Session, guilds []storage.AflGuild, matches []Match) {
-	now := time.Now()
-	for _, m := range matches {
-		until := m.Kickoff.Sub(now)
-		if until <= 0 || until > 5*time.Minute {
-			continue
-		}
-		s.mu.Lock()
-		already := s.pinged[m.GameID]
-		s.pinged[m.GameID] = true
-		s.mu.Unlock()
-		if already {
-			continue
-		}
-		card := s.KickoffCard(m)
-		for _, g := range guilds {
-			if _, err := style.SendComponents(session, g.ChannelID, card); err != nil {
-				s.log.Error("kickoff ping failed", "guild", g.GuildID, "error", err)
-			}
-		}
-		s.log.Info("kickoff ping sent", "match", m.Home+" v "+m.Away, "guilds", len(guilds))
 	}
 }
 

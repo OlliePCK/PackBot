@@ -3,7 +3,7 @@
   <Name>PackBot-Go</Name>
   <Repository>olliepck/packbot-go:latest</Repository>
   <Registry>https://hub.docker.com/</Registry>
-  <Network>host</Network>
+  <Network>laserproxy</Network>
   <MyIP/>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
@@ -20,7 +20,7 @@
   <DateInstalled/>
   <DonateText/>
   <DonateLink/>
-  <Requires>PackBot-Lavalink (for music)</Requires>
+  <Requires>PackBot-Lavalink (music); Jellyfin (optional private Live TV integration)</Requires>
 
   <Config Name="TOKEN" Target="TOKEN" Default="" Mode="" Description="Discord bot token" Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="CLIENT_ID" Target="CLIENT_ID" Default="" Mode="" Description="Discord application client ID" Type="Variable" Display="always" Required="true" Mask="false"></Config>
@@ -30,9 +30,21 @@
   <Config Name="MYSQL_PASSWORD" Target="MYSQL_PASSWORD" Default="" Mode="" Description="MySQL password" Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="MYSQL_DB" Target="MYSQL_DB" Default="packbot" Mode="" Description="MySQL database name" Type="Variable" Display="always" Required="true" Mask="false">packbot</Config>
 
-  <Config Name="LAVALINK_ADDRESS" Target="LAVALINK_ADDRESS" Default="localhost:2333" Mode="" Description="Lavalink node address (empty disables music)" Type="Variable" Display="always" Required="false" Mask="false">localhost:2333</Config>
+  <Config Name="LAVALINK_ADDRESS" Target="LAVALINK_ADDRESS" Default="PackBot-Lavalink:2333" Mode="" Description="Lavalink container address on the shared laserproxy network (empty disables music)" Type="Variable" Display="always" Required="false" Mask="false">PackBot-Lavalink:2333</Config>
   <Config Name="LAVALINK_PASSWORD" Target="LAVALINK_PASSWORD" Default="" Mode="" Description="Lavalink node password" Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="AFL_API_URL" Target="AFL_API_URL" Default="" Mode="" Description="AFL prediction dashboard base URL (empty disables /tips and AFL announcements)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+
+  <Config Name="MEDIA_ENABLED" Target="MEDIA_ENABLED" Default="false" Mode="" Description="Enable main-guild Jellyfin Live TV cards and AFL links" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="MEDIA_GUILD_ID" Target="MEDIA_GUILD_ID" Default="" Mode="" Description="Only Discord guild allowed to receive media output" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="JELLYFIN_URL" Target="JELLYFIN_URL" Default="http://binhex-jellyfin:8096" Mode="" Description="Internal Jellyfin base URL reachable on the Docker network" Type="Variable" Display="advanced" Required="false" Mask="false">http://binhex-jellyfin:8096</Config>
+  <Config Name="JELLYFIN_PUBLIC_URL" Target="JELLYFIN_PUBLIC_URL" Default="https://jellyfin.thepck.com" Mode="" Description="Public HTTPS Jellyfin base URL used by Discord buttons" Type="Variable" Display="advanced" Required="false" Mask="false">https://jellyfin.thepck.com</Config>
+  <Config Name="JELLYFIN_API_KEY" Target="JELLYFIN_API_KEY" Default="" Mode="" Description="Dedicated Jellyfin API key (never placed in Discord links)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
+  <Config Name="MEDIA_USER_ALIASES_JSON" Target="MEDIA_USER_ALIASES_JSON" Default="{}" Mode="" Description="JSON: allowlisted Jellyfin user ID to friendly Discord name" Type="Variable" Display="advanced" Required="false" Mask="true">{}</Config>
+  <Config Name="MEDIA_CHANNELS_JSON" Target="MEDIA_CHANNELS_JSON" Default="{}" Mode="" Description="JSON: allowlisted Jellyfin channel ID to display name" Type="Variable" Display="advanced" Required="false" Mask="false">{}</Config>
+  <Config Name="MEDIA_AFL_CHANNEL_IDS" Target="MEDIA_AFL_CHANNEL_IDS" Default="" Mode="" Description="Ordered comma-separated channel IDs eligible for AFL links" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="MEDIA_POLL_INTERVAL" Target="MEDIA_POLL_INTERVAL" Default="15s" Mode="" Description="Jellyfin session poll interval" Type="Variable" Display="advanced" Required="false" Mask="false">15s</Config>
+  <Config Name="MEDIA_ANNOUNCE_DELAY" Target="MEDIA_ANNOUNCE_DELAY" Default="15s" Mode="" Description="Continuous viewing required before announcing" Type="Variable" Display="advanced" Required="false" Mask="false">15s</Config>
+  <Config Name="MEDIA_STOP_GRACE" Target="MEDIA_STOP_GRACE" Default="30s" Mode="" Description="Missing-session grace before removing a card" Type="Variable" Display="advanced" Required="false" Mask="false">30s</Config>
   <Config Name="SPOTIFY_CLIENT_ID" Target="SPOTIFY_CLIENT_ID" Default="" Mode="" Description="Spotify client ID (link resolution + search enrichment)" Type="Variable" Display="always" Required="false" Mask="false"></Config>
   <Config Name="SPOTIFY_CLIENT_SECRET" Target="SPOTIFY_CLIENT_SECRET" Default="" Mode="" Description="Spotify client secret" Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="YOUTUBE_API_KEY" Target="YOUTUBE_API_KEY" Default="" Mode="" Description="YouTube Data API key (scored matching, /youtube, upload notifications)" Type="Variable" Display="always" Required="false" Mask="true"></Config>
@@ -41,7 +53,7 @@
   <Config Name="DEV_GUILD_ID" Target="DEV_GUILD_ID" Default="" Mode="" Description="Guild-scope command registration (testing only; empty = global)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
 
   <Config Name="ENABLE_API" Target="ENABLE_API" Default="true" Mode="" Description="Enable PackBot web API" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
-  <Config Name="API_PORT" Target="API_PORT" Default="3001" Mode="" Description="API port (host network)" Type="Variable" Display="advanced" Required="false" Mask="false">3001</Config>
+  <Config Name="API_PORT" Target="API_PORT" Default="3001" Mode="" Description="PackBot API container port" Type="Variable" Display="advanced" Required="false" Mask="false">3001</Config>
   <Config Name="NODE_ENV" Target="NODE_ENV" Default="production" Mode="" Description="production enables Secure session cookies" Type="Variable" Display="advanced" Required="false" Mask="false">production</Config>
   <Config Name="CORS_ORIGIN" Target="CORS_ORIGIN" Default="https://thepck.com" Mode="" Description="CORS origin for API requests" Type="Variable" Display="advanced" Required="false" Mask="false">https://thepck.com</Config>
   <Config Name="DISCORD_CLIENT_SECRET" Target="DISCORD_CLIENT_SECRET" Default="" Mode="" Description="Discord OAuth client secret for web login" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>

@@ -4,6 +4,21 @@ Audit of the Node.js codebase at commit `e4aa732`, produced as the feature-parit
 for the Go rewrite. Anything not listed here is not a feature. Items marked **⚠️** at the
 bottom need a decision before porting.
 
+## Post-parity additions (2026-07-19)
+
+- **Private Jellyfin Live TV cards:** PackBot polls Jellyfin sessions and keeps
+  one editable card per allowlisted active channel in the friends guild's
+  configured general channel. Viewer IDs map to explicit public aliases;
+  unknown users and non-allowlisted channels are ignored.
+- **AFL watch links:** the five-minute kickoff card may link to an allowlisted
+  Jellyfin channel when guide data matches both clubs and AFL context. The
+  link is main-guild-only and respects the single upstream connection: join
+  the exact active channel, watch when idle, or omit the link when occupied.
+- **Restart-safe delivery:** AFL announcements and active Live TV cards use
+  durable per-guild delivery records to avoid ordinary restart duplicates.
+- The integration reads Jellyfin directly and does not require Dispatcharr or
+  changes to the existing Notifiarr notification routes.
+
 ## Phase 1 scope decisions (confirmed by Ollie, 2026-07-16)
 
 The Go port targets parity with this inventory **except**:

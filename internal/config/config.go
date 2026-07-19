@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config is the full runtime configuration for the bot process.
@@ -53,6 +54,32 @@ type Config struct {
 	// AFLAPIURL points at the AFL prediction model's dashboard (e.g.
 	// "http://192.168.1.16:3002"). Empty disables /tips and AFL announcements.
 	AFLAPIURL string // AFL_API_URL (optional)
+
+	Media Media
+}
+
+// Media configures the main-guild-only Jellyfin Live TV integration. Invalid
+// media settings disable only this feature rather than taking the whole bot
+// down; ValidationError is logged without exposing the API key.
+type Media struct {
+	Enabled         bool   // MEDIA_ENABLED (default false)
+	GuildID         string // MEDIA_GUILD_ID
+	ValidationError error
+
+	JellyfinURL       string // JELLYFIN_URL (internal base URL)
+	JellyfinPublicURL string // JELLYFIN_PUBLIC_URL (public HTTPS base URL)
+	JellyfinAPIKey    string // JELLYFIN_API_KEY
+
+	// Map keys are stable Jellyfin IDs; values are safe public names.
+	ViewerAliases map[string]string // MEDIA_USER_ALIASES_JSON
+	Channels      map[string]string // MEDIA_CHANNELS_JSON
+
+	// AFLChannelIDs is an ordered, preferred subset of Channels.
+	AFLChannelIDs []string // MEDIA_AFL_CHANNEL_IDS
+
+	PollInterval  time.Duration // MEDIA_POLL_INTERVAL (default 15s)
+	AnnounceDelay time.Duration // MEDIA_ANNOUNCE_DELAY (default 15s)
+	StopGrace     time.Duration // MEDIA_STOP_GRACE (default 30s)
 }
 
 // API configures the web API server (Express + Socket.io in Node).
@@ -151,6 +178,7 @@ func Load() (*Config, error) {
 	cfg.SpotifyClientSecret = strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_SECRET"))
 	cfg.AFLAPIURL = strings.TrimRight(strings.TrimSpace(os.Getenv("AFL_API_URL")), "/")
 
+	cfg.Media = loadMedia()
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))
 	if err != nil {
 		return nil, err

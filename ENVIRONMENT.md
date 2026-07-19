@@ -49,6 +49,48 @@ E2EE voice requirement is satisfied by Lavalink.
   `/settings set-afl-channel`; club-logo application emojis self-sync on
   startup.
 
+## Main-guild Jellyfin media
+
+This integration is disabled by default and has no fallback guild. When
+enabled, PackBot reads the main guild's `generalChannelID` (set with
+`/settings set-general-channel`) and refuses to send anywhere else. Invalid
+media settings disable this integration without stopping the rest of PackBot.
+
+- `MEDIA_ENABLED` - `true` enables Live TV cards and optional AFL watch links.
+- `MEDIA_GUILD_ID` - the one friends guild allowed to receive media output.
+- `JELLYFIN_URL` - internal base URL reachable from the PackBot container,
+  for example `http://binhex-jellyfin:8096`.
+- `JELLYFIN_PUBLIC_URL` - public HTTPS base URL used for Discord link buttons.
+  Recipients must already be signed in to Jellyfin; no token is put in links.
+- `JELLYFIN_API_KEY` - dedicated Jellyfin API key. Treat it as a secret and
+  mask it in the container template.
+- `MEDIA_USER_ALIASES_JSON` - JSON object mapping allowlisted Jellyfin user IDs
+  to the friendly names shown in Discord. Unknown users are ignored.
+  Example: `{"stable-user-id":"Ollie"}`.
+- `MEDIA_CHANNELS_JSON` - JSON object mapping allowlisted Jellyfin channel IDs
+  to safe display names. Other channels are ignored. Example:
+  `{"stable-channel-id":"Fox Sports 503"}`.
+- `MEDIA_AFL_CHANNEL_IDS` - comma-separated, ordered subset of the channel-map
+  keys used for AFL guide matching; the first matching channel wins.
+- `MEDIA_POLL_INTERVAL` - Jellyfin session poll interval (default `15s`,
+  minimum `5s`).
+- `MEDIA_ANNOUNCE_DELAY` - required continuous viewing before a new card is
+  sent (default `15s`; at least one poll interval).
+- `MEDIA_STOP_GRACE` - missing-session grace before the card is removed
+  (default `30s`; at least one poll interval).
+
+The bot polls Jellyfin's Sessions and Live TV guide APIs only. It does not
+need Dispatcharr or Notifiarr credentials. AFL links appear only in the main
+guild: `Join on Jellyfin` when that exact channel already owns the single
+upstream slot, `Watch on Jellyfin` when the slot is idle, and no link when a
+different or ambiguous channel state is active.
+
+This is a fail-closed advisory check against Jellyfin's current sessions, not
+an atomic tuner reservation. Jellyfin must be the only playback path that can
+consume the provider connection; direct Dispatcharr/provider playback and a
+state change after the reminder cannot be observed or reserved. Leave
+`MEDIA_AFL_CHANNEL_IDS` empty if other playback paths can consume the slot.
+
 ## Web API
 
 - `ENABLE_API` — default `true`; `false` disables the whole web API.

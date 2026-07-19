@@ -93,7 +93,12 @@ func TestLoad(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// t.Setenv both sets the var and restores it after the test.
 			// Clear the vars Load reads so ambient shell values can't leak in.
-			for _, name := range []string{"TOKEN", "CLIENT_ID", "LOG_LEVEL", "LOG_FORMAT", "REGISTER_COMMANDS", "DEV_GUILD_ID"} {
+			for _, name := range []string{
+				"TOKEN", "CLIENT_ID", "LOG_LEVEL", "LOG_FORMAT", "REGISTER_COMMANDS", "DEV_GUILD_ID",
+				"MEDIA_ENABLED", "MEDIA_GUILD_ID", "JELLYFIN_URL", "JELLYFIN_PUBLIC_URL", "JELLYFIN_API_KEY",
+				"MEDIA_USER_ALIASES_JSON", "MEDIA_CHANNELS_JSON", "MEDIA_AFL_CHANNEL_IDS",
+				"MEDIA_POLL_INTERVAL", "MEDIA_ANNOUNCE_DELAY", "MEDIA_STOP_GRACE",
+			} {
 				t.Setenv(name, "")
 			}
 			// MySQL config is required; give every case a valid baseline so
