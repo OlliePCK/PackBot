@@ -119,6 +119,38 @@ func TestLastThursdayAnnounce(t *testing.T) {
 	}
 }
 
+func TestRoundIsCurrent(t *testing.T) {
+	// Jul 2026: 16=Thu, 20=Mon, 21=Tue, 23=Thu, 24=Fri, 26=Sun, 27=Mon.
+	at := func(d, h, m int) time.Time { return time.Date(2026, 7, d, h, m, 0, 0, sydney) }
+	round20 := []Match{
+		{Round: "Round 20", Kickoff: at(23, 19, 30)},
+		{Round: "Round 20", Kickoff: at(24, 19, 40)},
+		{Round: "Round 20", Kickoff: at(26, 15, 10)},
+	}
+	tests := []struct {
+		name string
+		now  time.Time
+		rm   []Match
+		want bool
+	}{
+		{"thursday 7pm, round imminent", at(23, 19, 2), round20, true},
+		{"friday retry after opener played", at(24, 10, 0), round20, true},
+		// The 2026-07-23 bug: on the prior round's Monday, Round 20 is the
+		// earliest future round but its first game is past this window's end.
+		{"monday of prior window, next round early", at(20, 10, 0), round20, false},
+		{"tuesday — window closed", at(21, 10, 0), round20, false},
+		{"round already fully played out", at(27, 12, 0), round20, false},
+		{"empty", at(23, 19, 2), nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := roundIsCurrent(tt.now, tt.rm); got != tt.want {
+				t.Errorf("roundIsCurrent = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTeamsRegistryComplete(t *testing.T) {
 	if len(Teams) != 18 {
 		t.Fatalf("expected 18 teams, got %d", len(Teams))
