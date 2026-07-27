@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -48,6 +49,10 @@ type Manager struct {
 	authMu        sync.Mutex
 	lastAuthAlert time.Time
 
+	// connected is set once the Lavalink node is live (connectNode retries
+	// until then, so a node that isn't ready at startup doesn't disable music).
+	connected atomic.Bool
+
 	mu     sync.Mutex
 	guilds map[string]*GuildPlayer
 
@@ -79,8 +84,13 @@ type GuildPlayer struct {
 	onChange func()
 }
 
-// NewManager connects to the Lavalink node and wires event listeners.
-func NewManager(ctx context.Context, session *discordgo.Session, store *storage.Store, sp *spotify.Client, yt *youtube.Client, botUserID, address, password, adminUserID string) (*Manager, error) {
+// NewManager creates the music manager and connects to the Lavalink node in
+// the background. It never fails on a node that isn't ready yet: connectNode
+// retries with capped backoff, so a Lavalink that comes up slightly after the
+// bot (e.g. during the weekly backup restart) no longer disables music for the
+// whole process lifetime. Music commands report "still connecting" via
+// Connected() until the node is live.
+func NewManager(ctx context.Context, session *discordgo.Session, store *storage.Store, sp *spotify.Client, yt *youtube.Client, botUserID, address, password, adminUserID string) *Manager {
 	m := &Manager{
 		session:      session,
 		store:        store,
@@ -100,23 +110,51 @@ func NewManager(ctx context.Context, session *discordgo.Session, store *storage.
 		disgolink.WithListenerFunc(m.onTrackStuck),
 	)
 
-	nodeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	_, err := m.client.AddNode(nodeCtx, disgolink.NodeConfig{
-		Name:     "main",
-		Address:  address,
-		Password: password,
-		Secure:   false,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("music: connect lavalink node %s: %w", address, err)
-	}
-	m.log.Info("lavalink node connected", "address", address)
-
 	session.AddHandler(m.onVoiceServerUpdate)
 	session.AddHandler(m.onVoiceStateUpdate)
 
-	return m, nil
+	go m.connectNode(ctx, address, password)
+	return m
+}
+
+// connectNode adds the Lavalink node, retrying with capped backoff until it
+// succeeds or ctx is cancelled. Once added, disgolink handles reconnection if
+// the node later drops.
+func (m *Manager) connectNode(ctx context.Context, address, password string) {
+	backoff := 5 * time.Second
+	for attempt := 1; ; attempt++ {
+		nodeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		_, err := m.client.AddNode(nodeCtx, disgolink.NodeConfig{
+			Name:     "main",
+			Address:  address,
+			Password: password,
+			Secure:   false,
+		})
+		cancel()
+		if err == nil {
+			m.connected.Store(true)
+			m.log.Info("lavalink node connected", "address", address, "attempt", attempt)
+			return
+		}
+		m.log.Warn("lavalink not reachable yet; will retry",
+			"address", address, "attempt", attempt, "error", err, "retry_in", backoff)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < time.Minute {
+			backoff *= 2
+			if backoff > time.Minute {
+				backoff = time.Minute
+			}
+		}
+	}
+}
+
+// Connected reports whether the Lavalink node is live yet.
+func (m *Manager) Connected() bool {
+	return m.connected.Load()
 }
 
 // Guild returns (creating if needed) the guild's player state.

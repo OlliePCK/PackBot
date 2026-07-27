@@ -27,6 +27,10 @@ func requireMusic(d Deps, s *discordgo.Session, i *discordgo.InteractionCreate) 
 		_ = Respond(s, i, style.ErrorEmbed("Music is not configured (Lavalink node unavailable)."))
 		return false
 	}
+	if !d.Music.Connected() {
+		_ = Respond(s, i, style.ErrorEmbed("Music is still connecting to the Lavalink node — try again in a few seconds."))
+		return false
+	}
 	return true
 }
 
