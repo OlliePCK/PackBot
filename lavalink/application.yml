@@ -39,15 +39,28 @@ lavalink:
       rotation: true
       channelMix: true
       lowPass: true
-    # Buffer tuning balances two live-testing findings: too small → audio
-    # cutouts; too large → filter changes only become audible after BOTH
-    # buffers drain (frameBuffer + NAS send buffer ≈ filter latency).
-    # 400+2000 ≈ 2.4s filter response; raise if cutouts return.
+    # frameBufferDurationMs is the cushion between the source (YouTube's CDN,
+    # which throttles and delivers in bursts) and the Opus sender. When it
+    # drains, Lavalink emits null frames and the Discord client's Opus decoder
+    # interpolates to fill them — heard as tempo/pitch warble ("drums slow down
+    # then speed up"), not clean stuttering.
+    #
+    # It was lowered to 2000 during the rewrite purely to make /filters changes
+    # audible sooner, because filter latency ≈ frameBuffer + bufferDurationMs
+    # (already-buffered audio was filtered with the OLD settings and must drain
+    # first). That traded playback smoothness for filter responsiveness and the
+    # warble showed up in live listening, so it's back at Lavalink's default.
+    # The proper way to get instant filters is to flush the buffer with a seek
+    # on filter change (needs useSeekGhosting: false) rather than to starve it.
     bufferDurationMs: 400
-    frameBufferDurationMs: 2000
+    frameBufferDurationMs: 5000
     opusEncodingQuality: 10
     resamplingQuality: MEDIUM
-    useSeekGhosting: true
+    # false so the seek-flush on /filters actually discards stale audio: with
+    # ghosting on, Lavalink keeps draining the old (previously filtered) buffer
+    # to hide the seek gap, which is exactly what we want thrown away. Cost is
+    # a brief blip when toggling a filter or seeking.
+    useSeekGhosting: false
     # 1s so the bot learns voice-connected state quickly (gates track start)
     # and /nowplaying progress stays accurate.
     playerUpdateInterval: 1

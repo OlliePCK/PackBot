@@ -114,8 +114,12 @@ func NewManager(ctx context.Context, session *discordgo.Session, store *storage.
 	session.AddHandler(m.onVoiceStateUpdate)
 
 	go m.connectNode(ctx, address, password)
+	go m.monitorFrameStats(ctx)
 	return m
 }
+
+// nodeName is the single Lavalink node's registered name.
+const nodeName = "main"
 
 // connectNode adds the Lavalink node, retrying with capped backoff until it
 // succeeds or ctx is cancelled. Once added, disgolink handles reconnection if
@@ -125,7 +129,7 @@ func (m *Manager) connectNode(ctx context.Context, address, password string) {
 	for attempt := 1; ; attempt++ {
 		nodeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		_, err := m.client.AddNode(nodeCtx, disgolink.NodeConfig{
-			Name:     "main",
+			Name:     nodeName,
 			Address:  address,
 			Password: password,
 			Secure:   false,
