@@ -70,6 +70,12 @@ type Config struct {
 	MCRCONAddress  string // MC_RCON_ADDRESS (optional, host or host:port)
 	MCRCONPassword string // MC_RCON_PASSWORD (optional)
 
+	// MCWhitelistRoleID is the Discord role that grants Minecraft whitelist
+	// access. Members holding it who have linked an account are whitelisted
+	// automatically, and lose it when the role is removed. Empty means links
+	// record identity only and grant nothing.
+	MCWhitelistRoleID string // MC_WHITELIST_ROLE_ID (optional)
+
 	Media Media
 }
 
@@ -196,6 +202,7 @@ func Load() (*Config, error) {
 	cfg.MCStatusChannelID = strings.TrimSpace(os.Getenv("MC_STATUS_CHANNEL_ID"))
 	cfg.MCRCONAddress = strings.TrimSpace(os.Getenv("MC_RCON_ADDRESS"))
 	cfg.MCRCONPassword = os.Getenv("MC_RCON_PASSWORD")
+	cfg.MCWhitelistRoleID = strings.TrimSpace(os.Getenv("MC_WHITELIST_ROLE_ID"))
 
 	cfg.Media = loadMedia()
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))

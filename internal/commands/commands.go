@@ -13,6 +13,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/OlliePCK/packbot/internal/afl"
+	"github.com/OlliePCK/packbot/internal/mcsync"
 	"github.com/OlliePCK/packbot/internal/minecraft"
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/storage"
@@ -36,6 +37,9 @@ type Deps struct {
 	// RCON is nil unless both MC_RCON_ADDRESS and MC_RCON_PASSWORD are set;
 	// /mc whitelist degrades gracefully.
 	RCON *minecraft.RCON
+	// MCSync is nil unless RCON and MC_WHITELIST_ROLE_ID are both configured;
+	// linking then stores identity without granting access.
+	MCSync *mcsync.Syncer
 	// AdminUserID (API_ADMIN_USER_ID) gates owner-only commands (/ytauth).
 	AdminUserID string
 }

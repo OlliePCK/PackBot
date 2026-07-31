@@ -58,6 +58,10 @@ func New(cfg *config.Config, session *discordgo.Session, deps commands.Deps) (*B
 	session.AddHandler(liveNoti.HandlePresenceUpdate)
 	session.AddHandler(liveNoti.HandleVoiceStateUpdate)
 
+	// Whitelist follows the Minecraft role; no-ops when unconfigured.
+	mcWhitelist := trackers.NewMinecraftWhitelist(deps.MCSync)
+	session.AddHandler(mcWhitelist.HandleGuildMemberUpdate)
+
 	return b, nil
 }
 

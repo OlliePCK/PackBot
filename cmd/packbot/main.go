@@ -19,6 +19,7 @@ import (
 	"github.com/OlliePCK/packbot/internal/config"
 	"github.com/OlliePCK/packbot/internal/jobs"
 	"github.com/OlliePCK/packbot/internal/logging"
+	"github.com/OlliePCK/packbot/internal/mcsync"
 	"github.com/OlliePCK/packbot/internal/minecraft"
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/spotify"
@@ -104,6 +105,11 @@ func run() error {
 	// unencrypted protocol. Kept opt-in and owner-gated at the command layer.
 	if deps.RCON = minecraft.NewRCON(cfg.MCRCONAddress, cfg.MCRCONPassword); deps.RCON == nil {
 		slog.Warn("MC_RCON_ADDRESS/MC_RCON_PASSWORD not set; /mc whitelist disabled")
+	}
+	// Role-driven whitelisting needs RCON *and* a role; without both, /mc link
+	// still records identity for playtime attribution but grants no access.
+	if deps.MCSync = mcsync.New(store, deps.RCON, cfg.MCWhitelistRoleID); deps.MCSync == nil {
+		slog.Warn("MC_WHITELIST_ROLE_ID or RCON not set; role-driven whitelisting disabled")
 	}
 
 	// Music runs against a Lavalink node; the node being down disables music
