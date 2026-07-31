@@ -38,6 +38,8 @@
   <Config Name="MC_RCON_ADDRESS" Target="MC_RCON_ADDRESS" Default="" Mode="" Description="Minecraft RCON host:port for /mc whitelist. MUST be a LAN or tailnet address that is never reachable from the internet (empty disables whitelist management)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="MC_GUILD_ID" Target="MC_GUILD_ID" Default="" Mode="" Description="Restrict /mc to this guild (empty registers it globally)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="MC_MAP_URL" Target="MC_MAP_URL" Default="" Mode="" Description="BlueMap/Dynmap URL shown in /mc status" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="MC_LOG_PATH" Target="MC_LOG_PATH" Default="" Mode="" Description="Path to the Minecraft server latest.log inside this container (needs a read-only bind mount); enables join/leave/advancement/death notifications" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Minecraft logs" Target="/mc-logs" Default="" Mode="ro" Description="Read-only mount of the Minecraft server logs directory" Type="Path" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="MC_RCON_PASSWORD" Target="MC_RCON_PASSWORD" Default="" Mode="" Description="Minecraft RCON password (sent in plaintext over an unencrypted socket)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
 
   <Config Name="MEDIA_ENABLED" Target="MEDIA_ENABLED" Default="false" Mode="" Description="Enable main-guild Jellyfin Live TV cards and AFL links" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
