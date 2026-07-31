@@ -55,6 +55,21 @@ type Config struct {
 	// "http://192.168.1.16:3002"). Empty disables /tips and AFL announcements.
 	AFLAPIURL string // AFL_API_URL (optional)
 
+	// MCAddress is the Minecraft server queried by /mc, as "host" or
+	// "host:port" (port defaults to 25565). Empty disables /mc.
+	MCAddress string // MC_ADDRESS (optional)
+
+	// MCStatusChannelID receives up/down notifications for the Minecraft
+	// server. Empty disables the notifications job (/mc still works).
+	MCStatusChannelID string // MC_STATUS_CHANNEL_ID (optional)
+
+	// MCRCONAddress and MCRCONPassword enable /mc whitelist. RCON grants full
+	// console authority over a plaintext, unrate-limited protocol, so this must
+	// point at a LAN or tailnet address that is never reachable from the
+	// internet. Both empty disables whitelist management.
+	MCRCONAddress  string // MC_RCON_ADDRESS (optional, host or host:port)
+	MCRCONPassword string // MC_RCON_PASSWORD (optional)
+
 	Media Media
 }
 
@@ -177,6 +192,10 @@ func Load() (*Config, error) {
 	cfg.SpotifyClientID = strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_ID"))
 	cfg.SpotifyClientSecret = strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_SECRET"))
 	cfg.AFLAPIURL = strings.TrimRight(strings.TrimSpace(os.Getenv("AFL_API_URL")), "/")
+	cfg.MCAddress = strings.TrimSpace(os.Getenv("MC_ADDRESS"))
+	cfg.MCStatusChannelID = strings.TrimSpace(os.Getenv("MC_STATUS_CHANNEL_ID"))
+	cfg.MCRCONAddress = strings.TrimSpace(os.Getenv("MC_RCON_ADDRESS"))
+	cfg.MCRCONPassword = os.Getenv("MC_RCON_PASSWORD")
 
 	cfg.Media = loadMedia()
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))

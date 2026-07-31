@@ -19,6 +19,7 @@ import (
 	"github.com/OlliePCK/packbot/internal/config"
 	"github.com/OlliePCK/packbot/internal/jobs"
 	"github.com/OlliePCK/packbot/internal/logging"
+	"github.com/OlliePCK/packbot/internal/minecraft"
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/spotify"
 	"github.com/OlliePCK/packbot/internal/storage"
@@ -94,6 +95,17 @@ func run() error {
 		slog.Warn("AFL_API_URL not set; /tips and AFL announcements disabled")
 	}
 
+	// Minecraft status is a plain outbound server-list ping — no plugin, no
+	// RCON, nothing to reach us — so the address is the entire configuration.
+	if deps.MC = minecraft.New(cfg.MCAddress); deps.MC == nil {
+		slog.Warn("MC_ADDRESS not set; /mc disabled")
+	}
+	// RCON is a separate, privileged channel: console authority over an
+	// unencrypted protocol. Kept opt-in and owner-gated at the command layer.
+	if deps.RCON = minecraft.NewRCON(cfg.MCRCONAddress, cfg.MCRCONPassword); deps.RCON == nil {
+		slog.Warn("MC_RCON_ADDRESS/MC_RCON_PASSWORD not set; /mc whitelist disabled")
+	}
+
 	// Music runs against a Lavalink node; the node being down disables music
 	// but leaves the rest of the bot up. The bot's user ID comes from a REST
 	// self-lookup since the gateway isn't open yet.
@@ -137,11 +149,14 @@ func run() error {
 	if yt != nil {
 		go jobs.YouTubeNotifications(ctx, session, store, yt, cfg.YTMaxBackoffMultiplier)
 	}
+	// Minecraft up/down notifications. The job logs and returns on its own when
+	// either the address or the channel is unset.
+	go jobs.MinecraftStatus(ctx, session, deps.MC, cfg.MCStatusChannelID)
 
 	// Web API (Node started it on clientReady; here it runs alongside the
 	// gateway and shuts down on the same signal context).
 	if cfg.API.Enabled {
-		apiServer := api.New(cfg.API, store, session, yt, musicManager)
+		apiServer := api.New(cfg.API, store, session, yt, musicManager, deps.MC)
 		go func() {
 			if err := apiServer.Run(ctx); err != nil {
 				slog.Error("web API server failed", "error", err)

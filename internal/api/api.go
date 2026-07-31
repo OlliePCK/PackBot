@@ -22,6 +22,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/OlliePCK/packbot/internal/config"
+	"github.com/OlliePCK/packbot/internal/minecraft"
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/storage"
 	"github.com/OlliePCK/packbot/internal/youtube"
@@ -37,18 +38,24 @@ type Server struct {
 	music    *music.Manager // nil while Lavalink is unavailable
 	ws       *wsHub
 
+	// mc is nil when MC_ADDRESS is unset; /api/minecraft then 503s.
+	mc      *minecraft.Client
+	mcCache mcStatusCache
+
 	startedAt time.Time
 	log       *slog.Logger
 }
 
 // New builds the server. musicManager may be nil (music endpoints then
-// answer with their no-session shapes).
-func New(cfg config.API, store *storage.Store, discord *discordgo.Session, yt *youtube.Client, musicManager *music.Manager) *Server {
+// answer with their no-session shapes), as may mc (/api/minecraft then 503s).
+func New(cfg config.API, store *storage.Store, discord *discordgo.Session, yt *youtube.Client, musicManager *music.Manager, mc *minecraft.Client) *Server {
 	s := &Server{
 		cfg:       cfg,
 		store:     store,
 		discord:   discord,
 		yt:        yt,
+		mc:        mc,
+		mcCache:   mcStatusCache{ttl: mcCacheTTL},
 		sessions:  newSessionStore(store),
 		music:     musicManager,
 		ws:        newWSHub(),
@@ -99,6 +106,7 @@ func (s *Server) routes() http.Handler {
 	// Public
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/minecraft", s.handleMinecraft)
 
 	// OAuth
 	mux.HandleFunc("GET /api/auth/discord", s.handleAuthRedirect)
