@@ -11,20 +11,25 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/OlliePCK/packbot/internal/minecraft"
+	"github.com/OlliePCK/packbot/internal/storage"
 	"github.com/OlliePCK/packbot/internal/style"
 )
 
-// mcPingTimeout bounds the status query. Slash commands are already deferred,
-// so this only needs to beat Discord's edit window; keep it short so an
-// unreachable server reports "offline" promptly rather than hanging.
-const mcPingTimeout = 8 * time.Second
+const (
+	// mcPingTimeout bounds the status query. Slash commands are already
+	// deferred, so this only needs to beat Discord's edit window; keep it short
+	// so an unreachable server reports "offline" promptly rather than hanging.
+	mcPingTimeout = 8 * time.Second
 
-// mcRCONTimeout bounds a whitelist command.
-const mcRCONTimeout = 10 * time.Second
+	// mcRCONTimeout bounds a whitelist command.
+	mcRCONTimeout = 10 * time.Second
 
-// maxSampleNames caps how many player names go in the embed. Servers cap their
-// own sample list anyway (vanilla shows 12); this keeps the field tidy.
-const maxSampleNames = 20
+	// maxSampleNames caps how many player names go in the status embed.
+	maxSampleNames = 20
+
+	// mcLeaderboardLimit is how many players the leaderboard shows.
+	mcLeaderboardLimit = 15
+)
 
 // mcUsernameRe matches a valid Minecraft Java username: 3-16 characters of
 // letters, digits and underscore.
@@ -35,15 +40,17 @@ const maxSampleNames = 20
 // reach that string.
 var mcUsernameRe = regexp.MustCompile(`^[A-Za-z0-9_]{3,16}$`)
 
-// MC is /mc — Minecraft server status and whitelist management.
+// MC is /mc — Minecraft server status, self-service whitelisting and playtime.
 //
-// `status` is a pure outbound server-list ping: no plugin, no RCON, no open
-// port. `whitelist` needs RCON and is restricted to the bot owner.
+// Registered to one guild (MC_GUILD_ID) rather than globally: it is specific
+// to the Pack's server and has no meaning elsewhere. Guild-scoped commands
+// also propagate instantly instead of taking up to an hour.
 func MC(d Deps) *Command {
 	return &Command{
+		GuildID: d.MCGuildID,
 		Def: &discordgo.ApplicationCommand{
 			Name:        "mc",
-			Description: "Minecraft server status and whitelist",
+			Description: "Minecraft server status, whitelist and playtime",
 			Options: []*discordgo.ApplicationCommandOption{
 				{
 					Type:        discordgo.ApplicationCommandOptionSubCommand,
@@ -53,7 +60,43 @@ func MC(d Deps) *Command {
 				{
 					Type:        discordgo.ApplicationCommandOptionSubCommand,
 					Name:        "whitelist",
-					Description: "Manage the Minecraft whitelist (bot owner only)",
+					Description: "Whitelist yourself on the Minecraft server",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "player",
+							Description: "Your Minecraft username",
+							Required:    true,
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "unwhitelist",
+					Description: "Remove yourself from the Minecraft whitelist",
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "leaderboard",
+					Description: "Most Minecraft playtime",
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "whois",
+					Description: "Look up who a Minecraft username belongs to",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "player",
+							Description: "Minecraft username",
+							Required:    true,
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "admin",
+					Description: "Whitelist administration (bot owner only)",
 					Options: []*discordgo.ApplicationCommandOption{
 						{
 							Type:        discordgo.ApplicationCommandOptionString,
@@ -61,9 +104,9 @@ func MC(d Deps) *Command {
 							Description: "What to do",
 							Required:    true,
 							Choices: []*discordgo.ApplicationCommandOptionChoice{
+								{Name: "list", Value: "list"},
 								{Name: "add", Value: "add"},
 								{Name: "remove", Value: "remove"},
-								{Name: "list", Value: "list"},
 							},
 						},
 						{
@@ -77,10 +120,20 @@ func MC(d Deps) *Command {
 		},
 		Run: func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
 			sub, opts := subcommand(i)
-			if sub == "whitelist" {
-				return mcWhitelist(ctx, d, s, i, opts)
+			switch sub {
+			case "whitelist":
+				return mcSelfWhitelist(ctx, d, s, i, opts)
+			case "unwhitelist":
+				return mcSelfUnwhitelist(ctx, d, s, i)
+			case "leaderboard":
+				return mcLeaderboard(ctx, d, s, i)
+			case "whois":
+				return mcWhois(ctx, d, s, i, opts)
+			case "admin":
+				return mcAdmin(ctx, d, s, i, opts)
+			default:
+				return mcStatus(ctx, d, s, i)
 			}
-			return mcStatus(ctx, d, s, i)
 		},
 	}
 }
@@ -104,21 +157,177 @@ func mcStatus(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.In
 			Footer: style.Footer(),
 		})
 	}
-	return Respond(s, i, mcStatusEmbed(d.MC.Addr, status))
+	return Respond(s, i, mcStatusEmbed(d.MC.Addr, status, d.MCMapURL))
 }
 
-func mcWhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.InteractionCreate,
+// mcSelfWhitelist lets any member of the guild whitelist themselves.
+//
+// One Minecraft account per Discord user, enforced by the unique index: that
+// is what stops a single member whitelisting an unbounded number of accounts,
+// and stops someone claiming a username that is already spoken for.
+func mcSelfWhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.InteractionCreate,
 	opts []*discordgo.ApplicationCommandInteractionDataOption) error {
 
-	// RCON runs arbitrary console commands with operator authority, so this is
-	// owner-only regardless of Discord permissions.
 	user := interactionUser(i)
-	if d.AdminUserID == "" || user == nil || user.ID != d.AdminUserID {
-		return Respond(s, i, style.ErrorEmbed("Whitelist management is restricted to the bot owner."))
+	if user == nil || i.GuildID == "" {
+		return Respond(s, i, style.ErrorEmbed("This command only works in a server."))
 	}
 	if d.RCON == nil {
+		return Respond(s, i, style.ErrorEmbed("Whitelisting isn't available right now — RCON isn't configured."))
+	}
+
+	player := ""
+	if o, ok := optionMap(opts)["player"]; ok {
+		player = strings.TrimSpace(o.StringValue())
+	}
+	if !mcUsernameRe.MatchString(player) {
 		return Respond(s, i, style.ErrorEmbed(
-			"RCON isn't configured (`MC_RCON_ADDRESS` / `MC_RCON_PASSWORD` are unset)."))
+			"That isn't a valid Minecraft username (3-16 letters, digits or underscores)."))
+	}
+
+	previous, err := d.Store.ClaimMinecraftAccount(ctx, i.GuildID, user.ID, player)
+	if errors.Is(err, storage.ErrMinecraftNameTaken) {
+		return Respond(s, i, style.ErrorEmbed(
+			fmt.Sprintf("`%s` has already been claimed by someone else.", player)))
+	}
+	if err != nil {
+		return err
+	}
+
+	rctx, cancel := context.WithTimeout(ctx, mcRCONTimeout)
+	defer cancel()
+
+	if _, err := d.RCON.Exec(rctx, "whitelist add "+player); err != nil {
+		// Don't leave the database claiming a whitelist entry the server never
+		// received — release it so the user can retry cleanly.
+		_, _ = d.Store.UnlinkMinecraftAccount(ctx, i.GuildID, user.ID)
+		msg := "Couldn't reach the Minecraft server, so nothing was changed. Try again shortly."
+		if errors.Is(err, minecraft.ErrRCONAuthFailed) {
+			msg = "The server rejected the whitelist request. Tell an admin."
+		}
+		return Respond(s, i, style.ErrorEmbed(msg))
+	}
+
+	desc := fmt.Sprintf("%s | `%s` is now whitelisted.", style.Emotes.Success, player)
+	if previous != "" {
+		// Username changed: drop the old entry so it doesn't linger.
+		if _, err := d.RCON.Exec(rctx, "whitelist remove "+previous); err == nil {
+			desc += fmt.Sprintf("\nRemoved your previous name `%s`.", previous)
+		}
+	}
+	if d.MC != nil {
+		desc += "\nJoin at `" + d.MC.Addr + "`"
+	}
+
+	return Respond(s, i, &discordgo.MessageEmbed{
+		Title:       "Minecraft",
+		Description: desc,
+		Color:       style.ColorBrand,
+		Footer:      style.Footer(),
+	})
+}
+
+func mcSelfUnwhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	user := interactionUser(i)
+	if user == nil || i.GuildID == "" {
+		return Respond(s, i, style.ErrorEmbed("This command only works in a server."))
+	}
+	if d.RCON == nil {
+		return Respond(s, i, style.ErrorEmbed("Whitelisting isn't available right now — RCON isn't configured."))
+	}
+
+	account, err := d.Store.MinecraftAccountForUser(ctx, i.GuildID, user.ID)
+	if err != nil {
+		return err
+	}
+	if account == nil {
+		return Respond(s, i, style.ErrorEmbed("You aren't whitelisted."))
+	}
+
+	rctx, cancel := context.WithTimeout(ctx, mcRCONTimeout)
+	defer cancel()
+	if _, err := d.RCON.Exec(rctx, "whitelist remove "+account.MCUsername); err != nil {
+		return Respond(s, i, style.ErrorEmbed(
+			"Couldn't reach the Minecraft server, so nothing was changed. Try again shortly."))
+	}
+	if _, err := d.Store.UnlinkMinecraftAccount(ctx, i.GuildID, user.ID); err != nil {
+		return err
+	}
+
+	return Respond(s, i, style.BrandEmbed(fmt.Sprintf(
+		"%s | `%s` has been removed from the whitelist.", style.Emotes.Success, account.MCUsername)))
+}
+
+// mcLeaderboard ranks players by tracked playtime, by in-game name — no
+// Discord link required, so players whitelisted by hand still appear.
+func mcLeaderboard(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	entries, err := d.Store.TopMinecraftPlaytime(ctx, mcLeaderboardLimit)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		return Respond(s, i, style.BrandEmbed(
+			"No playtime recorded yet — it accrues while people are online."))
+	}
+
+	var b strings.Builder
+	for idx, e := range entries {
+		fmt.Fprintf(&b, "**%d.** `%s` — %s\n", idx+1, e.MCUsername, formatPlaytime(e.TotalSeconds))
+	}
+
+	return Respond(s, i, &discordgo.MessageEmbed{
+		Title:       "Minecraft playtime",
+		Description: b.String(),
+		Color:       style.ColorBrand,
+		Footer:      style.Footer(),
+	})
+}
+
+func mcWhois(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.InteractionCreate,
+	opts []*discordgo.ApplicationCommandInteractionDataOption) error {
+
+	if i.GuildID == "" {
+		return Respond(s, i, style.ErrorEmbed("This command only works in a server."))
+	}
+	player := ""
+	if o, ok := optionMap(opts)["player"]; ok {
+		player = strings.TrimSpace(o.StringValue())
+	}
+	if !mcUsernameRe.MatchString(player) {
+		return Respond(s, i, style.ErrorEmbed("That isn't a valid Minecraft username."))
+	}
+
+	account, err := d.Store.MinecraftAccountByUsername(ctx, i.GuildID, player)
+	if err != nil {
+		return err
+	}
+	if account == nil {
+		return Respond(s, i, style.ErrorEmbed(
+			fmt.Sprintf("`%s` hasn't been claimed by anyone here.", player)))
+	}
+
+	return Respond(s, i, &discordgo.MessageEmbed{
+		Title:       "Minecraft",
+		Description: fmt.Sprintf("`%s` is <@%s>", account.MCUsername, account.UserID),
+		Color:       style.ColorBrand,
+		Footer:      style.Footer(),
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "Whitelisted since", Value: account.LinkedAt.Format("2 Jan 2006"), Inline: true},
+		},
+	})
+}
+
+// mcAdmin is the owner-only escape hatch for entries that aren't the caller's
+// own — someone who left the Discord, or a name added by hand.
+func mcAdmin(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.InteractionCreate,
+	opts []*discordgo.ApplicationCommandInteractionDataOption) error {
+
+	user := interactionUser(i)
+	if d.AdminUserID == "" || user == nil || user.ID != d.AdminUserID {
+		return Respond(s, i, style.ErrorEmbed("That's restricted to the bot owner."))
+	}
+	if d.RCON == nil {
+		return Respond(s, i, style.ErrorEmbed("RCON isn't configured."))
 	}
 
 	m := optionMap(opts)
@@ -126,7 +335,6 @@ func mcWhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo
 	if o, ok := m["action"]; ok {
 		action = o.StringValue()
 	}
-
 	player := ""
 	if o, ok := m["player"]; ok {
 		player = strings.TrimSpace(o.StringValue())
@@ -137,10 +345,6 @@ func mcWhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo
 	case "list":
 		command = "whitelist list"
 	case "add", "remove":
-		if player == "" {
-			return Respond(s, i, style.ErrorEmbed(
-				fmt.Sprintf("`%s` needs a `player` name.", action)))
-		}
 		if !mcUsernameRe.MatchString(player) {
 			return Respond(s, i, style.ErrorEmbed(
 				"That isn't a valid Minecraft username (3-16 letters, digits or underscores)."))
@@ -150,10 +354,10 @@ func mcWhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo
 		return Respond(s, i, style.ErrorEmbed("Unknown action."))
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, mcRCONTimeout)
+	rctx, cancel := context.WithTimeout(ctx, mcRCONTimeout)
 	defer cancel()
 
-	out, err := d.RCON.Exec(ctx, command)
+	out, err := d.RCON.Exec(rctx, command)
 	if err != nil {
 		msg := "Couldn't reach the Minecraft server over RCON."
 		if errors.Is(err, minecraft.ErrRCONAuthFailed) {
@@ -161,7 +365,6 @@ func mcWhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo
 		}
 		return Respond(s, i, style.ErrorEmbed(msg))
 	}
-
 	if out == "" {
 		out = "(no output)"
 	}
@@ -177,7 +380,7 @@ func mcWhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo
 }
 
 // mcStatusEmbed renders a successful ping in PackBot's house style.
-func mcStatusEmbed(addr string, st *minecraft.Status) *discordgo.MessageEmbed {
+func mcStatusEmbed(addr string, st *minecraft.Status, mapURL string) *discordgo.MessageEmbed {
 	embed := &discordgo.MessageEmbed{
 		Title: "Minecraft",
 		Description: fmt.Sprintf("%s | **Online** — `%s`",
@@ -207,19 +410,14 @@ func mcStatusEmbed(addr string, st *minecraft.Status) *discordgo.MessageEmbed {
 	}
 
 	if motd := strings.TrimSpace(st.DescriptionText()); motd != "" {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "MOTD",
-			Value: motd,
-		})
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "MOTD", Value: motd})
 	}
-
+	if mapURL != "" {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Map", Value: mapURL})
+	}
 	if names := sampleNames(st); names != "" {
-		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
-			Name:  "Online now",
-			Value: names,
-		})
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{Name: "Online now", Value: names})
 	}
-
 	return embed
 }
 

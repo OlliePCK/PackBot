@@ -70,6 +70,13 @@ type Config struct {
 	MCRCONAddress  string // MC_RCON_ADDRESS (optional, host or host:port)
 	MCRCONPassword string // MC_RCON_PASSWORD (optional)
 
+	// MCGuildID scopes the /mc command to one guild. Empty registers it
+	// globally alongside everything else.
+	MCGuildID string // MC_GUILD_ID (optional)
+
+	// MCMapURL is a BlueMap/Dynmap URL surfaced in /mc status. Empty omits it.
+	MCMapURL string // MC_MAP_URL (optional)
+
 	Media Media
 }
 
@@ -196,6 +203,8 @@ func Load() (*Config, error) {
 	cfg.MCStatusChannelID = strings.TrimSpace(os.Getenv("MC_STATUS_CHANNEL_ID"))
 	cfg.MCRCONAddress = strings.TrimSpace(os.Getenv("MC_RCON_ADDRESS"))
 	cfg.MCRCONPassword = os.Getenv("MC_RCON_PASSWORD")
+	cfg.MCGuildID = strings.TrimSpace(os.Getenv("MC_GUILD_ID"))
+	cfg.MCMapURL = strings.TrimSpace(os.Getenv("MC_MAP_URL"))
 
 	cfg.Media = loadMedia()
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))

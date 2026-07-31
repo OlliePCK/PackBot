@@ -105,6 +105,11 @@ func run() error {
 	if deps.RCON = minecraft.NewRCON(cfg.MCRCONAddress, cfg.MCRCONPassword); deps.RCON == nil {
 		slog.Warn("MC_RCON_ADDRESS/MC_RCON_PASSWORD not set; /mc whitelist disabled")
 	}
+	deps.MCMapURL = cfg.MCMapURL
+	deps.MCGuildID = cfg.MCGuildID
+	if deps.MCGuildID == "" {
+		slog.Warn("MC_GUILD_ID not set; /mc registers globally instead of to one guild")
+	}
 
 	// Music runs against a Lavalink node; the node being down disables music
 	// but leaves the rest of the bot up. The bot's user ID comes from a REST
@@ -151,7 +156,7 @@ func run() error {
 	}
 	// Minecraft up/down notifications. The job logs and returns on its own when
 	// either the address or the channel is unset.
-	go jobs.MinecraftStatus(ctx, session, deps.MC, cfg.MCStatusChannelID)
+	go jobs.MinecraftStatus(ctx, session, deps.MC, cfg.MCStatusChannelID, store)
 
 	// Web API (Node started it on clientReady; here it runs alongside the
 	// gateway and shuts down on the same signal context).
