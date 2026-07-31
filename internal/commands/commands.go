@@ -13,7 +13,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/OlliePCK/packbot/internal/afl"
-	"github.com/OlliePCK/packbot/internal/mcsync"
 	"github.com/OlliePCK/packbot/internal/minecraft"
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/storage"
@@ -37,11 +36,10 @@ type Deps struct {
 	// RCON is nil unless both MC_RCON_ADDRESS and MC_RCON_PASSWORD are set;
 	// /mc whitelist degrades gracefully.
 	RCON *minecraft.RCON
-	// MCSync is nil unless RCON and MC_WHITELIST_ROLE_ID are both configured;
-	// linking then stores identity without granting access.
-	MCSync *mcsync.Syncer
 	// MCMapURL is surfaced as a link in /mc status when set.
 	MCMapURL string
+	// MCGuildID scopes the /mc command to a single guild.
+	MCGuildID string
 	// AdminUserID (API_ADMIN_USER_ID) gates owner-only commands (/ytauth).
 	AdminUserID string
 }
@@ -57,6 +55,11 @@ type Command struct {
 	// Ephemeral marks commands whose deferred reply is only visible to the
 	// invoker (Node: `isEphemeral: true` — /purge, /settings).
 	Ephemeral bool
+
+	// GuildID restricts registration to one guild. Empty registers globally.
+	// Guild-scoped commands also propagate instantly, where global ones can
+	// take up to an hour.
+	GuildID string
 
 	// Run handles the interaction. The reply is already deferred; respond by
 	// editing it (see Respond helper). Returned errors are shown to the user

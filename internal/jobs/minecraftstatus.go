@@ -182,18 +182,6 @@ func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Cl
 		return
 	}
 
-	// Playtime is attributed per guild, and the guild is whichever one owns the
-	// status channel. Resolving it once here keeps the poll loop free of API
-	// calls; failing to resolve disables only playtime, not notifications.
-	guildID := ""
-	if store != nil {
-		if ch, err := s.Channel(channelID); err == nil && ch != nil {
-			guildID = ch.GuildID
-		} else {
-			log.Warn("could not resolve status channel guild; playtime disabled", "error", err)
-		}
-	}
-
 	log.Info("minecraft status started",
 		"addr", mc.Addr, "interval", mcPollInterval, "threshold", mcFailureThreshold)
 
@@ -237,9 +225,9 @@ func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Cl
 		// Credit playtime before observe replaces the baseline. Only players
 		// present across both polls were demonstrably online the whole time.
 		now := time.Now()
-		if store != nil && guildID != "" && !lastPoll.IsZero() {
+		if store != nil && !lastPoll.IsZero() {
 			if elapsed := now.Sub(lastPoll); elapsed > 0 && elapsed <= mcMaxCreditInterval {
-				creditPlaytime(ctx, s, store, log, guildID, players.stillOnline(names), int64(elapsed.Seconds()))
+				creditPlaytime(ctx, store, log, players.stillOnline(names), int64(elapsed.Seconds()))
 			}
 		}
 		lastPoll = now
@@ -326,46 +314,20 @@ func mcDownEmbed(addr string) *discordgo.MessageEmbed {
 	}
 }
 
-// creditPlaytime attributes seconds of Minecraft playtime to the Discord users
-// behind the given Minecraft usernames.
+// creditPlaytime records playtime against in-game usernames.
 //
-// It writes into the existing Playtime table with gameName "Minecraft", so the
-// result shows up in /leaderboard alongside Discord game presence rather than
-// needing a parallel leaderboard of its own. Unlinked players are skipped —
-// there is no Discord user to credit.
-func creditPlaytime(ctx context.Context, s *discordgo.Session, store *storage.Store,
-	log *slog.Logger, guildID string, mcNames []string, seconds int64) {
+// Keyed on the Minecraft name rather than a Discord user: the leaderboard
+// should count everyone who plays, including anyone an admin whitelisted by
+// hand who never ran /mc whitelist.
+func creditPlaytime(ctx context.Context, store *storage.Store, log *slog.Logger,
+	mcNames []string, seconds int64) {
 
 	if seconds <= 0 {
 		return
 	}
 	for _, name := range mcNames {
-		account, err := store.MinecraftAccountByUsername(ctx, guildID, name)
-		if err != nil {
-			log.Error("playtime lookup failed", "error", err, "player", name)
-			continue
-		}
-		if account == nil {
-			continue // not linked; nothing to attribute
-		}
-
-		// Store the Discord username, not the Minecraft one: TopPlaytimeTotal
-		// groups by (odUserId, odUsername), so a user appearing under two names
-		// would be split across two leaderboard rows.
-		username := account.UserID
-		if member, err := s.State.Member(guildID, account.UserID); err == nil && member != nil && member.User != nil {
-			username = member.User.Username
-		} else if user, err := s.User(account.UserID); err == nil && user != nil {
-			username = user.Username
-		}
-
-		if err := store.RecordPlaytime(ctx, guildID, account.UserID, username, mcPlaytimeGameName, seconds); err != nil {
-			log.Error("record minecraft playtime failed", "error", err, "userId", account.UserID)
+		if err := store.RecordMinecraftPlaytime(ctx, name, seconds); err != nil {
+			log.Error("record minecraft playtime failed", "error", err, "player", name)
 		}
 	}
 }
-
-// mcPlaytimeGameName is the Playtime row key for Minecraft. It matches what a
-// Discord rich-presence game name would be, so /leaderboard game:Minecraft
-// aggregates both sources.
-const mcPlaytimeGameName = "Minecraft"

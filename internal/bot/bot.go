@@ -58,10 +58,6 @@ func New(cfg *config.Config, session *discordgo.Session, deps commands.Deps) (*B
 	session.AddHandler(liveNoti.HandlePresenceUpdate)
 	session.AddHandler(liveNoti.HandleVoiceStateUpdate)
 
-	// Whitelist follows the Minecraft role; no-ops when unconfigured.
-	mcWhitelist := trackers.NewMinecraftWhitelist(deps.MCSync)
-	session.AddHandler(mcWhitelist.HandleGuildMemberUpdate)
-
 	return b, nil
 }
 
@@ -101,23 +97,36 @@ func (b *Bot) Run(ctx context.Context) error {
 // application until cutover. Register only after the bot has joined the
 // guild: registering earlier gets wiped by the OAuth authorization.
 func (b *Bot) registerCommands() error {
-	defs := make([]*discordgo.ApplicationCommand, 0, len(b.commands))
+	// Commands are grouped by scope. A bulk overwrite replaces everything in
+	// one scope, so global and guild-scoped commands must be sent separately —
+	// sending them together would publish guild-only commands everywhere.
+	//
+	// DevGuildID, when set, forces every command into that one guild for
+	// instant propagation while developing.
+	byScope := make(map[string][]*discordgo.ApplicationCommand)
 	for _, cmd := range b.commands {
-		defs = append(defs, cmd.Def)
+		scope := cmd.GuildID
+		if b.cfg.DevGuildID != "" {
+			scope = b.cfg.DevGuildID
+		}
+		byScope[scope] = append(byScope[scope], cmd.Def)
 	}
 
-	scope := "global"
-	if b.cfg.DevGuildID != "" {
-		scope = "guild " + b.cfg.DevGuildID
+	for guildID, defs := range byScope {
+		scope := "global"
+		if guildID != "" {
+			scope = "guild " + guildID
+		}
+		created, err := b.session.ApplicationCommandBulkOverwrite(b.cfg.ClientID, guildID, defs)
+		if err != nil {
+			return fmt.Errorf("bot: register commands (%s): %w", scope, err)
+		}
+		if len(created) != len(defs) {
+			return fmt.Errorf("bot: register commands (%s): sent %d, Discord confirmed %d",
+				scope, len(defs), len(created))
+		}
+		slog.Info("slash commands registered", "confirmed", len(created), "scope", scope)
 	}
-	created, err := b.session.ApplicationCommandBulkOverwrite(b.cfg.ClientID, b.cfg.DevGuildID, defs)
-	if err != nil {
-		return fmt.Errorf("bot: register commands (%s): %w", scope, err)
-	}
-	if len(created) != len(defs) {
-		return fmt.Errorf("bot: register commands (%s): sent %d, Discord confirmed %d", scope, len(defs), len(created))
-	}
-	slog.Info("slash commands registered", "confirmed", len(created), "scope", scope)
 	return nil
 }
 

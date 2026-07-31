@@ -21,25 +21,6 @@ type MinecraftAccount struct {
 	LinkedAt    time.Time
 }
 
-// LinkMinecraftAccount records (or re-points) a user's Minecraft username.
-//
-// The unique index on mcUsername is what stops one person claiming another's
-// account, so a duplicate-key error is translated rather than surfaced raw.
-func (s *Store) LinkMinecraftAccount(ctx context.Context, guildID, userID, mcUsername string) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO MinecraftAccounts (guildId, odUserId, mcUsername)
-		 VALUES (?, ?, ?)
-		 ON DUPLICATE KEY UPDATE mcUsername = VALUES(mcUsername)`,
-		guildID, userID, mcUsername)
-	if err != nil {
-		if IsDuplicateKey(err) {
-			return ErrMinecraftNameTaken
-		}
-		return fmt.Errorf("storage: link minecraft account: %w", err)
-	}
-	return nil
-}
-
 // UnlinkMinecraftAccount removes a link, reporting whether one existed.
 func (s *Store) UnlinkMinecraftAccount(ctx context.Context, guildID, userID string) (bool, error) {
 	res, err := s.db.ExecContext(ctx,
@@ -79,36 +60,78 @@ func (s *Store) scanMinecraftAccount(ctx context.Context, query string, args ...
 	return &a, nil
 }
 
-// SetMinecraftWhitelisted records whether the server currently has this user
-// whitelisted, so role reconciliation doesn't re-issue RCON commands that have
-// already been applied.
-func (s *Store) SetMinecraftWhitelisted(ctx context.Context, guildID, userID string, whitelisted bool) error {
+
+// MinecraftPlaytimeEntry is one leaderboard row, keyed on the in-game name.
+type MinecraftPlaytimeEntry struct {
+	MCUsername   string
+	TotalSeconds int64
+	LastSeenAt   time.Time
+}
+
+// RecordMinecraftPlaytime accumulates seconds against an in-game username.
+func (s *Store) RecordMinecraftPlaytime(ctx context.Context, mcUsername string, seconds int64) error {
+	if seconds <= 0 {
+		return nil
+	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE MinecraftAccounts SET whitelisted = ? WHERE guildId = ? AND odUserId = ?`,
-		whitelisted, guildID, userID)
+		`INSERT INTO MinecraftPlaytime (mcUsername, totalSeconds)
+		 VALUES (?, ?)
+		 ON DUPLICATE KEY UPDATE
+		   totalSeconds = totalSeconds + VALUES(totalSeconds),
+		   lastSeenAt   = CURRENT_TIMESTAMP`,
+		mcUsername, seconds)
 	if err != nil {
-		return fmt.Errorf("storage: set minecraft whitelisted: %w", err)
+		return fmt.Errorf("storage: record minecraft playtime: %w", err)
 	}
 	return nil
 }
 
-// ListMinecraftAccounts returns every link in a guild, newest first.
-func (s *Store) ListMinecraftAccounts(ctx context.Context, guildID string) ([]MinecraftAccount, error) {
+// TopMinecraftPlaytime returns the most-played players, longest first.
+func (s *Store) TopMinecraftPlaytime(ctx context.Context, limit int) ([]MinecraftPlaytimeEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT guildId, odUserId, mcUsername, whitelisted, linkedAt
-		   FROM MinecraftAccounts WHERE guildId = ? ORDER BY linkedAt DESC`, guildID)
+		`SELECT mcUsername, totalSeconds, lastSeenAt
+		   FROM MinecraftPlaytime
+		  ORDER BY totalSeconds DESC LIMIT ?`, limit)
 	if err != nil {
-		return nil, fmt.Errorf("storage: list minecraft accounts: %w", err)
+		return nil, fmt.Errorf("storage: minecraft leaderboard: %w", err)
 	}
 	defer rows.Close()
 
-	var out []MinecraftAccount
+	var out []MinecraftPlaytimeEntry
 	for rows.Next() {
-		var a MinecraftAccount
-		if err := rows.Scan(&a.GuildID, &a.UserID, &a.MCUsername, &a.Whitelisted, &a.LinkedAt); err != nil {
+		var e MinecraftPlaytimeEntry
+		if err := rows.Scan(&e.MCUsername, &e.TotalSeconds, &e.LastSeenAt); err != nil {
 			return nil, err
 		}
-		out = append(out, a)
+		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// ClaimMinecraftAccount records a self-service whitelist claim, returning the
+// username this user previously held (empty if none) so the caller can remove
+// the stale entry from the server's whitelist.
+func (s *Store) ClaimMinecraftAccount(ctx context.Context, guildID, userID, mcUsername string) (previous string, err error) {
+	existing, err := s.MinecraftAccountForUser(ctx, guildID, userID)
+	if err != nil {
+		return "", err
+	}
+	if existing != nil {
+		previous = existing.MCUsername
+		if previous == mcUsername {
+			previous = "" // unchanged; nothing to clean up
+		}
+	}
+
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO MinecraftAccounts (guildId, odUserId, mcUsername, whitelisted)
+		 VALUES (?, ?, ?, 1)
+		 ON DUPLICATE KEY UPDATE mcUsername = VALUES(mcUsername), whitelisted = 1`,
+		guildID, userID, mcUsername); err != nil {
+		if IsDuplicateKey(err) {
+			return "", ErrMinecraftNameTaken
+		}
+		return "", fmt.Errorf("storage: claim minecraft account: %w", err)
+	}
+	return previous, nil
 }
