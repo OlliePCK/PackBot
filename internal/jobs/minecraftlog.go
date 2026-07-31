@@ -31,6 +31,11 @@ const (
 	// mcLogMaxEvents caps how many events go in one message, so a burst can't
 	// exceed Discord's embed limits.
 	mcLogMaxEvents = 20
+
+	// mcLogRCONTimeout bounds the death-location lookup. Kept short: it runs
+	// inside the poll loop, and a missing position is far better than a
+	// stalled tailer.
+	mcLogRCONTimeout = 5 * time.Second
 )
 
 // logTailer follows an append-only file across rotations.
@@ -114,7 +119,7 @@ func (t *logTailer) readLines() ([]string, error) {
 //
 // This supersedes the status job's roster announcements: the log is
 // authoritative and immediate, where the status ping is sampled and capped.
-func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID string, store *storage.Store) {
+func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID string, store *storage.Store, rcon *minecraft.RCON) {
 	log := slog.With("job", "minecraft-log")
 
 	if logPath == "" || channelID == "" {
@@ -172,7 +177,23 @@ func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID 
 				if store != nil {
 					switch ev.Kind {
 					case minecraft.EventDeath:
-						if err := store.RecordMinecraftDeath(ctx, ev.Player, ev.Detail); err != nil {
+						// Coordinates come from the player's LastDeathLocation
+						// NBT, which needs them still connected — someone who
+						// dies and quits immediately is recorded without a
+						// position rather than not at all.
+						var px, py, pz *int
+						dim := ""
+						if rcon != nil {
+							lctx, cancel := context.WithTimeout(ctx, mcLogRCONTimeout)
+							loc, ok, err := rcon.LastDeathLocation(lctx, ev.Player)
+							cancel()
+							if err != nil {
+								log.Warn("death location lookup failed", "error", err, "player", ev.Player)
+							} else if ok {
+								px, py, pz, dim = &loc.X, &loc.Y, &loc.Z, loc.Dimension
+							}
+						}
+						if err := store.RecordMinecraftDeath(ctx, ev.Player, ev.Detail, px, py, pz, dim); err != nil {
 							log.Error("record death failed", "error", err, "player", ev.Player)
 						}
 					case minecraft.EventAdvancement:

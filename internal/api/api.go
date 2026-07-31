@@ -107,6 +107,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/minecraft", s.handleMinecraft)
+	mux.HandleFunc("GET /api/minecraft/deaths", s.handleMinecraftDeaths)
 
 	// OAuth
 	mux.HandleFunc("GET /api/auth/discord", s.handleAuthRedirect)

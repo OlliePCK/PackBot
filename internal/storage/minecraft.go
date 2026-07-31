@@ -142,17 +142,59 @@ type MinecraftCount struct {
 	Count int
 }
 
-// RecordMinecraftDeath appends one death.
-func (s *Store) RecordMinecraftDeath(ctx context.Context, mcUsername, cause string) error {
+// DeathRecord is one death, with coordinates when they could be read.
+type DeathRecord struct {
+	MCUsername string
+	Cause      string
+	X, Y, Z    *int
+	Dimension  string
+	DiedAt     time.Time
+}
+
+// RecordMinecraftDeath appends one death. loc may be nil when the position
+// could not be read — the death still counts, it just cannot be plotted.
+func (s *Store) RecordMinecraftDeath(ctx context.Context, mcUsername, cause string, x, y, z *int, dimension string) error {
 	if len(cause) > 255 {
 		cause = cause[:255]
 	}
 	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO MinecraftDeaths (mcUsername, cause) VALUES (?, ?)`,
-		mcUsername, cause); err != nil {
+		`INSERT INTO MinecraftDeaths (mcUsername, cause, x, y, z, dimension)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		mcUsername, cause, x, y, z, nullIfEmpty(dimension)); err != nil {
 		return fmt.Errorf("storage: record minecraft death: %w", err)
 	}
 	return nil
+}
+
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// RecentMinecraftDeaths returns deaths that have coordinates, newest first —
+// the plottable set.
+func (s *Store) RecentMinecraftDeaths(ctx context.Context, limit int) ([]DeathRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT mcUsername, cause, x, y, z, COALESCE(dimension, ''), diedAt
+		   FROM MinecraftDeaths
+		  WHERE x IS NOT NULL
+		  ORDER BY diedAt DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("storage: recent minecraft deaths: %w", err)
+	}
+	defer rows.Close()
+
+	var out []DeathRecord
+	for rows.Next() {
+		var d DeathRecord
+		if err := rows.Scan(&d.MCUsername, &d.Cause, &d.X, &d.Y, &d.Z, &d.Dimension, &d.DiedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 // TopMinecraftDeaths ranks players by how often they have died.

@@ -98,3 +98,38 @@ func (s *Server) handleMinecraft(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, body)
 }
+
+// mcDeathsLimit bounds how many death points the endpoint returns. Enough for
+// a heat map, small enough that the payload stays reasonable.
+const mcDeathsLimit = 500
+
+// handleMinecraftDeaths is GET /api/minecraft/deaths — plottable death points
+// for a heat map on PackSite.
+//
+// Only deaths with recorded coordinates are returned; a death whose position
+// couldn't be read still counts in Discord's /mc deaths but cannot be drawn.
+func (s *Server) handleMinecraftDeaths(w http.ResponseWriter, r *http.Request) {
+	deaths, err := s.store.RecentMinecraftDeaths(r.Context(), mcDeathsLimit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read deaths")
+		return
+	}
+
+	points := make([]map[string]any, 0, len(deaths))
+	for _, d := range deaths {
+		points = append(points, map[string]any{
+			"player":    d.MCUsername,
+			"cause":     d.Cause,
+			"x":         d.X,
+			"y":         d.Y,
+			"z":         d.Z,
+			"dimension": d.Dimension,
+			"diedAt":    d.DiedAt.UTC().Format(time.RFC3339),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"count":  len(points),
+		"deaths": points,
+	})
+}
