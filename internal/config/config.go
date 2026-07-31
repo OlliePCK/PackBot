@@ -37,10 +37,6 @@ type Config struct {
 	// the Node job's PROXY_URL usage).
 	ProxyURL string // PROXY_URL (optional)
 
-	// YTMaxBackoffMultiplier caps the notifications polling backoff
-	// (base 30min × multiplier; default 8 → 4h).
-	YTMaxBackoffMultiplier int // YT_MAX_BACKOFF_MULTIPLIER (default 8)
-
 	API API
 
 	// Lavalink node connection (music playback). Empty address disables music.
@@ -179,7 +175,6 @@ func Load() (*Config, error) {
 
 	cfg.YouTubeAPIKey = strings.TrimSpace(os.Getenv("YOUTUBE_API_KEY"))
 	cfg.ProxyURL = strings.TrimSpace(os.Getenv("PROXY_URL"))
-	cfg.YTMaxBackoffMultiplier = intEnv("YT_MAX_BACKOFF_MULTIPLIER", 8)
 
 	port := strings.TrimSpace(os.Getenv("API_PORT"))
 	if port == "" {

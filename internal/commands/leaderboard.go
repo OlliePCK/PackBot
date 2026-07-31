@@ -98,24 +98,22 @@ func Leaderboard(d Deps) *Command {
 				if opt, ok := om["member"]; ok {
 					target = opt.UserValue(s)
 				}
-				rows, err := d.Store.UserPlaytime(ctx, i.GuildID, target.ID, 10)
+				rows, total, gameCount, err := d.Store.UserPlaytimeSummary(ctx, i.GuildID, target.ID, 10)
 				if err != nil {
 					return err
 				}
 				if len(rows) == 0 {
 					return Respond(s, i, style.BrandEmbed(fmt.Sprintf("📊 No playtime data for %s yet!", target.Username)))
 				}
-				var total int64
 				var lines []string
 				for idx, r := range rows {
-					total += r.TotalSeconds
 					lines = append(lines, fmt.Sprintf("**%d.** %s — %s", idx+1, r.GameName, formatPlaytime(r.TotalSeconds)))
 				}
 				embed := leaderboardEmbed(fmt.Sprintf("🎮 %s's Playtime", target.Username), "**Top Games:**\n"+strings.Join(lines, "\n"))
 				embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: target.AvatarURL("")}
 				embed.Fields = []*discordgo.MessageEmbedField{
 					{Name: "Total Playtime", Value: formatPlaytime(total), Inline: true},
-					{Name: "Games Tracked", Value: fmt.Sprintf("%d", len(rows)), Inline: true},
+					{Name: "Games Tracked", Value: fmt.Sprintf("%d", gameCount), Inline: true},
 				}
 				return Respond(s, i, embed)
 
