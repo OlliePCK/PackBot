@@ -33,6 +33,9 @@ type Deps struct {
 	AFL *afl.Service
 	// MC is nil when MC_ADDRESS is unset; /mc degrades gracefully.
 	MC *minecraft.Client
+	// RCON is nil unless both MC_RCON_ADDRESS and MC_RCON_PASSWORD are set;
+	// /mc whitelist degrades gracefully.
+	RCON *minecraft.RCON
 	// AdminUserID (API_ADMIN_USER_ID) gates owner-only commands (/ytauth).
 	AdminUserID string
 }

@@ -100,6 +100,11 @@ func run() error {
 	if deps.MC = minecraft.New(cfg.MCAddress); deps.MC == nil {
 		slog.Warn("MC_ADDRESS not set; /mc disabled")
 	}
+	// RCON is a separate, privileged channel: console authority over an
+	// unencrypted protocol. Kept opt-in and owner-gated at the command layer.
+	if deps.RCON = minecraft.NewRCON(cfg.MCRCONAddress, cfg.MCRCONPassword); deps.RCON == nil {
+		slog.Warn("MC_RCON_ADDRESS/MC_RCON_PASSWORD not set; /mc whitelist disabled")
+	}
 
 	// Music runs against a Lavalink node; the node being down disables music
 	// but leaves the rest of the bot up. The bot's user ID comes from a REST

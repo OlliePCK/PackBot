@@ -35,6 +35,8 @@
   <Config Name="AFL_API_URL" Target="AFL_API_URL" Default="" Mode="" Description="AFL prediction dashboard base URL (empty disables /tips and AFL announcements)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="MC_ADDRESS" Target="MC_ADDRESS" Default="" Mode="" Description="Minecraft server address for /mc, host or host:port (empty disables /mc)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
   <Config Name="MC_STATUS_CHANNEL_ID" Target="MC_STATUS_CHANNEL_ID" Default="" Mode="" Description="Channel for Minecraft up/down notifications (empty disables them; /mc still works)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="MC_RCON_ADDRESS" Target="MC_RCON_ADDRESS" Default="" Mode="" Description="Minecraft RCON host:port for /mc whitelist. MUST be a LAN or tailnet address that is never reachable from the internet (empty disables whitelist management)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="MC_RCON_PASSWORD" Target="MC_RCON_PASSWORD" Default="" Mode="" Description="Minecraft RCON password (sent in plaintext over an unencrypted socket)" Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
 
   <Config Name="MEDIA_ENABLED" Target="MEDIA_ENABLED" Default="false" Mode="" Description="Enable main-guild Jellyfin Live TV cards and AFL links" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
   <Config Name="MEDIA_GUILD_ID" Target="MEDIA_GUILD_ID" Default="" Mode="" Description="Only Discord guild allowed to receive media output" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
