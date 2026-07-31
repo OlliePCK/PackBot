@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -54,35 +55,29 @@ func (m *Manager) maybeNotifyAuthFailure(message string) {
 		return
 	}
 	embed := &discordgo.MessageEmbed{
-		Title: "⚠️ YouTube authentication is failing",
+		Title: "⚠️ YouTube playback is down — OAuth token expired",
 		Description: fmt.Sprintf(
-			"Lavalink reported a login-wall error from YouTube:\n> %s\n\n"+
-				"The OAuth refresh token has likely expired or been revoked. "+
-				"YouTube playback will keep failing until it's re-linked.", message),
+			"Every YouTube client hit a login wall (**%s**), which means the burner "+
+				"account's OAuth **refresh token has expired or been revoked**. Music "+
+				"will keep failing until it's re-linked — it can't self-heal.",
+			cleanAuthReason(message)),
 		Color: style.ColorWarn,
 		Fields: []*discordgo.MessageEmbedField{
 			{
-				Name: "Option A — re-link on grid",
-				Value: "1. Edit `/mnt/user/appdata/packbot-lavalink/application.yml`: comment out " +
-					"`refreshToken` and `skipInitialization` under `plugins.youtube.oauth`, then " +
+				Name: "Fix — re-link the burner account (~2 min)",
+				Value: "1. In grid's `packbot-lavalink/application.yml` (`plugins.youtube.oauth`), " +
+					"comment out `refreshToken` and set `skipInitialization: false`, then " +
 					"`docker restart PackBot-Lavalink`.\n" +
-					"2. `docker logs -f PackBot-Lavalink` prints a code — open " +
-					"<https://www.google.com/device>, enter it, sign in with the **burner** account " +
-					"(never a personal one).\n" +
-					"3. The log then prints the new refresh token — pin it back into " +
-					"`application.yml` and restore `skipInitialization: true`.",
+					"2. `docker logs PackBot-Lavalink` prints a device code — open " +
+					"<https://www.google.com/device>, enter it, and sign in with the **burner** " +
+					"account (never a personal one). Playback recovers the moment you approve.\n" +
+					"3. Re-pin: read the new token from `GET /youtube` (or `/ytauth status`), put it " +
+					"back in `application.yml`, and restore `skipInitialization: true` so it survives restarts.",
 			},
 			{
-				Name: "Option B — mint elsewhere, submit by DM",
-				Value: "Run the repo's `lavalink/` container locally with `refreshToken` commented " +
-					"out, link via the logged device code as above, copy the token from the log, " +
-					"then DM me:\n`/ytauth set token:<the token>`\n" +
-					"It's pushed into grid's Lavalink instantly (no restart). Still pin it into " +
-					"grid's `application.yml` afterwards so it survives Lavalink restarts.",
-			},
-			{
-				Name:  "Check state",
-				Value: "`/ytauth status` shows whether a token is currently loaded.",
+				Name: "Shortcut if you mint a token elsewhere",
+				Value: "`/ytauth set token:<token>` pushes it into the live node instantly (no restart); " +
+					"`/ytauth status` shows the current token.",
 			},
 		},
 		Footer: style.Footer(),
@@ -92,6 +87,31 @@ func (m *Manager) maybeNotifyAuthFailure(message string) {
 		return
 	}
 	m.log.Warn("YouTube auth failure detected; admin alerted by DM", "message", message)
+}
+
+// cleanAuthReason distils Lavalink's verbose multi-client exception (which
+// otherwise dumps a full Java stack trace into the DM) down to the client's
+// own one-line reason, e.g. "This video requires login.".
+func cleanAuthReason(message string) string {
+	msg := strings.TrimSpace(message)
+	if i := strings.Index(msg, "failed: "); i >= 0 {
+		msg = msg[i+len("failed: "):]
+	}
+	if i := strings.Index(msg, " at "); i >= 0 {
+		msg = msg[:i] // drop the stack-trace frames
+	}
+	msg = strings.TrimSpace(msg)
+	// youtube-source doubles the phrase ("...login.This video requires login.").
+	if half := len(msg) / 2; half > 8 && msg[:half] == msg[half:] {
+		msg = strings.TrimSpace(msg[:half])
+	}
+	if msg == "" {
+		return "a login wall"
+	}
+	if r := []rune(msg); len(r) > 140 {
+		msg = strings.TrimSpace(string(r[:139])) + "…"
+	}
+	return msg
 }
 
 // SetYouTubeRefreshToken pushes a new OAuth refresh token into the running

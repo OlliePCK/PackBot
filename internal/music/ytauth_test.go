@@ -31,3 +31,26 @@ func TestAuthFailureRe(t *testing.T) {
 		})
 	}
 }
+
+func TestCleanAuthReason(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			"real multi-client trace",
+			"(yts.version: 1.18.1) All clients failed to load the item. Client [TVHTML5] failed: This video requires login.This video requires login. at dev.lavalink.youtube.clients.skeleton.Client.getPlayabilityStatus(Client.java:94) at dev.lavalink...",
+			"This video requires login.",
+		},
+		{"plain reason no trace", "Sign in to confirm you're not a bot", "Sign in to confirm you're not a bot"},
+		{"empty", "", "a login wall"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cleanAuthReason(tt.in); got != tt.want {
+				t.Errorf("cleanAuthReason() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

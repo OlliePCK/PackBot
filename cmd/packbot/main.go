@@ -115,13 +115,12 @@ func run() error {
 		} else {
 			slog.Warn("SPOTIFY_CLIENT_ID/SECRET not set; Spotify links disabled")
 		}
-		manager, err := music.NewManager(ctx, session, store, sp, yt, self.ID, cfg.LavalinkAddress, cfg.LavalinkPassword, cfg.API.AdminUserID)
-		if err != nil {
-			slog.Error("lavalink unavailable; music disabled", "error", err)
-		} else {
-			deps.Music = manager
-			musicManager = manager
-		}
+		// NewManager connects to Lavalink in the background and retries until
+		// the node is reachable, so a Lavalink that's slow to come up (e.g. the
+		// weekly backup restart) no longer disables music for the whole run.
+		manager := music.NewManager(ctx, session, store, sp, yt, self.ID, cfg.LavalinkAddress, cfg.LavalinkPassword, cfg.API.AdminUserID)
+		deps.Music = manager
+		musicManager = manager
 	} else {
 		slog.Warn("LAVALINK_ADDRESS not set; music disabled")
 	}

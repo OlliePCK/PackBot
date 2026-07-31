@@ -212,5 +212,33 @@ func (m *Manager) applyFilters(ctx context.Context, guildID string, active []str
 	if player == nil {
 		return nil // stored; applied when playback starts
 	}
-	return player.Update(ctx, lavalink.WithFilters(buildFilters(active)))
+
+	opts := []lavalink.PlayerUpdateOpt{lavalink.WithFilters(buildFilters(active))}
+	if pos, ok := filterFlushPosition(player.Track(), player.Position()); ok {
+		opts = append(opts, lavalink.WithPosition(pos))
+	}
+	// Filters and the flush seek go in ONE player update so Lavalink never
+	// briefly plays the old filter set at the new position.
+	return player.Update(ctx, opts...)
+}
+
+// filterFlushPosition returns the position to seek to so a filter change is
+// heard immediately, and whether to seek at all.
+//
+// Filters apply at decode time, but the frame buffer already holds audio that
+// was filtered with the PREVIOUS settings — roughly frameBufferDurationMs +
+// bufferDurationMs of it (~5.4s on the tuned node). Without a flush that stale
+// audio plays out first, which is the whole "filters take ages to kick in"
+// delay. Seeking to where the listener currently is discards the buffer and
+// re-decodes from that point with the new filters, so buffer size no longer
+// dictates filter latency.
+//
+// Requires useSeekGhosting: false on the node — with ghosting on, Lavalink
+// deliberately drains the old buffer to hide the seek gap, defeating the flush.
+// Live streams are not seekable, so they keep the plain filter update.
+func filterFlushPosition(track *lavalink.Track, position lavalink.Duration) (lavalink.Duration, bool) {
+	if track == nil || track.Info.IsStream || position <= 0 {
+		return 0, false
+	}
+	return position, true
 }

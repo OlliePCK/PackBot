@@ -101,16 +101,8 @@ func (s *Service) Run(ctx context.Context, session *discordgo.Session) {
 // the post from firing before Thursday's team announcements are in the data.
 func (s *Service) weeklyPost(ctx context.Context, session *discordgo.Session, guilds []storage.AflGuild, matches []Match) {
 	now := time.Now()
-	if now.Sub(lastThursdayAnnounce(now)) > 4*24*time.Hour {
-		return
-	}
 	round, roundMatches := CurrentRound(matches, now)
-	if round == "" {
-		return
-	}
-	// Stale guard: don't post a round that has already fully played out.
-	last := roundMatches[len(roundMatches)-1]
-	if now.After(last.Kickoff.Add(3 * time.Hour)) {
+	if round == "" || !roundIsCurrent(now, roundMatches) {
 		return
 	}
 
@@ -128,6 +120,46 @@ func (s *Service) weeklyPost(ctx context.Context, session *discordgo.Session, gu
 		}
 		s.log.Info("round preview posted", "round", round, "guild", g.GuildID, "matches", len(roundMatches))
 	}
+}
+
+// roundPostWindow bounds the weekly round-preview window: Thursday 19:00 →
+// Monday 19:00 Sydney. Long enough to retry across the weekend if the Thursday
+// post is missed, short enough to close before Tuesday's dataset flip.
+const roundPostWindow = 4 * 24 * time.Hour
+
+// roundIsCurrent reports whether roundMatches is the round to preview right
+// now. It fires only when all three hold:
+//
+//  1. now is inside this week's Thursday→Monday window;
+//  2. the round's OWN earliest fixture also falls inside that window — so the
+//     next round appearing early (once the current one finishes mid-window)
+//     is not posted before its own Thursday team announcements;
+//  3. the round hasn't already fully played out.
+//
+// Guard (2) was added after a live miss on 2026-07-23: Round 20 was posted the
+// previous weekend with preliminary data, which then blocked the proper
+// post-announcement Thursday post.
+func roundIsCurrent(now time.Time, roundMatches []Match) bool {
+	if len(roundMatches) == 0 {
+		return false
+	}
+	windowStart := lastThursdayAnnounce(now)
+	if now.Sub(windowStart) > roundPostWindow {
+		return false
+	}
+	earliest, latest := roundMatches[0].Kickoff, roundMatches[0].Kickoff
+	for _, m := range roundMatches[1:] {
+		if m.Kickoff.Before(earliest) {
+			earliest = m.Kickoff
+		}
+		if m.Kickoff.After(latest) {
+			latest = m.Kickoff
+		}
+	}
+	if earliest.After(windowStart.Add(roundPostWindow)) {
+		return false // next round showing up early, before its own window
+	}
+	return !now.After(latest.Add(3 * time.Hour))
 }
 
 // lastThursdayAnnounce returns the most recent Thursday 19:00 in Sydney time
