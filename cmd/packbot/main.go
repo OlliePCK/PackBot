@@ -152,7 +152,7 @@ func run() error {
 	go jobs.PollExpiry(ctx, session, store)
 	go jobs.BirthdayReminders(ctx, session, store)
 	if yt != nil {
-		go jobs.YouTubeNotifications(ctx, session, store, yt, cfg.YTMaxBackoffMultiplier)
+		go jobs.YouTubeNotifications(ctx, session, store, yt)
 	}
 	// Minecraft up/down notifications. The job logs and returns on its own when
 	// either the address or the channel is unset.

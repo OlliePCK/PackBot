@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
@@ -24,6 +25,8 @@ type Bot struct {
 
 	// componentRoutes maps customID prefixes to their owning command handler.
 	componentRoutes map[string]commands.Handler
+
+	gameExpose *trackers.GameExpose
 }
 
 // New wires handlers onto the provided session; it does not connect yet.
@@ -47,13 +50,15 @@ func New(cfg *config.Config, session *discordgo.Session, deps commands.Deps) (*B
 		}
 	}
 
-	b := &Bot{cfg: cfg, session: session, commands: registry, componentRoutes: componentRoutes}
+	gameExpose := trackers.NewGameExpose(deps.Store)
+	b := &Bot{cfg: cfg, session: session, commands: registry, componentRoutes: componentRoutes, gameExpose: gameExpose}
 	session.AddHandler(b.onReady)
 	session.AddHandler(b.onInteractionCreate)
 
 	// Presence-driven trackers (Node: events/event-functions/).
-	gameExpose := trackers.NewGameExpose(deps.Store)
-	session.AddHandler(gameExpose.HandlePresenceUpdate)
+	session.AddHandler(gameExpose.HandleGatewayEvent)
+	session.AddHandler(gameExpose.HandleConnect)
+	session.AddHandler(gameExpose.HandleDisconnect)
 	liveNoti := trackers.NewLiveNoti(deps.Store)
 	session.AddHandler(liveNoti.HandlePresenceUpdate)
 	session.AddHandler(liveNoti.HandleVoiceStateUpdate)
@@ -69,13 +74,31 @@ func (b *Bot) Session() *discordgo.Session {
 // Run connects, optionally registers commands, and blocks until ctx is
 // cancelled (SIGTERM/SIGINT), then closes the gateway connection cleanly.
 func (b *Bot) Run(ctx context.Context) error {
+	trackerCtx, stopTracker := context.WithCancel(context.Background())
+	go b.gameExpose.Run(trackerCtx, b.session)
+	trackerStopped := false
+	stopAndFlushTracker := func() {
+		if trackerStopped {
+			return
+		}
+		trackerStopped = true
+		b.gameExpose.StopAccepting()
+		stopTracker()
+		<-b.gameExpose.Done()
+		flushCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		b.gameExpose.Flush(flushCtx, b.session)
+	}
+
 	if err := b.session.Open(); err != nil {
+		stopAndFlushTracker()
 		return fmt.Errorf("bot: open gateway: %w", err)
 	}
 	slog.Info("gateway connected")
 
 	if b.cfg.RegisterCommands {
 		if err := b.registerCommands(); err != nil {
+			stopAndFlushTracker()
 			b.session.Close()
 			return err
 		}
@@ -83,6 +106,7 @@ func (b *Bot) Run(ctx context.Context) error {
 
 	<-ctx.Done()
 	slog.Info("shutdown signal received, closing gateway")
+	stopAndFlushTracker()
 	if err := b.session.Close(); err != nil {
 		return fmt.Errorf("bot: close gateway: %w", err)
 	}

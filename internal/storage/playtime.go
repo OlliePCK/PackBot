@@ -42,10 +42,14 @@ func (s *Store) RecordPlaytime(ctx context.Context, guildID, userID, username, g
 // TopPlaytimeTotal returns the top users by summed playtime across all games.
 func (s *Store) TopPlaytimeTotal(ctx context.Context, guildID string, limit int) ([]PlaytimeEntry, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT odUserId, odUsername, SUM(totalSeconds) AS total
-		   FROM Playtime WHERE guildId = ?
-		  GROUP BY odUserId, odUsername
-		  ORDER BY total DESC LIMIT ?`, guildID, limit)
+		`SELECT p.odUserId,
+		        COALESCE((SELECT p2.odUsername FROM Playtime p2
+		                  WHERE p2.guildId = ? AND p2.odUserId = p.odUserId
+		                  ORDER BY p2.lastPlayed DESC, p2.id DESC LIMIT 1), '') AS odUsername,
+		        SUM(p.totalSeconds) AS total
+		   FROM Playtime p WHERE p.guildId = ?
+		  GROUP BY p.odUserId
+		  ORDER BY total DESC LIMIT ?`, guildID, guildID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("storage: playtime total leaderboard: %w", err)
 	}
@@ -104,6 +108,34 @@ func (s *Store) UserPlaytime(ctx context.Context, guildID, userID string, limit 
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// UserPlaytimeSummary returns the displayed top games plus totals across every
+// tracked game, so a display limit never truncates the summary fields.
+func (s *Store) UserPlaytimeSummary(ctx context.Context, guildID, userID string, limit int) ([]PlaytimeEntry, int64, int, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT gameName, totalSeconds, lastPlayed,
+		        SUM(totalSeconds) OVER () AS allSeconds,
+		        COUNT(*) OVER () AS allGames
+		   FROM Playtime WHERE guildId = ? AND odUserId = ?
+		  ORDER BY totalSeconds DESC LIMIT ?`,
+		guildID, userID, limit)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("storage: user playtime summary: %w", err)
+	}
+	defer rows.Close()
+
+	var out []PlaytimeEntry
+	var totalSeconds int64
+	var gameCount int
+	for rows.Next() {
+		var entry PlaytimeEntry
+		if err := rows.Scan(&entry.GameName, &entry.TotalSeconds, &entry.LastPlayed, &totalSeconds, &gameCount); err != nil {
+			return nil, 0, 0, err
+		}
+		out = append(out, entry)
+	}
+	return out, totalSeconds, gameCount, rows.Err()
 }
 
 // TopGames returns the most-played games in a guild.

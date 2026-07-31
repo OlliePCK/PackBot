@@ -2,7 +2,9 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -14,63 +16,76 @@ import (
 )
 
 const (
-	ytBaseInterval  = 30 * time.Minute
-	ytConcurrency   = 5
-	ytMaxMissCount  = 10
-	ytFetchTimeout  = 20 * time.Second
-	ytNotifyTimeout = 15 * time.Second
+	ytBaseInterval       = 30 * time.Minute
+	ytConcurrency        = 5
+	ytFetchTimeout       = 20 * time.Second
+	ytCandidateLimit     = 50
+	ytMaxNotificationAge = 24 * time.Hour
+	ytFutureGrace        = 5 * time.Minute
 )
 
-// ytBackoffState tracks per-channel polling backoff: after a cycle with no
-// new video the channel skips 2^missCount − 1 cycles (capped by the
-// configured multiplier) — parity with the Node job.
-type ytBackoffState struct {
-	missCount      int
-	skipsRemaining int
+type youtubeNotificationStore interface {
+	WatchList(context.Context) ([]storage.WatchedChannel, error)
+	MarkVideoSeen(context.Context, string, string, string, string) error
+	ClaimYouTubeNotification(context.Context, storage.YouTubeNotificationKey, time.Time) (storage.YouTubeNotificationClaim, bool, error)
+	CompleteYouTubeNotification(context.Context, storage.YouTubeNotificationClaim, string) error
+	ReleaseYouTubeNotification(context.Context, storage.YouTubeNotificationClaim, error) error
+	SkipYouTubeNotification(context.Context, storage.YouTubeNotificationKey, time.Time, string) error
 }
 
-// nextSkips returns how many upcoming cycles to skip for a given miss count.
-func nextSkips(missCount, maxMultiplier int) int {
-	mult := 1
-	for range missCount {
-		mult *= 2
-		if mult >= maxMultiplier {
-			mult = maxMultiplier
-			break
-		}
-	}
-	return mult - 1
+type youtubeUploadSource interface {
+	RecentUploads(context.Context, string, int) ([]youtube.Video, error)
 }
 
-// YouTubeNotifications polls watched channels every 30 minutes and announces
-// new uploads to each guild's configured channel.
-func YouTubeNotifications(ctx context.Context, s *discordgo.Session, store *storage.Store, yt *youtube.Client, maxBackoffMultiplier int) {
+type youtubeNotifyFunc func(string, *youtube.Video) (string, error)
+
+type youtubeFetchResult struct {
+	channelID string
+	rows      []storage.WatchedChannel
+	videos    []youtube.Video
+	err       error
+}
+
+type youtubeDeliveryCandidate struct {
+	row   storage.WatchedChannel
+	video youtube.Video
+}
+
+type youtubeCandidateDisposition uint8
+
+const (
+	youtubeCandidateDeliver youtubeCandidateDisposition = iota
+	youtubeCandidateSkip
+	youtubeCandidateWait
+)
+
+// YouTubeNotifications checks immediately at startup and then every 30
+// minutes. Every target/video delivery is claimed durably before Discord is
+// called, so restarts cannot reset duplicate suppression.
+func YouTubeNotifications(ctx context.Context, s *discordgo.Session, store *storage.Store, yt *youtube.Client) {
 	log := slog.With("job", "youtube")
-	log.Info("youtube notifications started",
-		"interval", ytBaseInterval, "maxBackoff", time.Duration(maxBackoffMultiplier)*ytBaseInterval)
+	log.Info("youtube notifications started", "interval", ytBaseInterval)
 
-	backoff := make(map[string]*ytBackoffState) // channelId → state
-	// notified deduplicates across guilds sharing a notify channel:
-	// "notifyChannel:videoId" → seen.
-	notified := make(map[string]bool)
+	notify := func(channelID string, video *youtube.Video) (string, error) {
+		return sendVideoNotification(s, channelID, video)
+	}
+	runYouTubeCheck(ctx, store, yt, notify, time.Now(), log)
 
 	ticker := time.NewTicker(ytBaseInterval)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			log.Info("youtube notifications stopped")
 			return
-		case <-ticker.C:
-			checkAll(ctx, s, store, yt, log, backoff, notified, maxBackoffMultiplier)
+		case now := <-ticker.C:
+			runYouTubeCheck(ctx, store, yt, notify, now, log)
 		}
 	}
 }
 
-func checkAll(ctx context.Context, s *discordgo.Session, store *storage.Store, yt *youtube.Client,
-	log *slog.Logger, backoff map[string]*ytBackoffState, notified map[string]bool, maxMult int) {
-
+func runYouTubeCheck(ctx context.Context, store youtubeNotificationStore, yt youtubeUploadSource,
+	notify youtubeNotifyFunc, now time.Time, log *slog.Logger) {
 	log.Info("youtube check cycle start")
 	watchList, err := store.WatchList(ctx)
 	if err != nil {
@@ -78,111 +93,188 @@ func checkAll(ctx context.Context, s *discordgo.Session, store *storage.Store, y
 		return
 	}
 
-	// Group rows by YouTube channel so shared channels are fetched once.
 	grouped := make(map[string][]storage.WatchedChannel)
-	for _, w := range watchList {
-		grouped[w.ChannelID] = append(grouped[w.ChannelID], w)
+	for _, row := range watchList {
+		grouped[row.ChannelID] = append(grouped[row.ChannelID], row)
+	}
+	results := fetchYouTubeChannels(ctx, yt, grouped)
+
+	var deliveries []youtubeDeliveryCandidate
+	type stateUpdate struct {
+		row     storage.WatchedChannel
+		videoID string
+	}
+	var updates []stateUpdate
+
+	for _, result := range results {
+		if result.err != nil {
+			log.Error("fetch recent uploads failed", "channel", result.channelID, "error", result.err)
+			continue
+		}
+		if len(result.videos) == 0 {
+			continue
+		}
+		videos := uniqueVideos(result.videos)
+		if len(videos) == 0 {
+			continue
+		}
+		sort.SliceStable(videos, func(i, j int) bool {
+			return videos[i].PublishedAt.Before(videos[j].PublishedAt)
+		})
+		newestID := videos[len(videos)-1].ID
+
+		for _, row := range result.rows {
+			for i := range videos {
+				video := videos[i]
+				disposition, reason := classifyYouTubeCandidate(row, video, now)
+				switch disposition {
+				case youtubeCandidateDeliver:
+					deliveries = append(deliveries, youtubeDeliveryCandidate{row: row, video: video})
+				case youtubeCandidateSkip:
+					key := youtubeNotificationKey(row, video.ID)
+					publishedAt := video.PublishedAt
+					if publishedAt.IsZero() {
+						publishedAt = now
+					}
+					if err := store.SkipYouTubeNotification(ctx, key, publishedAt, reason); err != nil {
+						log.Error("failed to persist skipped youtube video", "video", video.ID, "guild", row.GuildID, "error", err)
+					}
+				case youtubeCandidateWait:
+					// Leave future publications unclaimed for a later cycle.
+				}
+			}
+			updates = append(updates, stateUpdate{row: row, videoID: newestID})
+		}
 	}
 
-	// Bounded concurrency via a semaphore channel — the stdlib idiom that
-	// replaces Node's p-limit.
+	// Fetching remains concurrent, but delivery is deterministic across every
+	// channel: oldest publication first, then stable IDs as tie-breakers.
+	sort.SliceStable(deliveries, func(i, j int) bool {
+		left, right := deliveries[i], deliveries[j]
+		if !left.video.PublishedAt.Equal(right.video.PublishedAt) {
+			return left.video.PublishedAt.Before(right.video.PublishedAt)
+		}
+		if left.row.NotifyChannelID != right.row.NotifyChannelID {
+			return left.row.NotifyChannelID < right.row.NotifyChannelID
+		}
+		if left.row.ChannelID != right.row.ChannelID {
+			return left.row.ChannelID < right.row.ChannelID
+		}
+		return left.video.ID < right.video.ID
+	})
+
+	blocked := make(map[string]bool)
+	for i := range deliveries {
+		candidate := &deliveries[i]
+		streamKey := candidate.row.NotifyChannelID + ":" + candidate.row.ChannelID
+		if blocked[streamKey] {
+			continue
+		}
+
+		key := youtubeNotificationKey(candidate.row, candidate.video.ID)
+		claim, claimed, err := store.ClaimYouTubeNotification(ctx, key, candidate.video.PublishedAt)
+		if err != nil {
+			log.Error("failed to claim youtube notification", "video", candidate.video.ID, "guild", candidate.row.GuildID, "error", err)
+			blocked[streamKey] = true
+			continue
+		}
+		if !claimed {
+			continue
+		}
+
+		messageID, err := notify(candidate.row.NotifyChannelID, &candidate.video)
+		if err != nil {
+			log.Error("youtube notify failed", "video", candidate.video.ID, "guild", candidate.row.GuildID, "error", err)
+			if releaseErr := store.ReleaseYouTubeNotification(ctx, claim, err); releaseErr != nil {
+				log.Error("failed to release youtube notification claim", "video", candidate.video.ID, "error", releaseErr)
+			}
+			blocked[streamKey] = true
+			continue
+		}
+		if err := store.CompleteYouTubeNotification(ctx, claim, messageID); err != nil {
+			// Keep the claim leased after Discord accepted the message instead
+			// of making a transient database error immediately retryable.
+			log.Error("failed to complete youtube notification", "video", candidate.video.ID, "message", messageID, "error", err)
+			blocked[streamKey] = true
+		}
+	}
+
+	for _, update := range updates {
+		if err := store.MarkVideoSeen(ctx, update.row.Handle, update.row.ChannelID, update.row.GuildID, update.videoID); err != nil {
+			log.Error("failed to update youtube scan state", "handle", update.row.Handle, "error", err)
+		}
+	}
+	log.Info("youtube check cycle end", "channels", len(grouped), "candidates", len(deliveries))
+}
+
+func fetchYouTubeChannels(ctx context.Context, yt youtubeUploadSource,
+	grouped map[string][]storage.WatchedChannel) []youtubeFetchResult {
+	results := make(chan youtubeFetchResult, len(grouped))
 	sem := make(chan struct{}, ytConcurrency)
 	var wg sync.WaitGroup
-	var mu sync.Mutex // guards backoff + notified across goroutines
-
-	for channelID, group := range grouped {
+	for channelID, rows := range grouped {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			processChannel(ctx, s, store, yt, log, channelID, group, backoff, notified, maxMult, &mu)
+
+			fetchCtx, cancel := context.WithTimeout(ctx, ytFetchTimeout)
+			videos, err := yt.RecentUploads(fetchCtx, channelID, ytCandidateLimit)
+			cancel()
+			results <- youtubeFetchResult{channelID: channelID, rows: rows, videos: videos, err: err}
 		}()
 	}
 	wg.Wait()
-	log.Info("youtube check cycle end")
+	close(results)
+
+	out := make([]youtubeFetchResult, 0, len(grouped))
+	for result := range results {
+		out = append(out, result)
+	}
+	return out
 }
 
-func processChannel(ctx context.Context, s *discordgo.Session, store *storage.Store, yt *youtube.Client,
-	log *slog.Logger, channelID string, group []storage.WatchedChannel,
-	backoff map[string]*ytBackoffState, notified map[string]bool, maxMult int, mu *sync.Mutex) {
-
-	mu.Lock()
-	state, ok := backoff[channelID]
-	if !ok {
-		state = &ytBackoffState{}
-		backoff[channelID] = state
-	}
-	if state.skipsRemaining > 0 {
-		state.skipsRemaining--
-		mu.Unlock()
-		return
-	}
-	mu.Unlock()
-
-	fetchCtx, cancel := context.WithTimeout(ctx, ytFetchTimeout)
-	latest, err := yt.LatestVideo(fetchCtx, channelID)
-	cancel()
-
-	miss := func() {
-		mu.Lock()
-		state.missCount = min(state.missCount+1, ytMaxMissCount)
-		state.skipsRemaining = nextSkips(state.missCount, maxMult)
-		mu.Unlock()
-	}
-
-	if err != nil {
-		log.Error("fetch latest video failed", "channel", channelID, "error", err)
-		miss()
-		return
-	}
-	if latest == nil {
-		miss()
-		return
-	}
-
-	anyNew := false
-	for _, row := range group {
-		// First sighting: seed without notifying.
-		if !row.Initialized || row.LastCheckedVideo == nil {
-			if err := store.MarkVideoSeen(ctx, row.Handle, channelID, row.GuildID, latest.ID); err != nil {
-				log.Error("failed to seed video state", "handle", row.Handle, "error", err)
-			}
+func uniqueVideos(videos []youtube.Video) []youtube.Video {
+	seen := make(map[string]bool, len(videos))
+	out := make([]youtube.Video, 0, len(videos))
+	for _, video := range videos {
+		if video.ID == "" || seen[video.ID] {
 			continue
 		}
-		if *row.LastCheckedVideo == latest.ID {
-			continue // nothing new
-		}
-
-		dedupeKey := row.NotifyChannelID + ":" + latest.ID
-		mu.Lock()
-		alreadySent := notified[dedupeKey]
-		notified[dedupeKey] = true
-		mu.Unlock()
-
-		if !alreadySent {
-			if err := sendVideoNotification(s, row.NotifyChannelID, latest); err != nil {
-				log.Error("notify failed", "guild", row.GuildID, "channel", channelID, "error", err)
-			}
-		}
-		if err := store.MarkVideoSeen(ctx, row.Handle, channelID, row.GuildID, latest.ID); err != nil {
-			log.Error("failed to update video state", "handle", row.Handle, "error", err)
-		}
-		anyNew = true
+		seen[video.ID] = true
+		out = append(out, video)
 	}
-
-	mu.Lock()
-	if anyNew {
-		state.missCount = 0
-		state.skipsRemaining = 0
-	} else {
-		state.missCount = min(state.missCount+1, ytMaxMissCount)
-		state.skipsRemaining = nextSkips(state.missCount, maxMult)
-	}
-	mu.Unlock()
+	return out
 }
 
-func sendVideoNotification(s *discordgo.Session, notifyChannelID string, video *youtube.Video) error {
+func classifyYouTubeCandidate(row storage.WatchedChannel, video youtube.Video,
+	now time.Time) (youtubeCandidateDisposition, string) {
+	if video.PublishedAt.IsZero() {
+		return youtubeCandidateSkip, "missing-published-at"
+	}
+	if video.PublishedAt.After(now.Add(ytFutureGrace)) {
+		return youtubeCandidateWait, "future-publication"
+	}
+	if !row.CreatedAt.IsZero() && video.PublishedAt.Before(row.CreatedAt.Add(-ytFutureGrace)) {
+		return youtubeCandidateSkip, "before-subscription"
+	}
+	if video.PublishedAt.Before(now.Add(-ytMaxNotificationAge)) {
+		return youtubeCandidateSkip, "expired"
+	}
+	return youtubeCandidateDeliver, ""
+}
+
+func youtubeNotificationKey(row storage.WatchedChannel, videoID string) storage.YouTubeNotificationKey {
+	return storage.YouTubeNotificationKey{
+		GuildID:          row.GuildID,
+		NotifyChannelID:  row.NotifyChannelID,
+		YouTubeChannelID: row.ChannelID,
+		VideoID:          videoID,
+	}
+}
+
+func sendVideoNotification(s *discordgo.Session, notifyChannelID string, video *youtube.Video) (string, error) {
 	embed := &discordgo.MessageEmbed{
 		Title:       video.Title,
 		URL:         youtube.WatchURL(video.ID),
@@ -193,6 +285,12 @@ func sendVideoNotification(s *discordgo.Session, notifyChannelID string, video *
 	if video.ThumbnailURL != "" {
 		embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: video.ThumbnailURL}
 	}
-	_, err := style.Send(s, notifyChannelID, "🔔 New video: "+youtube.WatchURL(video.ID), embed)
-	return err
+	message, err := style.Send(s, notifyChannelID, "🔔 New video: "+youtube.WatchURL(video.ID), embed)
+	if err != nil {
+		return "", err
+	}
+	if message == nil {
+		return "", fmt.Errorf("youtube notification returned no Discord message")
+	}
+	return message.ID, nil
 }

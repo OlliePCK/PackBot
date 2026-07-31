@@ -118,7 +118,6 @@ state change after the reminder cannot be observed or reserved. Leave
 ## Jobs / misc
 
 - `PROXY_URL` — optional HTTP proxy for YouTube upload polling only.
-- `YT_MAX_BACKOFF_MULTIPLIER` — polling backoff cap (default 8 → 4h).
 - `TZ` — container timezone (birthday reminders always use
   Australia/Melbourne regardless).
 

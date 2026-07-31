@@ -121,7 +121,7 @@ Shared embed conventions: footer `The Pack` + logo icon; colors `#ff006a` (brand
 
 | Module | Listens to | Behaviour |
 |---|---|---|
-| `game-expose.js` | `presenceUpdate` | Tracks activity sessions in-memory (keyed user\|activity, wall-clock from when the bot first sees it). On stop: records ≥60s sessions into `Playtime` (upsert, accumulating `totalSeconds`); if the session was ≥6h, announces "X played GAME for N hours!" in `generalChannelID`. Guild channel IDs cached in-memory indefinitely. |
+| `game-expose` | gateway presence, connect, disconnect | Tracks Playing activities per guild/user/game from first observation, including games without Discord timestamps. Sessions ≥60s are checkpointed into `Playtime` every minute, retried after write failures, flushed on graceful shutdown, and reseeded from cached/initial presences after reconnects. Changed start timestamps split same-name sessions. Completed sessions ≥6h are announced in `generalChannelID` only after all pending playtime is stored. |
 | `live-noti.js` | `presenceUpdate`, `voiceStateUpdate` | Discord streaming (activity type 1) detection. On start: adds `liveRoleID`, announces stream URL embed in `liveChannelID`, and sets "LIVE STREAMING 🔴" as the voice-channel topic/name if streamer is in VC. On stop: removes role, clears channel status. Tracks streaming state and voice channel in-memory; guild profiles cached in-memory indefinitely (no TTL — settings changes need a restart to take effect here). |
 
 ---
@@ -130,7 +130,7 @@ Shared embed conventions: footer `The Pack` + logo icon; colors `#ff006a` (brand
 
 | Job | Schedule | Behaviour |
 |---|---|---|
-| `youtube-notifications.js` | node-cron `*/30 * * * *` | For each `Youtube` row joined to guilds with `youtubeChannelID` set: fetch the latest video via YouTube Data API `search` (maxResults=1, optional `PROXY_URL` via https-proxy-agent with 407-failure bypass), concurrency 5 (p-limit). Per-channel exponential backoff on "no new video" cycles (2^misses skipped cycles, capped at `YT_MAX_BACKOFF_MULTIPLIER`, default 8 → 4h). First sighting seeds `lastCheckedVideo` without notifying. New video → embed + link in the guild's YouTube channel, dedupe across guilds sharing a notify channel. Batch-upserts state. Aggregated 403 logging. |
+| `youtube-notifications` | immediately at startup, then every 30m | Fetches up to 50 public videos from each channel's canonical uploads playlist with concurrency 5. Candidates older than the subscription or 24h freshness window are durably skipped; future publications wait. Eligible videos are globally sorted oldest-first, claimed in `YoutubeNotificationDeliveries`, sent once per Discord target/video, completed after Discord accepts them, and released for ordered retry after send failures. The durable ledger survives restarts and title changes. |
 | `birthday-reminders.js` | node-cron `0 9 * * *`, timezone **Australia/Melbourne** | Finds today's `Birthdays` (joined to guilds with `generalChannelID`), groups by channel, mentions everyone with a **deliberately insulting** random message from `birthday-messages.json` (15 entries), plus up to 3 famous birthdays fetched from `today.zenquotes.io`. |
 | `cookie-monitor.js` | node-cron `0 9 * * *` + once 10s after startup | Parses the yt-dlp cookies file (`YTDLP_COOKIES_PATH`, default `/usr/src/app/cookies.txt`) for YouTube/Google auth cookies (`__Secure-1PSID` etc.); warns at <30 days, critical at <7 days/expired. Alerts to **hardcoded channel `255258298230636545`** with refresh instructions; pings a role with the **same hardcoded ID** when critical (see ⚠️-6). |
 | `poll-expiry.js` | `setInterval` 30s | Closes `Polls` rows past `expiresAt`, edits the poll message to final results and removes buttons. |
@@ -213,7 +213,8 @@ Config from `MYSQL_HOST/PORT/USER/PASSWORD/DB`. Migrations = numbered `.sql` fil
 | Table | Purpose / notable columns |
 |---|---|
 | `Guilds` | Per-guild settings: liveRoleID, liveChannelID, generalChannelID, youtubeChannelID, voiceCommandsEnabled, twentyFourSevenMode, starboardChannelID, starThreshold. Auto-upserted on first interaction. |
-| `Youtube` | Watch-list: handle, channelId, guildId (unique pair), lastCheckedVideo, initialized, lastChecked. |
+| `Youtube` | Watch-list: handle, channelId, guildId, lastCheckedVideo, initialized, lastChecked, createdAt subscription watermark. |
+| `YoutubeNotificationDeliveries` | Durable per-target/channel/video claims, sent/skipped outcome, Discord message ID, attempts, and last error. Prevents restart duplicates and records historical candidates that must not notify. |
 | `Playtime` | guildId+odUserId+gameName unique; accumulating totalSeconds; lastPlayed. |
 | `VoiceWhitelist` | Guilds allowed to use Deepgram voice commands. |
 | `SavedPlaylists` | guildId+userId+name unique; url; platform. |
@@ -226,7 +227,7 @@ Config from `MYSQL_HOST/PORT/USER/PASSWORD/DB`. Migrations = numbered `.sql` fil
 | `PageMonitors` | **Dead** — no code references it (see §10). |
 
 Other state:
-- **In-memory only (lost on restart):** music queues/history, troll state, poll button collectors, playtime session start-times, live-streaming state, guild-profile caches, backoff state for YouTube polling, OAuth sessions.
+- **In-memory only (lost on restart):** music queues/history, troll state, poll button collectors, the uncheckpointed tail of active playtime sessions after an ungraceful exit, live-streaming state, guild-profile caches, OAuth sessions. YouTube notification outcomes are durable.
 - **Files:** `logs/packbot.log` (custom logger: level filter, 10s dedup window, size-based rotation, text/JSON console formats), `cookies.txt` (git-ignored, mounted in Docker), `yt-dlp.conf`.
 
 ---
