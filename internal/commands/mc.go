@@ -144,7 +144,7 @@ func mcStatus(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.In
 			Footer: style.Footer(),
 		})
 	}
-	return Respond(s, i, mcStatusEmbed(d.MC.Addr, status))
+	return Respond(s, i, mcStatusEmbed(d.MC.Addr, status, d.MCMapURL))
 }
 
 func mcWhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.InteractionCreate,
@@ -217,7 +217,7 @@ func mcWhitelist(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo
 }
 
 // mcStatusEmbed renders a successful ping in PackBot's house style.
-func mcStatusEmbed(addr string, st *minecraft.Status) *discordgo.MessageEmbed {
+func mcStatusEmbed(addr string, st *minecraft.Status, mapURL string) *discordgo.MessageEmbed {
 	embed := &discordgo.MessageEmbed{
 		Title: "Minecraft",
 		Description: fmt.Sprintf("%s | **Online** — `%s`",
@@ -250,6 +250,13 @@ func mcStatusEmbed(addr string, st *minecraft.Status) *discordgo.MessageEmbed {
 		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
 			Name:  "MOTD",
 			Value: motd,
+		})
+	}
+
+	if mapURL != "" {
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "Map",
+			Value: mapURL,
 		})
 	}
 

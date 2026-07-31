@@ -108,6 +108,7 @@ func run() error {
 	}
 	// Role-driven whitelisting needs RCON *and* a role; without both, /mc link
 	// still records identity for playtime attribution but grants no access.
+	deps.MCMapURL = cfg.MCMapURL
 	if deps.MCSync = mcsync.New(store, deps.RCON, cfg.MCWhitelistRoleID); deps.MCSync == nil {
 		slog.Warn("MC_WHITELIST_ROLE_ID or RCON not set; role-driven whitelisting disabled")
 	}

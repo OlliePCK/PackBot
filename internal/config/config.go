@@ -76,6 +76,9 @@ type Config struct {
 	// record identity only and grant nothing.
 	MCWhitelistRoleID string // MC_WHITELIST_ROLE_ID (optional)
 
+	// MCMapURL is a BlueMap/Dynmap URL surfaced in /mc status. Empty omits it.
+	MCMapURL string // MC_MAP_URL (optional)
+
 	Media Media
 }
 
@@ -203,6 +206,7 @@ func Load() (*Config, error) {
 	cfg.MCRCONAddress = strings.TrimSpace(os.Getenv("MC_RCON_ADDRESS"))
 	cfg.MCRCONPassword = os.Getenv("MC_RCON_PASSWORD")
 	cfg.MCWhitelistRoleID = strings.TrimSpace(os.Getenv("MC_WHITELIST_ROLE_ID"))
+	cfg.MCMapURL = strings.TrimSpace(os.Getenv("MC_MAP_URL"))
 
 	cfg.Media = loadMedia()
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))

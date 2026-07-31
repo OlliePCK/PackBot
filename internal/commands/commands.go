@@ -40,6 +40,8 @@ type Deps struct {
 	// MCSync is nil unless RCON and MC_WHITELIST_ROLE_ID are both configured;
 	// linking then stores identity without granting access.
 	MCSync *mcsync.Syncer
+	// MCMapURL is surfaced as a link in /mc status when set.
+	MCMapURL string
 	// AdminUserID (API_ADMIN_USER_ID) gates owner-only commands (/ytauth).
 	AdminUserID string
 }
