@@ -13,6 +13,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/OlliePCK/packbot/internal/minecraft"
+	"github.com/OlliePCK/packbot/internal/storage"
 	"github.com/OlliePCK/packbot/internal/style"
 )
 
@@ -113,7 +114,7 @@ func (t *logTailer) readLines() ([]string, error) {
 //
 // This supersedes the status job's roster announcements: the log is
 // authoritative and immediate, where the status ping is sampled and capped.
-func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID string) {
+func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID string, store *storage.Store) {
 	log := slog.With("job", "minecraft-log")
 
 	if logPath == "" || channelID == "" {
@@ -165,7 +166,25 @@ func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID 
 						continue // not a player we've seen join; ignore
 					}
 				}
-				if text := renderLogEvent(ev); text != "" && len(rendered) < mcLogMaxEvents {
+				// Persist before rendering so the leaderboards stay complete
+				// even if the Discord post fails.
+				first := false
+				if store != nil {
+					switch ev.Kind {
+					case minecraft.EventDeath:
+						if err := store.RecordMinecraftDeath(ctx, ev.Player, ev.Detail); err != nil {
+							log.Error("record death failed", "error", err, "player", ev.Player)
+						}
+					case minecraft.EventAdvancement:
+						if f, err := store.RecordMinecraftAdvancement(ctx, ev.Player, ev.Detail); err != nil {
+							log.Error("record advancement failed", "error", err, "player", ev.Player)
+						} else {
+							first = f
+						}
+					}
+				}
+
+				if text := renderLogEvent(ev, first); text != "" && len(rendered) < mcLogMaxEvents {
 					rendered = append(rendered, text)
 				}
 			}
@@ -186,13 +205,16 @@ func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID 
 	}
 }
 
-func renderLogEvent(ev minecraft.LogEvent) string {
+func renderLogEvent(ev minecraft.LogEvent, first bool) string {
 	switch ev.Kind {
 	case minecraft.EventJoin:
 		return fmt.Sprintf("**+** %s joined", ev.Player)
 	case minecraft.EventLeave:
 		return fmt.Sprintf("**−** %s left", ev.Player)
 	case minecraft.EventAdvancement:
+		if first {
+			return fmt.Sprintf("🥇 **%s** is first to earn **%s**", ev.Player, ev.Detail)
+		}
 		return fmt.Sprintf("🏆 **%s** earned **%s**", ev.Player, ev.Detail)
 	case minecraft.EventDeath:
 		return fmt.Sprintf("💀 %s %s", ev.Player, ev.Detail)

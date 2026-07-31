@@ -159,7 +159,7 @@ func run() error {
 	// The log tailer is authoritative for joins and leaves when configured, so
 	// the status job stops announcing them to avoid duplicate posts.
 	go jobs.MinecraftStatus(ctx, session, deps.MC, cfg.MCStatusChannelID, store, cfg.MCLogPath == "")
-	go jobs.MinecraftLog(ctx, session, cfg.MCLogPath, cfg.MCStatusChannelID)
+	go jobs.MinecraftLog(ctx, session, cfg.MCLogPath, cfg.MCStatusChannelID, store)
 
 	// Web API (Node started it on clientReady; here it runs alongside the
 	// gateway and shuts down on the same signal context).

@@ -135,3 +135,102 @@ func (s *Store) ClaimMinecraftAccount(ctx context.Context, guildID, userID, mcUs
 	}
 	return previous, nil
 }
+
+// MinecraftCount is one leaderboard row: a name and a tally.
+type MinecraftCount struct {
+	Name  string
+	Count int
+}
+
+// RecordMinecraftDeath appends one death.
+func (s *Store) RecordMinecraftDeath(ctx context.Context, mcUsername, cause string) error {
+	if len(cause) > 255 {
+		cause = cause[:255]
+	}
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO MinecraftDeaths (mcUsername, cause) VALUES (?, ?)`,
+		mcUsername, cause); err != nil {
+		return fmt.Errorf("storage: record minecraft death: %w", err)
+	}
+	return nil
+}
+
+// TopMinecraftDeaths ranks players by how often they have died.
+func (s *Store) TopMinecraftDeaths(ctx context.Context, limit int) ([]MinecraftCount, error) {
+	return s.minecraftCounts(ctx,
+		`SELECT mcUsername, COUNT(*) AS n FROM MinecraftDeaths
+		  GROUP BY mcUsername ORDER BY n DESC LIMIT ?`, limit)
+}
+
+// TopMinecraftDeathCauses ranks the ways people die, with the leading verb
+// phrase kept but any trailing detail ("by Enderman") dropped so that
+// "was slain by Enderman" and "was slain by Zombie" group together.
+func (s *Store) TopMinecraftDeathCauses(ctx context.Context, limit int) ([]MinecraftCount, error) {
+	return s.minecraftCounts(ctx,
+		`SELECT SUBSTRING_INDEX(cause, ' by ', 1) AS c, COUNT(*) AS n
+		   FROM MinecraftDeaths GROUP BY c ORDER BY n DESC LIMIT ?`, limit)
+}
+
+// RecordMinecraftAdvancement stores an earned advancement and reports whether
+// this player was the first on the server to earn it.
+//
+// The check runs before the insert, so the winner is whoever's row lands
+// first; at a friend-group's event rate the race is not worth locking for.
+func (s *Store) RecordMinecraftAdvancement(ctx context.Context, mcUsername, advancement string) (first bool, err error) {
+	if len(advancement) > 128 {
+		advancement = advancement[:128]
+	}
+
+	var existing int
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM MinecraftAdvancements WHERE advancement = ?`,
+		advancement).Scan(&existing); err != nil {
+		return false, fmt.Errorf("storage: check advancement: %w", err)
+	}
+
+	res, err := s.db.ExecContext(ctx,
+		`INSERT IGNORE INTO MinecraftAdvancements (mcUsername, advancement) VALUES (?, ?)`,
+		mcUsername, advancement)
+	if err != nil {
+		return false, fmt.Errorf("storage: record advancement: %w", err)
+	}
+	// INSERT IGNORE affects no rows when the player already had it, in which
+	// case this is a replay rather than a new achievement.
+	n, _ := res.RowsAffected()
+	return existing == 0 && n > 0, nil
+}
+
+// TopMinecraftAdvancements ranks players by how many advancements they hold.
+func (s *Store) TopMinecraftAdvancements(ctx context.Context, limit int) ([]MinecraftCount, error) {
+	return s.minecraftCounts(ctx,
+		`SELECT mcUsername, COUNT(*) AS n FROM MinecraftAdvancements
+		  GROUP BY mcUsername ORDER BY n DESC LIMIT ?`, limit)
+}
+
+// MinecraftFirsts counts how many advancements each player earned before
+// anyone else — the actual race scoreboard.
+func (s *Store) MinecraftFirsts(ctx context.Context, limit int) ([]MinecraftCount, error) {
+	return s.minecraftCounts(ctx,
+		`SELECT mcUsername, COUNT(*) AS n FROM MinecraftAdvancements a
+		  WHERE earnedAt = (SELECT MIN(b.earnedAt) FROM MinecraftAdvancements b
+		                     WHERE b.advancement = a.advancement)
+		  GROUP BY mcUsername ORDER BY n DESC LIMIT ?`, limit)
+}
+
+func (s *Store) minecraftCounts(ctx context.Context, query string, args ...any) ([]MinecraftCount, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("storage: minecraft counts: %w", err)
+	}
+	defer rows.Close()
+
+	var out []MinecraftCount
+	for rows.Next() {
+		var c MinecraftCount
+		if err := rows.Scan(&c.Name, &c.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
