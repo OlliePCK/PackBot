@@ -55,6 +55,10 @@ type Config struct {
 	// "http://192.168.1.16:3002"). Empty disables /tips and AFL announcements.
 	AFLAPIURL string // AFL_API_URL (optional)
 
+	// MCAddress is the Minecraft server queried by /mc, as "host" or
+	// "host:port" (port defaults to 25565). Empty disables /mc.
+	MCAddress string // MC_ADDRESS (optional)
+
 	Media Media
 }
 
@@ -177,6 +181,7 @@ func Load() (*Config, error) {
 	cfg.SpotifyClientID = strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_ID"))
 	cfg.SpotifyClientSecret = strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_SECRET"))
 	cfg.AFLAPIURL = strings.TrimRight(strings.TrimSpace(os.Getenv("AFL_API_URL")), "/")
+	cfg.MCAddress = strings.TrimSpace(os.Getenv("MC_ADDRESS"))
 
 	cfg.Media = loadMedia()
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))

@@ -13,6 +13,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/OlliePCK/packbot/internal/afl"
+	"github.com/OlliePCK/packbot/internal/minecraft"
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/storage"
 	"github.com/OlliePCK/packbot/internal/style"
@@ -30,6 +31,8 @@ type Deps struct {
 	Music *music.Manager
 	// AFL is nil when AFL_API_URL is unset; /tips degrades gracefully.
 	AFL *afl.Service
+	// MC is nil when MC_ADDRESS is unset; /mc degrades gracefully.
+	MC *minecraft.Client
 	// AdminUserID (API_ADMIN_USER_ID) gates owner-only commands (/ytauth).
 	AdminUserID string
 }
@@ -95,6 +98,7 @@ func All(d Deps) []*Command {
 		Filters(d),
 		YTAuth(d),
 		Tips(d),
+		MC(d),
 	}
 }
 

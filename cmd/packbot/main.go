@@ -19,6 +19,7 @@ import (
 	"github.com/OlliePCK/packbot/internal/config"
 	"github.com/OlliePCK/packbot/internal/jobs"
 	"github.com/OlliePCK/packbot/internal/logging"
+	"github.com/OlliePCK/packbot/internal/minecraft"
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/spotify"
 	"github.com/OlliePCK/packbot/internal/storage"
@@ -92,6 +93,12 @@ func run() error {
 		}()
 	} else {
 		slog.Warn("AFL_API_URL not set; /tips and AFL announcements disabled")
+	}
+
+	// Minecraft status is a plain outbound server-list ping — no plugin, no
+	// RCON, nothing to reach us — so the address is the entire configuration.
+	if deps.MC = minecraft.New(cfg.MCAddress); deps.MC == nil {
+		slog.Warn("MC_ADDRESS not set; /mc disabled")
 	}
 
 	// Music runs against a Lavalink node; the node being down disables music
