@@ -152,7 +152,7 @@ func run() error {
 	// Web API (Node started it on clientReady; here it runs alongside the
 	// gateway and shuts down on the same signal context).
 	if cfg.API.Enabled {
-		apiServer := api.New(cfg.API, store, session, yt, musicManager)
+		apiServer := api.New(cfg.API, store, session, yt, musicManager, deps.MC)
 		go func() {
 			if err := apiServer.Run(ctx); err != nil {
 				slog.Error("web API server failed", "error", err)
