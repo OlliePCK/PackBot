@@ -59,6 +59,10 @@ type Config struct {
 	// "host:port" (port defaults to 25565). Empty disables /mc.
 	MCAddress string // MC_ADDRESS (optional)
 
+	// MCStatusChannelID receives up/down notifications for the Minecraft
+	// server. Empty disables the notifications job (/mc still works).
+	MCStatusChannelID string // MC_STATUS_CHANNEL_ID (optional)
+
 	Media Media
 }
 
@@ -182,6 +186,7 @@ func Load() (*Config, error) {
 	cfg.SpotifyClientSecret = strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_SECRET"))
 	cfg.AFLAPIURL = strings.TrimRight(strings.TrimSpace(os.Getenv("AFL_API_URL")), "/")
 	cfg.MCAddress = strings.TrimSpace(os.Getenv("MC_ADDRESS"))
+	cfg.MCStatusChannelID = strings.TrimSpace(os.Getenv("MC_STATUS_CHANNEL_ID"))
 
 	cfg.Media = loadMedia()
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))
