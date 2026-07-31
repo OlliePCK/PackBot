@@ -173,7 +173,7 @@ func (t *mcTracker) observe(ok bool) (state mcState, changed bool) {
 // Like the other jobs it is started with `go jobs.MinecraftStatus(...)` and
 // exits when ctx is cancelled. It no-ops when either the client or the channel
 // is unconfigured.
-func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Client, channelID string, store *storage.Store) {
+func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Client, channelID string, store *storage.Store, announceRoster bool) {
 	log := slog.With("job", "minecraft")
 
 	if mc == nil || channelID == "" {
@@ -233,7 +233,9 @@ func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Cl
 		lastPoll = now
 
 		joined, left := players.observe(names)
-		if len(joined) == 0 && len(left) == 0 {
+		if !announceRoster || (len(joined) == 0 && len(left) == 0) {
+			// The log tailer announces joins and leaves when it is running;
+			// the roster is still tracked here because playtime needs it.
 			return
 		}
 		if _, sendErr := s.ChannelMessageSendEmbed(channelID,

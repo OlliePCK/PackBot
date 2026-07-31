@@ -77,6 +77,11 @@ type Config struct {
 	// MCMapURL is a BlueMap/Dynmap URL surfaced in /mc status. Empty omits it.
 	MCMapURL string // MC_MAP_URL (optional)
 
+	// MCLogPath points at the Minecraft server's latest.log, bind-mounted
+	// read-only. Set, it enables join/leave/advancement/death notifications
+	// from the log and supersedes the status job's sampled roster diffing.
+	MCLogPath string // MC_LOG_PATH (optional)
+
 	Media Media
 }
 
@@ -205,6 +210,7 @@ func Load() (*Config, error) {
 	cfg.MCRCONPassword = os.Getenv("MC_RCON_PASSWORD")
 	cfg.MCGuildID = strings.TrimSpace(os.Getenv("MC_GUILD_ID"))
 	cfg.MCMapURL = strings.TrimSpace(os.Getenv("MC_MAP_URL"))
+	cfg.MCLogPath = strings.TrimSpace(os.Getenv("MC_LOG_PATH"))
 
 	cfg.Media = loadMedia()
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))

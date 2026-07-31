@@ -156,7 +156,10 @@ func run() error {
 	}
 	// Minecraft up/down notifications. The job logs and returns on its own when
 	// either the address or the channel is unset.
-	go jobs.MinecraftStatus(ctx, session, deps.MC, cfg.MCStatusChannelID, store)
+	// The log tailer is authoritative for joins and leaves when configured, so
+	// the status job stops announcing them to avoid duplicate posts.
+	go jobs.MinecraftStatus(ctx, session, deps.MC, cfg.MCStatusChannelID, store, cfg.MCLogPath == "")
+	go jobs.MinecraftLog(ctx, session, cfg.MCLogPath, cfg.MCStatusChannelID)
 
 	// Web API (Node started it on clientReady; here it runs alongside the
 	// gateway and shuts down on the same signal context).
