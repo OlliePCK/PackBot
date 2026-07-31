@@ -82,6 +82,16 @@ func MC(d Deps) *Command {
 				},
 				{
 					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "deaths",
+					Description: "Who dies the most, and how",
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "advancements",
+					Description: "Advancement race standings",
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
 					Name:        "whois",
 					Description: "Look up who a Minecraft username belongs to",
 					Options: []*discordgo.ApplicationCommandOption{
@@ -127,6 +137,10 @@ func MC(d Deps) *Command {
 				return mcSelfUnwhitelist(ctx, d, s, i)
 			case "leaderboard":
 				return mcLeaderboard(ctx, d, s, i)
+			case "deaths":
+				return mcDeaths(ctx, d, s, i)
+			case "advancements":
+				return mcAdvancements(ctx, d, s, i)
 			case "whois":
 				return mcWhois(ctx, d, s, i, opts)
 			case "admin":
@@ -459,4 +473,83 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max-1] + "…"
+}
+
+// mcDeaths ranks players by deaths and shows the most common causes.
+func mcDeaths(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	players, err := d.Store.TopMinecraftDeaths(ctx, mcLeaderboardLimit)
+	if err != nil {
+		return err
+	}
+	if len(players) == 0 {
+		return Respond(s, i, style.BrandEmbed("Nobody has died yet. Give it time."))
+	}
+	causes, err := d.Store.TopMinecraftDeathCauses(ctx, 5)
+	if err != nil {
+		return err
+	}
+
+	var b strings.Builder
+	total := 0
+	for idx, p := range players {
+		total += p.Count
+		fmt.Fprintf(&b, "%s `%s` — %s\n", medal(idx), p.Name, fmt.Sprintf("%d death%s", p.Count, plural(p.Count)))
+	}
+
+	embed := &discordgo.MessageEmbed{
+		Title:       "Minecraft deaths",
+		Description: b.String(),
+		Color:       style.ColorBrand,
+		Footer:      style.Footer(),
+	}
+	if len(causes) > 0 {
+		var c strings.Builder
+		for _, cause := range causes {
+			fmt.Fprintf(&c, "%s — %d\n", cause.Name, cause.Count)
+		}
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  fmt.Sprintf("Most common ways to go (%d total)", total),
+			Value: truncate(c.String(), 1000),
+		})
+	}
+	return Respond(s, i, embed)
+}
+
+// mcAdvancements shows the race standings: total earned, and how many each
+// player got to first.
+func mcAdvancements(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.InteractionCreate) error {
+	totals, err := d.Store.TopMinecraftAdvancements(ctx, mcLeaderboardLimit)
+	if err != nil {
+		return err
+	}
+	if len(totals) == 0 {
+		return Respond(s, i, style.BrandEmbed("No advancements recorded yet."))
+	}
+	firsts, err := d.Store.MinecraftFirsts(ctx, mcLeaderboardLimit)
+	if err != nil {
+		return err
+	}
+
+	var b strings.Builder
+	for idx, t := range totals {
+		fmt.Fprintf(&b, "%s `%s` — %d\n", medal(idx), t.Name, t.Count)
+	}
+
+	embed := &discordgo.MessageEmbed{
+		Title:       "Advancement race",
+		Description: b.String(),
+		Color:       style.ColorBrand,
+		Footer:      style.Footer(),
+	}
+	if len(firsts) > 0 {
+		var f strings.Builder
+		for _, x := range firsts {
+			fmt.Fprintf(&f, "`%s` — %s\n", x.Name, fmt.Sprintf("%d first%s", x.Count, plural(x.Count)))
+		}
+		embed.Fields = append(embed.Fields, &discordgo.MessageEmbedField{
+			Name:  "🥇 Got there first",
+			Value: truncate(f.String(), 1000),
+		})
+	}
+	return Respond(s, i, embed)
 }

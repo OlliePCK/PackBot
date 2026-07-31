@@ -116,7 +116,7 @@ func TestRenderLogEvent(t *testing.T) {
 		{minecraft.LogEvent{Kind: minecraft.EventDeath, Player: "fretnim", Detail: "was slain by Enderman"}, "was slain by Enderman"},
 	}
 	for _, tc := range tests {
-		got := renderLogEvent(tc.ev)
+		got := renderLogEvent(tc.ev, false)
 		if got == "" || !contains(got, tc.contains) {
 			t.Errorf("renderLogEvent(%+v) = %q, want it to contain %q", tc.ev, got, tc.contains)
 		}
