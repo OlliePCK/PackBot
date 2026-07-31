@@ -162,3 +162,31 @@ func TestPlayerTrackerSortsOutput(t *testing.T) {
 		t.Errorf("joined not sorted deterministically: %v", joined)
 	}
 }
+
+func TestStillOnlineIsEmptyBeforeSeeding(t *testing.T) {
+	pt := newPlayerTracker()
+	if got := pt.stillOnline([]string{"OlliePCK"}); len(got) != 0 {
+		t.Errorf("unseeded tracker should credit nobody, got %v", got)
+	}
+}
+
+func TestStillOnlineIsTheIntersection(t *testing.T) {
+	pt := newPlayerTracker()
+	pt.observe([]string{"OlliePCK", "Mr___Ed"})
+
+	// Winter just joined, so was not online for the whole interval and must
+	// not be credited; Mr___Ed left and likewise cannot be.
+	got := pt.stillOnline([]string{"OlliePCK", "Winter"})
+	if len(got) != 1 || got[0] != "OlliePCK" {
+		t.Errorf("stillOnline = %v, want [OlliePCK]", got)
+	}
+}
+
+func TestStillOnlineAfterResetCreditsNobody(t *testing.T) {
+	pt := newPlayerTracker()
+	pt.observe([]string{"OlliePCK"})
+	pt.reset()
+	if got := pt.stillOnline([]string{"OlliePCK"}); len(got) != 0 {
+		t.Errorf("after a downtime nobody should be credited, got %v", got)
+	}
+}

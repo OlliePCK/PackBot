@@ -157,7 +157,7 @@ func run() error {
 	}
 	// Minecraft up/down notifications. The job logs and returns on its own when
 	// either the address or the channel is unset.
-	go jobs.MinecraftStatus(ctx, session, deps.MC, cfg.MCStatusChannelID)
+	go jobs.MinecraftStatus(ctx, session, deps.MC, cfg.MCStatusChannelID, store)
 
 	// Web API (Node started it on clientReady; here it runs alongside the
 	// gateway and shuts down on the same signal context).

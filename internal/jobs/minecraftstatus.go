@@ -11,6 +11,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/OlliePCK/packbot/internal/minecraft"
+	"github.com/OlliePCK/packbot/internal/storage"
 	"github.com/OlliePCK/packbot/internal/style"
 )
 
@@ -22,6 +23,11 @@ const (
 	// mcPingTimeout bounds one ping. Shorter than the poll interval so a hung
 	// dial can never overlap the next tick.
 	mcPingTimeout = 10 * time.Second
+
+	// mcMaxCreditInterval caps how much playtime a single poll may credit. If a
+	// tick is delayed (host suspend, long GC, a slow ping) we must not credit
+	// the whole gap as time played.
+	mcMaxCreditInterval = 3 * time.Minute
 
 	// mcFailureThreshold is how many consecutive failed pings before the server
 	// is announced as down. One dropped packet, a brief restart, or a Tailscale
@@ -75,6 +81,28 @@ func (t *playerTracker) observe(names []string) (joined, left []string) {
 
 	t.known = current
 	return joined, left
+}
+
+// stillOnline returns the players present both in the last observation and in
+// names — i.e. those online for the whole interval, and so the only ones who
+// can be credited a full interval of playtime.
+//
+// Must be called before observe, which replaces the baseline.
+func (t *playerTracker) stillOnline(names []string) []string {
+	if !t.seeded {
+		return nil
+	}
+	var out []string
+	for _, n := range names {
+		if n = strings.TrimSpace(n); n == "" {
+			continue
+		}
+		if _, ok := t.known[n]; ok {
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // reset drops the baseline. Called when the server goes unreachable so that
@@ -145,7 +173,7 @@ func (t *mcTracker) observe(ok bool) (state mcState, changed bool) {
 // Like the other jobs it is started with `go jobs.MinecraftStatus(...)` and
 // exits when ctx is cancelled. It no-ops when either the client or the channel
 // is unconfigured.
-func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Client, channelID string) {
+func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Client, channelID string, store *storage.Store) {
 	log := slog.With("job", "minecraft")
 
 	if mc == nil || channelID == "" {
@@ -154,11 +182,24 @@ func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Cl
 		return
 	}
 
+	// Playtime is attributed per guild, and the guild is whichever one owns the
+	// status channel. Resolving it once here keeps the poll loop free of API
+	// calls; failing to resolve disables only playtime, not notifications.
+	guildID := ""
+	if store != nil {
+		if ch, err := s.Channel(channelID); err == nil && ch != nil {
+			guildID = ch.GuildID
+		} else {
+			log.Warn("could not resolve status channel guild; playtime disabled", "error", err)
+		}
+	}
+
 	log.Info("minecraft status started",
 		"addr", mc.Addr, "interval", mcPollInterval, "threshold", mcFailureThreshold)
 
 	tracker := newMCTracker(mcFailureThreshold)
 	players := newPlayerTracker()
+	var lastPoll time.Time
 
 	check := func() {
 		pingCtx, cancel := context.WithTimeout(ctx, mcPingTimeout)
@@ -192,6 +233,17 @@ func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Cl
 		for _, p := range status.Players.Sample {
 			names = append(names, p.Name)
 		}
+
+		// Credit playtime before observe replaces the baseline. Only players
+		// present across both polls were demonstrably online the whole time.
+		now := time.Now()
+		if store != nil && guildID != "" && !lastPoll.IsZero() {
+			if elapsed := now.Sub(lastPoll); elapsed > 0 && elapsed <= mcMaxCreditInterval {
+				creditPlaytime(ctx, s, store, log, guildID, players.stillOnline(names), int64(elapsed.Seconds()))
+			}
+		}
+		lastPoll = now
+
 		joined, left := players.observe(names)
 		if len(joined) == 0 && len(left) == 0 {
 			return
@@ -273,3 +325,47 @@ func mcDownEmbed(addr string) *discordgo.MessageEmbed {
 		Footer:      style.Footer(),
 	}
 }
+
+// creditPlaytime attributes seconds of Minecraft playtime to the Discord users
+// behind the given Minecraft usernames.
+//
+// It writes into the existing Playtime table with gameName "Minecraft", so the
+// result shows up in /leaderboard alongside Discord game presence rather than
+// needing a parallel leaderboard of its own. Unlinked players are skipped —
+// there is no Discord user to credit.
+func creditPlaytime(ctx context.Context, s *discordgo.Session, store *storage.Store,
+	log *slog.Logger, guildID string, mcNames []string, seconds int64) {
+
+	if seconds <= 0 {
+		return
+	}
+	for _, name := range mcNames {
+		account, err := store.MinecraftAccountByUsername(ctx, guildID, name)
+		if err != nil {
+			log.Error("playtime lookup failed", "error", err, "player", name)
+			continue
+		}
+		if account == nil {
+			continue // not linked; nothing to attribute
+		}
+
+		// Store the Discord username, not the Minecraft one: TopPlaytimeTotal
+		// groups by (odUserId, odUsername), so a user appearing under two names
+		// would be split across two leaderboard rows.
+		username := account.UserID
+		if member, err := s.State.Member(guildID, account.UserID); err == nil && member != nil && member.User != nil {
+			username = member.User.Username
+		} else if user, err := s.User(account.UserID); err == nil && user != nil {
+			username = user.Username
+		}
+
+		if err := store.RecordPlaytime(ctx, guildID, account.UserID, username, mcPlaytimeGameName, seconds); err != nil {
+			log.Error("record minecraft playtime failed", "error", err, "userId", account.UserID)
+		}
+	}
+}
+
+// mcPlaytimeGameName is the Playtime row key for Minecraft. It matches what a
+// Discord rich-presence game name would be, so /leaderboard game:Minecraft
+// aggregates both sources.
+const mcPlaytimeGameName = "Minecraft"
