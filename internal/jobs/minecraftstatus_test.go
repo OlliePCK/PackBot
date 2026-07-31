@@ -104,3 +104,61 @@ func TestNewMCTrackerClampsThreshold(t *testing.T) {
 		t.Error("threshold 1 should announce down on the first failure")
 	}
 }
+
+func TestPlayerTrackerBaselineIsSilent(t *testing.T) {
+	pt := newPlayerTracker()
+	joined, left := pt.observe([]string{"OlliePCK", "Mr___Ed"})
+	if len(joined) != 0 || len(left) != 0 {
+		t.Errorf("baseline should be silent, got joined=%v left=%v", joined, left)
+	}
+}
+
+func TestPlayerTrackerDiffs(t *testing.T) {
+	pt := newPlayerTracker()
+	pt.observe([]string{"OlliePCK"})
+
+	joined, left := pt.observe([]string{"OlliePCK", "Mr___Ed"})
+	if len(joined) != 1 || joined[0] != "Mr___Ed" || len(left) != 0 {
+		t.Errorf("joined=%v left=%v, want Mr___Ed joined", joined, left)
+	}
+
+	joined, left = pt.observe([]string{"Mr___Ed"})
+	if len(left) != 1 || left[0] != "OlliePCK" || len(joined) != 0 {
+		t.Errorf("joined=%v left=%v, want OlliePCK left", joined, left)
+	}
+
+	if j, l := pt.observe([]string{"Mr___Ed"}); len(j) != 0 || len(l) != 0 {
+		t.Errorf("no change should be silent, got %v %v", j, l)
+	}
+}
+
+func TestPlayerTrackerResetReSeedsSilently(t *testing.T) {
+	// After a downtime the whole roster must not be announced as fresh joins.
+	pt := newPlayerTracker()
+	pt.observe([]string{"OlliePCK", "Mr___Ed"})
+	pt.reset()
+	joined, left := pt.observe([]string{"OlliePCK", "Mr___Ed", "Winter"})
+	if len(joined) != 0 || len(left) != 0 {
+		t.Errorf("post-reset observation should re-seed silently, got %v %v", joined, left)
+	}
+	if j, _ := pt.observe([]string{"OlliePCK", "Mr___Ed", "Winter", "Sen"}); len(j) != 1 || j[0] != "Sen" {
+		t.Errorf("diffing should resume after re-seed, got %v", j)
+	}
+}
+
+func TestPlayerTrackerIgnoresBlanks(t *testing.T) {
+	pt := newPlayerTracker()
+	pt.observe([]string{"OlliePCK"})
+	if j, l := pt.observe([]string{"OlliePCK", "", "   "}); len(j) != 0 || len(l) != 0 {
+		t.Errorf("blank names should be ignored, got %v %v", j, l)
+	}
+}
+
+func TestPlayerTrackerSortsOutput(t *testing.T) {
+	pt := newPlayerTracker()
+	pt.observe(nil)
+	joined, _ := pt.observe([]string{"Winter", "Chaz", "Sen"})
+	if len(joined) != 3 || joined[0] != "Chaz" || joined[2] != "Winter" {
+		t.Errorf("joined not sorted deterministically: %v", joined)
+	}
+}

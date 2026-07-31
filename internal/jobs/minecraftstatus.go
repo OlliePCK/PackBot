@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -27,6 +29,60 @@ const (
 	// means roughly 3 minutes of genuine downtime before anyone is told.
 	mcFailureThreshold = 3
 )
+
+// playerTracker diffs the online roster between polls to derive join and leave
+// events. It relies on the status ping's player sample being complete, which
+// requires spigot.yml's sample-count to be at least max-players — otherwise
+// players beyond the cap look like they are constantly joining and leaving.
+type playerTracker struct {
+	known  map[string]struct{}
+	seeded bool
+}
+
+func newPlayerTracker() *playerTracker {
+	return &playerTracker{known: make(map[string]struct{})}
+}
+
+// observe records the current roster and returns who joined and who left.
+//
+// The first call after construction or reset only establishes a baseline and
+// reports nothing, so a bot restart doesn't announce everyone already online.
+func (t *playerTracker) observe(names []string) (joined, left []string) {
+	current := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		if n = strings.TrimSpace(n); n != "" {
+			current[n] = struct{}{}
+		}
+	}
+
+	if !t.seeded {
+		t.known, t.seeded = current, true
+		return nil, nil
+	}
+
+	for n := range current {
+		if _, ok := t.known[n]; !ok {
+			joined = append(joined, n)
+		}
+	}
+	for n := range t.known {
+		if _, ok := current[n]; !ok {
+			left = append(left, n)
+		}
+	}
+	sort.Strings(joined)
+	sort.Strings(left)
+
+	t.known = current
+	return joined, left
+}
+
+// reset drops the baseline. Called when the server goes unreachable so that
+// recovery re-seeds silently rather than announcing the whole roster as joins.
+func (t *playerTracker) reset() {
+	t.known = make(map[string]struct{})
+	t.seeded = false
+}
 
 // mcState is the tracked reachability of the server.
 type mcState int
@@ -102,6 +158,7 @@ func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Cl
 		"addr", mc.Addr, "interval", mcPollInterval, "threshold", mcFailureThreshold)
 
 	tracker := newMCTracker(mcFailureThreshold)
+	players := newPlayerTracker()
 
 	check := func() {
 		pingCtx, cancel := context.WithTimeout(ctx, mcPingTimeout)
@@ -109,19 +166,42 @@ func MinecraftStatus(ctx context.Context, s *discordgo.Session, mc *minecraft.Cl
 		cancel()
 
 		state, changed := tracker.observe(err == nil)
-		if !changed {
-			return
+
+		if changed {
+			if state == mcDown {
+				// Forget the roster: when the server returns, re-seed quietly
+				// instead of announcing everyone as a fresh join.
+				players.reset()
+			}
+			embed := mcDownEmbed(mc.Addr)
+			if state == mcUp {
+				embed = mcUpEmbed(mc.Addr, status)
+			}
+			if _, sendErr := s.ChannelMessageSendEmbed(channelID, embed); sendErr != nil {
+				log.Error("failed to post minecraft status", "error", sendErr, "state", state)
+			} else {
+				log.Info("minecraft status changed", "state", state, "pingError", err)
+			}
 		}
 
-		embed := mcDownEmbed(mc.Addr)
-		if state == mcUp {
-			embed = mcUpEmbed(mc.Addr, status)
-		}
-		if _, sendErr := s.ChannelMessageSendEmbed(channelID, embed); sendErr != nil {
-			log.Error("failed to post minecraft status", "error", sendErr, "state", state)
+		// Roster diffing only makes sense on a successful ping.
+		if err != nil || status == nil {
 			return
 		}
-		log.Info("minecraft status changed", "state", state, "pingError", err)
+		names := make([]string, 0, len(status.Players.Sample))
+		for _, p := range status.Players.Sample {
+			names = append(names, p.Name)
+		}
+		joined, left := players.observe(names)
+		if len(joined) == 0 && len(left) == 0 {
+			return
+		}
+		if _, sendErr := s.ChannelMessageSendEmbed(channelID,
+			mcRosterEmbed(joined, left, status.Players.Online, status.Players.Max)); sendErr != nil {
+			log.Error("failed to post roster change", "error", sendErr)
+			return
+		}
+		log.Info("minecraft roster changed", "joined", joined, "left", left)
 	}
 
 	// Establish the baseline immediately rather than after a full interval, so
@@ -164,6 +244,25 @@ func mcUpEmbed(addr string, st *minecraft.Status) *discordgo.MessageEmbed {
 		}
 	}
 	return embed
+}
+
+// mcRosterEmbed renders join/leave activity for one poll cycle.
+func mcRosterEmbed(joined, left []string, online, max int) *discordgo.MessageEmbed {
+	var b strings.Builder
+	if len(joined) > 0 {
+		fmt.Fprintf(&b, "**+** %s\n", strings.Join(joined, ", "))
+	}
+	if len(left) > 0 {
+		fmt.Fprintf(&b, "**−** %s\n", strings.Join(left, ", "))
+	}
+	fmt.Fprintf(&b, "%d / %d online", online, max)
+
+	return &discordgo.MessageEmbed{
+		Title:       "Minecraft",
+		Description: b.String(),
+		Color:       style.ColorBrand,
+		Footer:      style.Footer(),
+	}
 }
 
 func mcDownEmbed(addr string) *discordgo.MessageEmbed {
