@@ -12,6 +12,71 @@ import (
 // claimed that Minecraft username.
 var ErrMinecraftNameTaken = errors.New("storage: minecraft username already linked to another user")
 
+// ErrNoOpenMinecraftSeason means MinecraftSeasons holds no row with a NULL
+// endedAt, so there is nowhere to attribute new history.
+var ErrNoOpenMinecraftSeason = errors.New("storage: no open minecraft season")
+
+// MinecraftSeason is one world's lifetime. A wipe ends one and opens the next;
+// in hardcore that can happen the same day it started.
+type MinecraftSeason struct {
+	Season    int
+	Name      string
+	Hardcore  bool
+	StartedAt time.Time
+	EndedAt   *time.Time
+}
+
+// currentSeasonExpr is a scalar subquery for the season that has not ended.
+//
+// Reads and writes scope on it inline rather than the application holding a
+// season number in memory. Rolling a season is then a plain SQL update that the
+// bot picks up on its next statement — no restart, and no cache to go stale
+// midway through a session. The unique index on MinecraftSeasons.isCurrent
+// guarantees at most one row can match.
+//
+// If no season is open the subquery yields NULL and writes fail against the
+// NOT NULL column, which is the correct outcome: history with nowhere to belong
+// should not be silently filed under the previous world.
+const currentSeasonExpr = `(SELECT season FROM MinecraftSeasons WHERE endedAt IS NULL LIMIT 1)`
+
+// CurrentMinecraftSeason returns the open season.
+func (s *Store) CurrentMinecraftSeason(ctx context.Context) (*MinecraftSeason, error) {
+	var m MinecraftSeason
+	err := s.db.QueryRowContext(ctx,
+		`SELECT season, name, hardcore, startedAt, endedAt
+		   FROM MinecraftSeasons WHERE endedAt IS NULL LIMIT 1`).
+		Scan(&m.Season, &m.Name, &m.Hardcore, &m.StartedAt, &m.EndedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNoOpenMinecraftSeason
+	}
+	if err != nil {
+		return nil, fmt.Errorf("storage: current minecraft season: %w", err)
+	}
+	return &m, nil
+}
+
+// ListMinecraftSeasons returns every season, newest first — the archive behind
+// "what happened in season 1".
+func (s *Store) ListMinecraftSeasons(ctx context.Context) ([]MinecraftSeason, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT season, name, hardcore, startedAt, endedAt
+		   FROM MinecraftSeasons ORDER BY season DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("storage: list minecraft seasons: %w", err)
+	}
+	defer rows.Close()
+
+	var out []MinecraftSeason
+	for rows.Next() {
+		var m MinecraftSeason
+		if err := rows.Scan(&m.Season, &m.Name, &m.Hardcore, &m.StartedAt, &m.EndedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // MinecraftAccount is one Discord ↔ Minecraft link.
 type MinecraftAccount struct {
 	GuildID     string
@@ -74,8 +139,8 @@ func (s *Store) RecordMinecraftPlaytime(ctx context.Context, mcUsername string, 
 		return nil
 	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO MinecraftPlaytime (mcUsername, totalSeconds)
-		 VALUES (?, ?)
+		`INSERT INTO MinecraftPlaytime (season, mcUsername, totalSeconds)
+		 VALUES (`+currentSeasonExpr+`, ?, ?)
 		 ON DUPLICATE KEY UPDATE
 		   totalSeconds = totalSeconds + VALUES(totalSeconds),
 		   lastSeenAt   = CURRENT_TIMESTAMP`,
@@ -91,6 +156,7 @@ func (s *Store) TopMinecraftPlaytime(ctx context.Context, limit int) ([]Minecraf
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT mcUsername, totalSeconds, lastSeenAt
 		   FROM MinecraftPlaytime
+		  WHERE season = `+currentSeasonExpr+`
 		  ORDER BY totalSeconds DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("storage: minecraft leaderboard: %w", err)
@@ -158,8 +224,8 @@ func (s *Store) RecordMinecraftDeath(ctx context.Context, mcUsername, cause stri
 		cause = cause[:255]
 	}
 	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO MinecraftDeaths (mcUsername, cause, x, y, z, dimension)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO MinecraftDeaths (season, mcUsername, cause, x, y, z, dimension)
+		 VALUES (`+currentSeasonExpr+`, ?, ?, ?, ?, ?, ?)`,
 		mcUsername, cause, x, y, z, nullIfEmpty(dimension)); err != nil {
 		return fmt.Errorf("storage: record minecraft death: %w", err)
 	}
@@ -179,7 +245,7 @@ func (s *Store) RecentMinecraftDeaths(ctx context.Context, limit int) ([]DeathRe
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT mcUsername, cause, x, y, z, COALESCE(dimension, ''), diedAt
 		   FROM MinecraftDeaths
-		  WHERE x IS NOT NULL
+		  WHERE season = `+currentSeasonExpr+` AND x IS NOT NULL
 		  ORDER BY diedAt DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("storage: recent minecraft deaths: %w", err)
@@ -201,6 +267,7 @@ func (s *Store) RecentMinecraftDeaths(ctx context.Context, limit int) ([]DeathRe
 func (s *Store) TopMinecraftDeaths(ctx context.Context, limit int) ([]MinecraftCount, error) {
 	return s.minecraftCounts(ctx,
 		`SELECT mcUsername, COUNT(*) AS n FROM MinecraftDeaths
+		  WHERE season = `+currentSeasonExpr+`
 		  GROUP BY mcUsername ORDER BY n DESC LIMIT ?`, limit)
 }
 
@@ -210,11 +277,12 @@ func (s *Store) TopMinecraftDeaths(ctx context.Context, limit int) ([]MinecraftC
 func (s *Store) TopMinecraftDeathCauses(ctx context.Context, limit int) ([]MinecraftCount, error) {
 	return s.minecraftCounts(ctx,
 		`SELECT SUBSTRING_INDEX(cause, ' by ', 1) AS c, COUNT(*) AS n
-		   FROM MinecraftDeaths GROUP BY c ORDER BY n DESC LIMIT ?`, limit)
+		   FROM MinecraftDeaths WHERE season = `+currentSeasonExpr+`
+		  GROUP BY c ORDER BY n DESC LIMIT ?`, limit)
 }
 
 // RecordMinecraftAdvancement stores an earned advancement and reports whether
-// this player was the first on the server to earn it.
+// this player was the first on the server to earn it *this season*.
 //
 // The check runs before the insert, so the winner is whoever's row lands
 // first; at a friend-group's event rate the race is not worth locking for.
@@ -225,13 +293,15 @@ func (s *Store) RecordMinecraftAdvancement(ctx context.Context, mcUsername, adva
 
 	var existing int
 	if err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM MinecraftAdvancements WHERE advancement = ?`,
+		`SELECT COUNT(*) FROM MinecraftAdvancements
+		  WHERE season = `+currentSeasonExpr+` AND advancement = ?`,
 		advancement).Scan(&existing); err != nil {
 		return false, fmt.Errorf("storage: check advancement: %w", err)
 	}
 
 	res, err := s.db.ExecContext(ctx,
-		`INSERT IGNORE INTO MinecraftAdvancements (mcUsername, advancement) VALUES (?, ?)`,
+		`INSERT IGNORE INTO MinecraftAdvancements (season, mcUsername, advancement)
+		 VALUES (`+currentSeasonExpr+`, ?, ?)`,
 		mcUsername, advancement)
 	if err != nil {
 		return false, fmt.Errorf("storage: record advancement: %w", err)
@@ -246,16 +316,23 @@ func (s *Store) RecordMinecraftAdvancement(ctx context.Context, mcUsername, adva
 func (s *Store) TopMinecraftAdvancements(ctx context.Context, limit int) ([]MinecraftCount, error) {
 	return s.minecraftCounts(ctx,
 		`SELECT mcUsername, COUNT(*) AS n FROM MinecraftAdvancements
+		  WHERE season = `+currentSeasonExpr+`
 		  GROUP BY mcUsername ORDER BY n DESC LIMIT ?`, limit)
 }
 
 // MinecraftFirsts counts how many advancements each player earned before
-// anyone else — the actual race scoreboard.
+// anyone else this season — the actual race scoreboard.
+//
+// The inner query is scoped to the same season as the outer row, not just to
+// the current one: without that, an advancement first earned in an earlier
+// season would keep its old winner forever and nobody could claim it again.
 func (s *Store) MinecraftFirsts(ctx context.Context, limit int) ([]MinecraftCount, error) {
 	return s.minecraftCounts(ctx,
 		`SELECT mcUsername, COUNT(*) AS n FROM MinecraftAdvancements a
-		  WHERE earnedAt = (SELECT MIN(b.earnedAt) FROM MinecraftAdvancements b
-		                     WHERE b.advancement = a.advancement)
+		  WHERE a.season = `+currentSeasonExpr+`
+		    AND a.earnedAt = (SELECT MIN(b.earnedAt) FROM MinecraftAdvancements b
+		                       WHERE b.advancement = a.advancement
+		                         AND b.season = a.season)
 		  GROUP BY mcUsername ORDER BY n DESC LIMIT ?`, limit)
 }
 
