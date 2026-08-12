@@ -172,22 +172,12 @@ the bot can never touch anything else on the panel.
 
 Whitelisting is self-service and enforces one Minecraft account per Discord user.
 
-`/mc wipe confirm:PackCraft [seed:…] [pregen:true] [keep_map:false]` runs the
-whole procedure in §8: refuses while anyone is online, backs up via the panel
-and **aborts if the backup fails**, stops, deletes the world (keeping
-`world/datapacks`), clears the BlueMap renders, writes the seed, restarts, waits
-for RCON, re-applies `players_sleeping_percentage`, rolls the season, and
-optionally starts Chunky. The confirm string is typed rather than a button
-because a misclick must not be able to end a hardcore season.
-
-**`keep_map:true` re-runs a season on the same seed without losing the map.**
-Identical seed on an identical version generates identical terrain, so the
-existing tiles stay correct: the map is complete the moment the server is back
-rather than an hour later, and Chunky is skipped (`pregen` defaults to false).
-It requires an explicit `seed` matching the current one and refuses otherwise —
-a blank seed means a *new* random world, which would leave the map describing
-terrain that no longer exists. The one wart is player builds: they are baked
-into the tiles and linger as ghosts until someone regenerates that region.
+`/mc wipe confirm:PackCraft [seed:…] [pregen:true]` runs the whole procedure in
+§8: refuses while anyone is online, backs up via the panel and **aborts if the
+backup fails**, stops, deletes the world (keeping `world/datapacks`), writes the
+seed, restarts, waits for RCON, re-applies `players_sleeping_percentage`, rolls
+the season, and optionally starts Chunky. The confirm string is typed rather
+than a button because a misclick must not be able to end a hardcore season.
 
 ### Background jobs
 

@@ -61,24 +61,6 @@ func TestSeedPatternRejectsInjection(t *testing.T) {
 	}
 }
 
-func TestPropertyValue(t *testing.T) {
-	props := "#header\ndifficulty=hard\nlevel-seed=PackCraft\nhardcore=true\n"
-	if got := propertyValue(props, "level-seed"); got != "PackCraft" {
-		t.Errorf("level-seed = %q, want PackCraft", got)
-	}
-	// A random-seed world stores an empty value, which keep_map must treat as
-	// "not the same seed" rather than as a match.
-	if got := propertyValue("level-seed=\nhardcore=true\n", "level-seed"); got != "" {
-		t.Errorf("blank seed = %q, want empty", got)
-	}
-	if got := propertyValue("hardcore=true\n", "level-seed"); got != "" {
-		t.Errorf("missing key = %q, want empty", got)
-	}
-	if got := propertyValue("difficulty=hard\r\nlevel-seed=abc\r\n", "level-seed"); got != "abc" {
-		t.Errorf("CRLF seed = %q, want abc", got)
-	}
-}
-
 func TestOnlinePlayerPatternParsesVanillaOutput(t *testing.T) {
 	m := mcOnlineRe.FindStringSubmatch(
 		"There are 3 of a max of 20 players online: Ollie, Rin, Max")

@@ -89,39 +89,9 @@ func mcWipe(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.Inte
 			"That isn't a usable seed (letters, digits and underscores, optionally leading `-`)."))
 	}
 
-	keepMap := false
-	if o, ok := m["keep_map"]; ok {
-		keepMap = o.BoolValue()
-	}
-
-	// Pre-generating is pointless when the map is already rendered: the tiles
-	// exist, and chunks regenerate as people explore. An explicit choice still
-	// wins.
-	pregen := !keepMap
+	pregen := true
 	if o, ok := m["pregen"]; ok {
 		pregen = o.BoolValue()
-	}
-
-	// keep_map is only sound when the new world generates identical terrain,
-	// which needs the same seed on the same version. Check before anything
-	// irreversible happens rather than after the world is gone.
-	if keepMap {
-		if seed == "" {
-			return Respond(s, i, style.ErrorEmbed(
-				"`keep_map` needs an explicit `seed`. Leaving it blank generates a new random "+
-					"world, and the existing map would show terrain that no longer exists."))
-		}
-		props, err := d.Ptero.ReadFile(ctx, "/server.properties")
-		if err != nil {
-			return Respond(s, i, style.ErrorEmbed(
-				"Couldn't read server.properties to verify the seed: "+err.Error()))
-		}
-		if current := propertyValue(props, "level-seed"); current != seed {
-			return Respond(s, i, style.ErrorEmbed(fmt.Sprintf(
-				"`keep_map` needs the same seed the world already uses. This world is on `%s`, "+
-					"you asked for `%s` — the map would show a world that doesn't exist.",
-				current, seed)))
-		}
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, mcWipeTimeout)
@@ -202,29 +172,20 @@ func mcWipe(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.Inte
 	// Non-fatal: a stale map is worth a warning, not an aborted wipe with the
 	// world already deleted.
 	var notes []string
-	if keepMap {
-		// Same seed, same version, therefore identical terrain — the rendered
-		// tiles are still correct and the map is usable the moment the server
-		// is back, instead of an hour later. Anything players *built* last
-		// season lingers as a ghost until that region regenerates and BlueMap
-		// re-renders it.
-		progress("World deleted. Keeping the existing map…")
+	progress("World deleted. Clearing the old map renders…")
+	if rendered, err := d.Ptero.ListFiles(ctx, "/bluemap/web/maps"); err != nil {
+		notes = append(notes, "could not list old map renders: "+err.Error())
 	} else {
-		progress("World deleted. Clearing the old map renders…")
-		if rendered, err := d.Ptero.ListFiles(ctx, "/bluemap/web/maps"); err != nil {
-			notes = append(notes, "could not list old map renders: "+err.Error())
-		} else {
-			names := make([]string, 0, len(rendered))
-			for _, r := range rendered {
-				names = append(names, r.Name)
-			}
-			if err := d.Ptero.DeleteFiles(ctx, "/bluemap/web/maps", names); err != nil {
-				notes = append(notes, "could not clear old map renders: "+err.Error())
-			}
+		names := make([]string, 0, len(rendered))
+		for _, r := range rendered {
+			names = append(names, r.Name)
 		}
-		if err := d.Ptero.DeleteFiles(ctx, "/bluemap", []string{"tasks.dat"}); err != nil {
-			notes = append(notes, "could not clear bluemap tasks.dat: "+err.Error())
+		if err := d.Ptero.DeleteFiles(ctx, "/bluemap/web/maps", names); err != nil {
+			notes = append(notes, "could not clear old map renders: "+err.Error())
 		}
+	}
+	if err := d.Ptero.DeleteFiles(ctx, "/bluemap", []string{"tasks.dat"}); err != nil {
+		notes = append(notes, "could not clear bluemap tasks.dat: "+err.Error())
 	}
 
 	// server.properties is only safe to edit while stopped — the server
@@ -287,14 +248,9 @@ func mcWipe(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.Inte
 	if season != nil {
 		seasonText = fmt.Sprintf("%s (season %d)", season.Name, season.Season)
 	}
-	mapText := "cleared, re-rendering"
-	if keepMap {
-		mapText = "kept — same seed, same terrain"
-	}
 	fields := []*discordgo.MessageEmbedField{
 		{Name: "Seed", Value: seedText, Inline: true},
 		{Name: "Season", Value: seasonText, Inline: true},
-		{Name: "Map", Value: mapText, Inline: true},
 		{Name: "Backup", Value: backupName, Inline: false},
 	}
 	if pregen {
@@ -349,18 +305,6 @@ func mcWaitForRCON(ctx context.Context, d Deps) error {
 		case <-ticker.C:
 		}
 	}
-}
-
-// propertyValue reads a key from a .properties file, returning "" when absent.
-func propertyValue(content, key string) string {
-	prefix := key + "="
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimRight(line, "\r")
-		if strings.HasPrefix(line, prefix) {
-			return strings.TrimPrefix(line, prefix)
-		}
-	}
-	return ""
 }
 
 // setProperty replaces key's value in a .properties file, appending the line
