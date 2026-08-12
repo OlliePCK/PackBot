@@ -147,6 +147,11 @@ func MC(d Deps) *Command {
 							Name:        "pregen",
 							Description: "Pre-generate terrain with Chunky afterwards (default true)",
 						},
+						{
+							Type:        discordgo.ApplicationCommandOptionBoolean,
+							Name:        "keep_map",
+							Description: "Reuse the existing map - only valid when re-using the same seed",
+						},
 					},
 				},
 			},
