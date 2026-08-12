@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,11 +19,18 @@ import (
 )
 
 const (
-	// mcLogPollInterval is how often the log is checked. Also the batching
-	// window: everything in one poll is posted as a single message, which is
-	// what keeps five players earning the same advancement together from
-	// becoming five Discord messages.
+	// mcLogPollInterval is how often the log is checked. It stays short because
+	// the death-location lookup needs the player still connected — batching for
+	// Discord is handled separately by mcLogFlushWindow.
 	mcLogPollInterval = 2 * time.Second
+
+	// mcLogFlushWindow is how long events accumulate before being posted.
+	//
+	// Polling every two seconds meant consecutive events almost never landed in
+	// the same cycle, so a player joining and earning two advancements produced
+	// three separate cards. Holding events briefly turns that back into the one
+	// card it should have been.
+	mcLogFlushWindow = 12 * time.Second
 
 	// mcLogMaxRead bounds a single read. A server that dumps a stack trace
 	// shouldn't pull megabytes into memory in one go.
@@ -36,6 +44,18 @@ const (
 	// inside the poll loop, and a missing position is far better than a
 	// stalled tailer.
 	mcLogRCONTimeout = 5 * time.Second
+)
+
+// Event colours. Everything used to post in brand pink, which gave a death the
+// same visual weight as picking up an advancement. The embed's colour is the
+// left accent bar in Discord, so it is free signal — the feed becomes scannable
+// without being read.
+const (
+	mcColorJoin        = 0x639922
+	mcColorLeave       = 0x888780
+	mcColorAdvancement = style.ColorBrand
+	mcColorFirst       = 0xBA7517
+	mcColorDeath       = 0xE24B4A
 )
 
 // logTailer follows an append-only file across rotations.
@@ -143,6 +163,9 @@ func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID 
 	ticker := time.NewTicker(mcLogPollInterval)
 	defer ticker.Stop()
 
+	var pending []mcCard
+	lastFlush := time.Now()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -155,7 +178,6 @@ func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID 
 				continue
 			}
 
-			var rendered []string
 			for _, line := range lines {
 				ev, ok := minecraft.ParseLogLine(line)
 				if !ok {
@@ -174,6 +196,7 @@ func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID 
 				// Persist before rendering so the leaderboards stay complete
 				// even if the Discord post fails.
 				first := false
+				deathLoc := ""
 				if store != nil {
 					switch ev.Kind {
 					case minecraft.EventDeath:
@@ -196,6 +219,7 @@ func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID 
 						if err := store.RecordMinecraftDeath(ctx, ev.Player, ev.Detail, px, py, pz, dim); err != nil {
 							log.Error("record death failed", "error", err, "player", ev.Player)
 						}
+						deathLoc = formatDeathLocation(px, py, pz, dim)
 					case minecraft.EventAdvancement:
 						if f, err := store.RecordMinecraftAdvancement(ctx, ev.Player, ev.Detail); err != nil {
 							log.Error("record advancement failed", "error", err, "player", ev.Player)
@@ -205,23 +229,30 @@ func MinecraftLog(ctx context.Context, s *discordgo.Session, logPath, channelID 
 					}
 				}
 
-				if text := renderLogEvent(ev, first); text != "" && len(rendered) < mcLogMaxEvents {
-					rendered = append(rendered, text)
+				if text := renderLogEvent(ev, first); text != "" {
+					pending = append(pending, mcCard{
+						kind: ev.Kind, player: ev.Player,
+						text: text, first: first, location: deathLoc,
+					})
 				}
 			}
 
-			if len(rendered) == 0 {
+			// Hold events briefly so consecutive ones share a card, but never
+			// past the embed limit.
+			if len(pending) == 0 {
 				continue
 			}
-			if _, err := s.ChannelMessageSendEmbed(channelID, &discordgo.MessageEmbed{
-				Description: strings.Join(rendered, "\n"),
-				Color:       style.ColorBrand,
-				Footer:      style.Footer(),
-			}); err != nil {
-				log.Error("failed to post minecraft log events", "error", err, "count", len(rendered))
+			if len(pending) < mcLogMaxEvents && time.Since(lastFlush) < mcLogFlushWindow {
 				continue
 			}
-			log.Info("posted minecraft log events", "count", len(rendered))
+			for _, embed := range mcLogEmbeds(pending) {
+				if _, err := s.ChannelMessageSendEmbed(channelID, embed); err != nil {
+					log.Error("failed to post minecraft log events", "error", err)
+				}
+			}
+			log.Info("posted minecraft log events", "count", len(pending))
+			pending = pending[:0]
+			lastFlush = time.Now()
 		}
 	}
 }
@@ -238,8 +269,126 @@ func renderLogEvent(ev minecraft.LogEvent, first bool) string {
 		}
 		return fmt.Sprintf("🏆 **%s** earned **%s**", ev.Player, ev.Detail)
 	case minecraft.EventDeath:
-		return fmt.Sprintf("💀 %s %s", ev.Player, ev.Detail)
+		return fmt.Sprintf("💀 **%s** %s", ev.Player, ev.Detail)
 	default:
 		return ""
 	}
+}
+
+// mcCard is one rendered event waiting to be posted.
+type mcCard struct {
+	kind     minecraft.EventKind
+	player   string
+	text     string
+	first    bool
+	location string
+}
+
+// mcSafeName bounds what may be interpolated into the avatar URL. Player names
+// come from parsing a log file, so they are untrusted input by the time they
+// reach here.
+var mcSafeName = regexp.MustCompile(`^[A-Za-z0-9_]{3,16}$`)
+
+// mcLogEmbeds turns buffered events into Discord embeds.
+//
+// Deaths get a card to themselves: in hardcore a death ends a run, and listing
+// it between "joined the game" and an advancement understates it badly.
+// Everything else shares one card, coloured by the most notable event in it.
+//
+// No footer on any of them. The bot's own avatar and name already sit above
+// every message, so a branded footer on a one-line join notice doubles the
+// card's height to repeat what Discord just said.
+func mcLogEmbeds(cards []mcCard) []*discordgo.MessageEmbed {
+	var embeds []*discordgo.MessageEmbed
+	var routine []mcCard
+
+	for _, c := range cards {
+		if c.kind == minecraft.EventDeath {
+			desc := c.text
+			if c.location != "" {
+				desc += "\n" + c.location
+			}
+			embeds = append(embeds, &discordgo.MessageEmbed{
+				Author:      mcAuthor(c.player),
+				Description: desc,
+				Color:       mcColorDeath,
+			})
+			continue
+		}
+		routine = append(routine, c)
+	}
+
+	if len(routine) > 0 {
+		lines := make([]string, 0, len(routine))
+		players := make(map[string]struct{}, len(routine))
+		best := routine[0]
+		for _, c := range routine {
+			lines = append(lines, c.text)
+			players[c.player] = struct{}{}
+			if mcRank(c) > mcRank(best) {
+				best = c
+			}
+		}
+		embed := &discordgo.MessageEmbed{
+			Description: strings.Join(lines, "\n"),
+			Color:       mcEventColor(best),
+		}
+		// Attribute the card only when it is unambiguously about one person.
+		if len(players) == 1 {
+			embed.Author = mcAuthor(routine[0].player)
+		}
+		embeds = append(embeds, embed)
+	}
+	return embeds
+}
+
+// mcAuthor renders a player as an embed author with their Minecraft head, so a
+// card reads as being about a person rather than a log line.
+func mcAuthor(player string) *discordgo.MessageEmbedAuthor {
+	a := &discordgo.MessageEmbedAuthor{Name: player}
+	if mcSafeName.MatchString(player) {
+		a.IconURL = "https://mc-heads.net/avatar/" + player + "/64"
+	}
+	return a
+}
+
+// mcRank orders events by how much attention they deserve, so a mixed batch
+// takes its colour from the most notable thing in it.
+func mcRank(c mcCard) int {
+	switch {
+	case c.kind == minecraft.EventAdvancement && c.first:
+		return 3
+	case c.kind == minecraft.EventAdvancement:
+		return 2
+	case c.kind == minecraft.EventJoin:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func mcEventColor(c mcCard) int {
+	switch {
+	case c.kind == minecraft.EventAdvancement && c.first:
+		return mcColorFirst
+	case c.kind == minecraft.EventAdvancement:
+		return mcColorAdvancement
+	case c.kind == minecraft.EventJoin:
+		return mcColorJoin
+	default:
+		return mcColorLeave
+	}
+}
+
+// formatDeathLocation renders coordinates for a death card, empty when the
+// position could not be read.
+func formatDeathLocation(x, y, z *int, dim string) string {
+	if x == nil || y == nil || z == nil {
+		return ""
+	}
+	where := strings.ReplaceAll(strings.TrimPrefix(dim, "minecraft:"), "_", " ")
+	if where == "" {
+		return fmt.Sprintf("`%d, %d, %d`", *x, *y, *z)
+	}
+	return fmt.Sprintf("`%d, %d, %d` · %s", *x, *y, *z, where)
 }
