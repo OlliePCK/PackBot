@@ -154,15 +154,30 @@ Code lives in this repo. Env vars on the **PackBot-Go** container:
 | `MC_GUILD_ID` | `255258298230636545` |
 | `MC_MAP_URL` | `https://map.thepck.com` |
 | `MC_LOG_PATH` | `/mc-logs/latest.log` |
+| `PTERO_URL` | Pterodactyl panel root |
+| `PTERO_API_KEY` | **client** API key (`ptlc_…`), not an application key |
+| `PTERO_SERVER_ID` | short server ID from the panel URL |
 
 PackBot mounts the server's `logs/` directory **read-only** at `/mc-logs`.
+
+The panel API is only used by `/mc wipe`, for the three things RCON cannot do:
+stop the server in a way wings honours, delete the world, and edit
+`server.properties` while it is down. Use a client key scoped to this server so
+the bot can never touch anything else on the panel.
 
 ### Commands — `/mc`, guild-scoped
 
 `status` · `whitelist` · `unwhitelist` · `leaderboard` · `deaths` ·
-`advancements` · `whois` · `admin` (owner only)
+`advancements` · `whois` · `admin` (owner only) · `wipe` (owner only)
 
 Whitelisting is self-service and enforces one Minecraft account per Discord user.
+
+`/mc wipe confirm:PackCraft [seed:…] [pregen:true]` runs the whole procedure in
+§8: refuses while anyone is online, backs up via the panel and **aborts if the
+backup fails**, stops, deletes the world (keeping `world/datapacks`), writes the
+seed, restarts, waits for RCON, re-applies `players_sleeping_percentage`, rolls
+the season, and optionally starts Chunky. The confirm string is typed rather
+than a button because a misclick must not be able to end a hardcore season.
 
 ### Background jobs
 
@@ -398,6 +413,10 @@ console errors is a graphics-stack problem, not a server one. Check
 
 Hardcore seasons end when the group decides they have, which can be the same day
 they started. Treat this as routine.
+
+**`/mc wipe confirm:PackCraft` does all of this automatically** — prefer it. The
+manual steps below are the fallback for when the panel API is unavailable, and
+the reference for what the command is actually doing.
 
 1. **Announce it.** A wipe is a group decision.
 2. **Stop the server from the panel.**

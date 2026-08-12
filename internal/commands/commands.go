@@ -15,6 +15,7 @@ import (
 	"github.com/OlliePCK/packbot/internal/afl"
 	"github.com/OlliePCK/packbot/internal/minecraft"
 	"github.com/OlliePCK/packbot/internal/music"
+	"github.com/OlliePCK/packbot/internal/pterodactyl"
 	"github.com/OlliePCK/packbot/internal/storage"
 	"github.com/OlliePCK/packbot/internal/style"
 	"github.com/OlliePCK/packbot/internal/youtube"
@@ -36,6 +37,9 @@ type Deps struct {
 	// RCON is nil unless both MC_RCON_ADDRESS and MC_RCON_PASSWORD are set;
 	// /mc whitelist degrades gracefully.
 	RCON *minecraft.RCON
+	// Ptero is nil unless PTERO_URL, PTERO_API_KEY and PTERO_SERVER_ID are all
+	// set; /mc wipe degrades gracefully.
+	Ptero *pterodactyl.Client
 	// MCMapURL is surfaced as a link in /mc status when set.
 	MCMapURL string
 	// MCGuildID scopes the /mc command to a single guild.

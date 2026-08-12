@@ -126,6 +126,52 @@ func (s *Store) scanMinecraftAccount(ctx context.Context, query string, args ...
 }
 
 
+// RollMinecraftSeason closes the open season and opens the next one, returning
+// the new season.
+//
+// Both statements run in one transaction. The unique index on isCurrent permits
+// only one open season, so the close has to land first — and a failure between
+// the two would leave the history tables with no season to write into, which
+// the NOT NULL column would then reject on every insert.
+func (s *Store) RollMinecraftSeason(ctx context.Context, hardcore bool) (*MinecraftSeason, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("storage: roll minecraft season: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op once committed
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE MinecraftSeasons SET endedAt = NOW() WHERE endedAt IS NULL`); err != nil {
+		return nil, fmt.Errorf("storage: close minecraft season: %w", err)
+	}
+
+	label := "Survival"
+	if hardcore {
+		label = "Hardcore"
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO MinecraftSeasons (season, name, hardcore)
+		 SELECT COALESCE(MAX(season), 0) + 1,
+		        CONCAT('Season ', COALESCE(MAX(season), 0) + 1, ' - ', ?),
+		        ?
+		   FROM MinecraftSeasons`, label, hardcore); err != nil {
+		return nil, fmt.Errorf("storage: open minecraft season: %w", err)
+	}
+
+	var m MinecraftSeason
+	if err := tx.QueryRowContext(ctx,
+		`SELECT season, name, hardcore, startedAt, endedAt
+		   FROM MinecraftSeasons WHERE endedAt IS NULL LIMIT 1`).
+		Scan(&m.Season, &m.Name, &m.Hardcore, &m.StartedAt, &m.EndedAt); err != nil {
+		return nil, fmt.Errorf("storage: read new minecraft season: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("storage: commit minecraft season roll: %w", err)
+	}
+	return &m, nil
+}
+
 // MinecraftPlaytimeEntry is one leaderboard row, keyed on the in-game name.
 type MinecraftPlaytimeEntry struct {
 	MCUsername   string

@@ -126,6 +126,29 @@ func MC(d Deps) *Command {
 						},
 					},
 				},
+				{
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Name:        "wipe",
+					Description: "Destroy the world and start a new season (bot owner only)",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "confirm",
+							Description: "Type PackCraft to confirm - this permanently destroys the world",
+							Required:    true,
+						},
+						{
+							Type:        discordgo.ApplicationCommandOptionString,
+							Name:        "seed",
+							Description: "Seed for the new world (leave blank for random)",
+						},
+						{
+							Type:        discordgo.ApplicationCommandOptionBoolean,
+							Name:        "pregen",
+							Description: "Pre-generate terrain with Chunky afterwards (default true)",
+						},
+					},
+				},
 			},
 		},
 		Run: func(ctx context.Context, s *discordgo.Session, i *discordgo.InteractionCreate) error {
@@ -145,6 +168,8 @@ func MC(d Deps) *Command {
 				return mcWhois(ctx, d, s, i, opts)
 			case "admin":
 				return mcAdmin(ctx, d, s, i, opts)
+			case "wipe":
+				return mcWipe(ctx, d, s, i, opts)
 			default:
 				return mcStatus(ctx, d, s, i)
 			}

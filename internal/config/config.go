@@ -78,6 +78,17 @@ type Config struct {
 	// from the log and supersedes the status job's sampled roster diffing.
 	MCLogPath string // MC_LOG_PATH (optional)
 
+	// PteroURL, PteroAPIKey and PteroServerID enable /mc wipe, which needs the
+	// things RCON cannot do: a stop that wings honours rather than restarts,
+	// deleting the world, and editing server.properties while stopped.
+	//
+	// The key is a *client* API key ("ptlc_...") scoped to the one server, not
+	// an application key — /mc wipe should never be able to touch another
+	// server on the panel. All three empty disables /mc wipe.
+	PteroURL      string // PTERO_URL (optional)
+	PteroAPIKey   string // PTERO_API_KEY (optional)
+	PteroServerID string // PTERO_SERVER_ID (optional, short ID from the panel URL)
+
 	Media Media
 }
 
@@ -206,6 +217,9 @@ func Load() (*Config, error) {
 	cfg.MCGuildID = strings.TrimSpace(os.Getenv("MC_GUILD_ID"))
 	cfg.MCMapURL = strings.TrimSpace(os.Getenv("MC_MAP_URL"))
 	cfg.MCLogPath = strings.TrimSpace(os.Getenv("MC_LOG_PATH"))
+	cfg.PteroURL = strings.TrimSpace(os.Getenv("PTERO_URL"))
+	cfg.PteroAPIKey = strings.TrimSpace(os.Getenv("PTERO_API_KEY"))
+	cfg.PteroServerID = strings.TrimSpace(os.Getenv("PTERO_SERVER_ID"))
 
 	cfg.Media = loadMedia()
 	level, err := parseLogLevel(os.Getenv("LOG_LEVEL"))

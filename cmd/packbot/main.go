@@ -20,6 +20,7 @@ import (
 	"github.com/OlliePCK/packbot/internal/jobs"
 	"github.com/OlliePCK/packbot/internal/logging"
 	"github.com/OlliePCK/packbot/internal/minecraft"
+	"github.com/OlliePCK/packbot/internal/pterodactyl"
 	"github.com/OlliePCK/packbot/internal/music"
 	"github.com/OlliePCK/packbot/internal/spotify"
 	"github.com/OlliePCK/packbot/internal/storage"
@@ -104,6 +105,11 @@ func run() error {
 	// unencrypted protocol. Kept opt-in and owner-gated at the command layer.
 	if deps.RCON = minecraft.NewRCON(cfg.MCRCONAddress, cfg.MCRCONPassword); deps.RCON == nil {
 		slog.Warn("MC_RCON_ADDRESS/MC_RCON_PASSWORD not set; /mc whitelist disabled")
+	}
+	// The panel API is more privileged still: it can stop the server and delete
+	// its files. Only /mc wipe uses it, and only for the bot owner.
+	if deps.Ptero = pterodactyl.New(cfg.PteroURL, cfg.PteroAPIKey, cfg.PteroServerID); deps.Ptero == nil {
+		slog.Warn("PTERO_URL/PTERO_API_KEY/PTERO_SERVER_ID not set; /mc wipe disabled")
 	}
 	deps.MCMapURL = cfg.MCMapURL
 	deps.MCGuildID = cfg.MCGuildID
