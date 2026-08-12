@@ -381,6 +381,20 @@ required to make SSE work.
 but **`world` is the Nether** and `world_the_end` is the End. Display names are
 set correctly, the IDs are legacy.
 
+**All three map configs must set `world: "world"`** and distinguish themselves
+with `dimension:` alone. Pointing a map at the dimension folder instead —
+`world: "world/dimensions/minecraft/overworld"` — still renders terrain
+perfectly, so it looks correct, but BlueMap can no longer match it to the Bukkit
+world. The symptoms are indirect:
+
+- players show `"foreign": true` in `live/players.json` and **never appear on
+  that map**, even with `hide-different-world: false`
+- that map alone loads no datapacks (it looks for them relative to the wrong
+  root), visible in `bluemap/logs/debug.log`
+
+Check with `curl -s http://127.0.0.1:8100/maps/overworld/live/players.json` —
+`"foreign": false` is what you want. Fixing the path triggers a re-render.
+
 **Purge the renders after a wipe.** Delete `bluemap/web/maps/*` and
 `bluemap/tasks.dat`, or the new world inherits the old one's render state and
 BlueMap reports "maps are updated" while showing stale or missing terrain.
