@@ -354,6 +354,14 @@ BlueMap reports "maps are updated" while showing stale or missing terrain.
 Changing a render setting retroactively needs `bluemap purge <map>` too — a
 plain `bluemap update` will not revisit regions it already considers done.
 
+**Purge the Cloudflare cache after a wipe as well.** BlueMap serves tiles with
+`Cache-Control: max-age=86400` and the tile paths are identical from one world
+to the next, so Cloudflare's edge keeps serving the *previous* world's map to
+everyone — including first-time visitors — for up to 24 hours. The files on
+disk being correct proves nothing here; check with a cache-busting query
+string, or just purge. Cloudflare dashboard → Caching → Configuration →
+Purge Everything (or purge by hostname).
+
 **A hard straight edge on the map is not a bug.** Region files are 512×512
 blocks, so the limit of generated world renders as a perfect square edge. Black
 beyond it is ungenerated world, not a broken tile.
@@ -387,14 +395,16 @@ they started. Treat this as routine.
 8. **Purge BlueMap**: `rm -rf $D/bluemap/web/maps/*` and `rm -f $D/bluemap/tasks.dat`.
 9. `chown -R 100:101 $D`
 10. **Start from the panel.**
-11. Re-apply the per-world gamerule: `gamerule players_sleeping_percentage 30`.
-12. Verify hardcore actually took:
+11. **Purge the Cloudflare cache** for `map.thepck.com`, or everyone keeps
+    seeing the old world's map for up to 24 hours.
+12. Re-apply the per-world gamerule: `gamerule players_sleeping_percentage 30`.
+13. Verify hardcore actually took:
     ```bash
     zcat $D/world/level.dat | od -A n -t x1 -v | tr -d " \n" \
       | grep -oE "68617264636f7265.." 
     ```
     Trailing `01` is true, `00` is false.
-13. Re-run Chunky (§6) if you want the map pre-generated.
+14. Re-run Chunky (§6) if you want the map pre-generated.
 
 ### Rolling the PackBot season
 
