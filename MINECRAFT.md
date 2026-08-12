@@ -51,10 +51,10 @@ map.thepck.com → Cloudflare Tunnel → 192.168.1.16:8100 (BlueMap directly)
 ```
 
 **The map does not go through NPM any more.** It used to be
-Tunnel → NPM → BlueMap, and that broke live player markers — see §7. The tunnel
-is dashboard-managed (it runs with `--token`), so its routes live in Cloudflare
-Zero Trust → Networks → Tunnels → Public Hostnames, *not* in a config file on
-grid.
+Tunnel → NPM → BlueMap; removing that hop is a simplification rather than a fix
+for anything (see the SSE note in §7). The tunnel is dashboard-managed (it runs
+with `--token`), so its routes live in Cloudflare Zero Trust → Networks →
+Tunnels → Public Hostnames, *not* in a config file on grid.
 
 ### Why it's built this way
 
@@ -333,16 +333,34 @@ restarted.
 
 ### BlueMap and the web path
 
-**NPM in front of BlueMap breaks Server-Sent Events.** The `live/sse` stream that
-drives live player markers dies through nginx even with `proxy_buffering off`
-explicitly set. Point the Cloudflare Tunnel straight at `192.168.1.16:8100` —
-that works. Verify with:
+**An idle SSE stream is indistinguishable from a broken one.** Cloudflare does
+not flush response headers until the origin sends body bytes, and BlueMap's
+`live/sse` sends nothing at all when no tiles are changing. So on a quiet
+server this returns zero bytes and looks completely dead:
 
 ```bash
 curl -sN -m 10 -D- https://map.thepck.com/maps/overworld/live/sse
 ```
 
-You want `Content-Type: text/event-stream` followed by `event: tile` lines.
+Hours were lost to this. **Only test SSE while something is actually
+happening.** The cheap way is to purge a small map and listen while it
+re-renders:
+
+```bash
+# terminal 1
+curl -sN -D- https://map.thepck.com/maps/world_the_end/live/sse
+# terminal 2 — the End is tiny and re-renders in seconds
+bluemap purge world_the_end
+```
+
+Working looks like `content-type: text/event-stream` followed by `event:`
+lines. Note the origin *does* flush headers immediately, so comparing origin
+against the public URL on an idle stream proves nothing — that mismatch is
+expected, not a fault.
+
+**The map is served straight from the tunnel to `192.168.1.16:8100`**, with no
+NPM in the path. That's one hop fewer and worth keeping, but it was not
+required to make SSE work.
 
 **BlueMap map IDs don't match their dimensions.** `overworld` is the overworld,
 but **`world` is the Nether** and `world_the_end` is the End. Display names are
