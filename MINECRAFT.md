@@ -401,6 +401,16 @@ BlueMap reports "maps are updated" while showing stale or missing terrain.
 Changing a render setting retroactively needs `bluemap purge <map>` too — a
 plain `bluemap update` will not revisit regions it already considers done.
 
+**You cannot keep the map across a wipe, even on the same seed.** The idea is
+tempting — identical seed and version generate identical terrain, so the tiles
+ought to stay valid and save an hour of rendering. It doesn't work: BlueMap
+reconciles its rendered tiles against the world's actual region files and
+**deletes tiles for regions that no longer exist**. A wipe leaves ~15 generated
+regions, so within minutes a 3.0 GB / 34,000-tile render is pruned to about
+57 MB, and BlueMap then reports "maps are updated" over the fragment. This was
+tried on 2026-08-12 and reverted. Pre-generate and re-render; there is no
+shortcut.
+
 **Purge the Cloudflare cache after a wipe as well.** BlueMap serves tiles with
 `Cache-Control: max-age=86400` and the tile paths are identical from one world
 to the next, so Cloudflare's edge keeps serving the *previous* world's map to
