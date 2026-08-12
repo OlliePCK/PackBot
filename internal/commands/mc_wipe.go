@@ -162,6 +162,32 @@ func mcWipe(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.Inte
 		return Respond(s, i, style.ErrorEmbed("Deleting the world failed: "+err.Error()))
 	}
 
+	// BlueMap's rendered tiles and render-state live outside the world folder,
+	// so they survive the wipe. Left in place, the new world generates
+	// underneath the previous world's map: BlueMap reports "maps are updated"
+	// while serving terrain that no longer exists, and only the areas that
+	// happen to re-render are correct. Purging the files while the server is
+	// stopped avoids racing the render threads.
+	//
+	// Non-fatal: a stale map is worth a warning, not an aborted wipe with the
+	// world already deleted.
+	var notes []string
+	progress("World deleted. Clearing the old map renders…")
+	if rendered, err := d.Ptero.ListFiles(ctx, "/bluemap/web/maps"); err != nil {
+		notes = append(notes, "could not list old map renders: "+err.Error())
+	} else {
+		names := make([]string, 0, len(rendered))
+		for _, r := range rendered {
+			names = append(names, r.Name)
+		}
+		if err := d.Ptero.DeleteFiles(ctx, "/bluemap/web/maps", names); err != nil {
+			notes = append(notes, "could not clear old map renders: "+err.Error())
+		}
+	}
+	if err := d.Ptero.DeleteFiles(ctx, "/bluemap", []string{"tasks.dat"}); err != nil {
+		notes = append(notes, "could not clear bluemap tasks.dat: "+err.Error())
+	}
+
 	// server.properties is only safe to edit while stopped — the server
 	// rewrites it on shutdown, silently reverting anything changed while up.
 	props, err := d.Ptero.ReadFile(ctx, "/server.properties")
@@ -193,7 +219,6 @@ func mcWipe(ctx context.Context, d Deps, s *discordgo.Session, i *discordgo.Inte
 	}
 
 	// Per-world settings die with the world and have to be re-applied.
-	var notes []string
 	if _, err := d.RCON.Exec(ctx, "gamerule players_sleeping_percentage 30"); err != nil {
 		notes = append(notes, "could not set players_sleeping_percentage")
 	}
