@@ -82,13 +82,18 @@ plugins:
       refreshToken: "REDACTED_SET_ON_DEPLOYED_COPY_ONLY"
       skipInitialization: true
     clients:
+      # Order matters, and the WEB-based clients (WEB, MWEB, WEBEMBEDDED,
+      # TVHTML5) are deliberately absent. They are the only ones that need
+      # YouTube's signature cipher, and when YouTube rotated its player
+      # script to 2574220e (2026-08) no youtube-source build — 1.18.1,
+      # 1.18.2, or the latest snapshot — could parse it, so every play died
+      # with ScriptExtractionException 'Must find sig function'. These
+      # clients receive pre-signed URLs and sidestep the cipher entirely.
+      # Re-add the web clients once upstream handles the new script.
       - MUSIC
-      - TV # OAuth's designed pairing per the client table (streams as logged-in)
       - ANDROID_VR
       - IOS
-      - MWEB
-      - WEB
-      - WEBEMBEDDED
+      - TV # the OAuth-compatible client, kept last as a fallback
 
 logging:
   level:
