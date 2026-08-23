@@ -54,3 +54,33 @@ func TestCleanAuthReason(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifyYouTubeFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  string
+		want ytFailure
+	}{
+		// The real 2026-08-18 alert: sig-function failure dragging a
+		// "requires login" from another client. Must read as a plugin issue.
+		{
+			"mixed message favours player script",
+			"All clients failed. Client [TVHTML5] failed: The page needs to be reloaded. " +
+				"Client [ANDROID_VR] failed: This video requires login. " +
+				"Client [MWEB] failed: Must find sig function from script: /s/player/2574220e/base.js",
+			ytFailurePlayerScript,
+		},
+		{"pure login wall", "Client [WEB] failed: This video requires login.", ytFailureLoginWall},
+		{"sign in variant", "Sign in to confirm you're not a bot", ytFailureLoginWall},
+		{"sig function alone", "Must find sig function from script: base.js", ytFailurePlayerScript},
+		{"unrelated failure", "This video is unavailable in your country", ytFailureNone},
+		{"empty", "", ytFailureNone},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyYouTubeFailure(tt.msg); got != tt.want {
+				t.Errorf("classifyYouTubeFailure() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

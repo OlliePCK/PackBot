@@ -29,6 +29,68 @@ import (
 // "Sign in to confirm you're not a bot").
 var authFailureRe = regexp.MustCompile(`(?i)requires login|sign ?in|login[ _-]?required`)
 
+// playerScriptFailureRe matches youtube-source failing to parse YouTube's
+// player script. YouTube rotates that script regularly and the plugin has to
+// keep up, so this means "update youtube-source", NOT "re-link the account" —
+// a distinction the alert used to get wrong, sending Ollie through a pointless
+// re-link twice (2026-08-18/19).
+var playerScriptFailureRe = regexp.MustCompile(`(?i)sig function|player script|needs to be reloaded|signature`)
+
+// ytFailure is why YouTube playback failed, which decides what advice the
+// alert gives.
+type ytFailure int
+
+const (
+	ytFailureNone ytFailure = iota
+	ytFailureLoginWall
+	ytFailurePlayerScript
+)
+
+// classifyYouTubeFailure picks the likeliest cause. Lavalink aggregates every
+// client's error into one message, so a player-script complaint anywhere in it
+// outranks a login wall: a dead token makes ALL clients demand a login, while a
+// rotated player script breaks the web-based clients specifically and drags a
+// misleading "requires login" along from the others.
+func classifyYouTubeFailure(message string) ytFailure {
+	switch {
+	case playerScriptFailureRe.MatchString(message):
+		return ytFailurePlayerScript
+	case authFailureRe.MatchString(message):
+		return ytFailureLoginWall
+	default:
+		return ytFailureNone
+	}
+}
+
+// probeVideoID is a stable, unrestricted video used to test whether YouTube
+// playback works at all.
+const probeVideoID = "dQw4w9WgXcQ"
+
+// youtubePlaybackWorks asks the node to start streaming a known-good video,
+// which exercises the same format-loading path that playback uses (searching
+// alone would still succeed with a dead token). The Range header keeps the
+// probe to a couple of bytes.
+func (m *Manager) youtubePlaybackWorks(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"http://"+m.nodeAddress+"/youtube/stream/"+probeVideoID, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Authorization", m.nodePassword)
+	req.Header.Set("Range", "bytes=0-1")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	return resp.StatusCode >= 200 && resp.StatusCode < 300
+}
+
 // authAlertInterval debounces the admin DM: one alert per window, not one
 // per failed track.
 const authAlertInterval = 12 * time.Hour
@@ -36,18 +98,31 @@ const authAlertInterval = 12 * time.Hour
 // maybeNotifyAuthFailure DMs the admin the re-link steps when a track
 // exception looks like a YouTube login wall.
 func (m *Manager) maybeNotifyAuthFailure(message string) {
-	if m.adminUserID == "" || !authFailureRe.MatchString(message) {
+	cause := classifyYouTubeFailure(message)
+	if m.adminUserID == "" || cause == ytFailureNone {
 		return
 	}
 	m.authMu.Lock()
 	recent := time.Since(m.lastAuthAlert) < authAlertInterval
-	if !recent {
-		m.lastAuthAlert = time.Now()
-	}
 	m.authMu.Unlock()
 	if recent {
 		return
 	}
+
+	// Verify before paging. One track can fail on its own merits — age gate,
+	// region block, a single unhappy client — while YouTube playback is
+	// otherwise healthy. Alerting on the error text alone produced two false
+	// "your token expired" alarms when the token was fine, so only page when a
+	// probe confirms playback is genuinely broken.
+	if m.youtubePlaybackWorks(context.Background()) {
+		m.log.Warn("youtube track failed but playback probe succeeded; not alerting",
+			"cause", cause, "reason", cleanAuthReason(message))
+		return
+	}
+
+	m.authMu.Lock()
+	m.lastAuthAlert = time.Now()
+	m.authMu.Unlock()
 
 	channel, err := m.session.UserChannelCreate(m.adminUserID)
 	if err != nil {
@@ -55,14 +130,33 @@ func (m *Manager) maybeNotifyAuthFailure(message string) {
 		return
 	}
 	embed := &discordgo.MessageEmbed{
-		Title: "⚠️ YouTube playback is down — OAuth token expired",
-		Description: fmt.Sprintf(
-			"Every YouTube client hit a login wall (**%s**), which means the burner "+
-				"account's OAuth **refresh token has expired or been revoked**. Music "+
-				"will keep failing until it's re-linked — it can't self-heal.",
-			cleanAuthReason(message)),
-		Color: style.ColorWarn,
-		Fields: []*discordgo.MessageEmbedField{
+		Color:  style.ColorWarn,
+		Footer: style.Footer(),
+	}
+	if cause == ytFailurePlayerScript {
+		embed.Title = "⚠️ YouTube playback is down — plugin can't read YouTube's player script"
+		embed.Description = fmt.Sprintf(
+			"Playback failed with **%s**, and a test stream also failed. YouTube has "+
+				"rotated its player script and the `youtube-source` plugin can't parse "+
+				"the new one. **This is not a token problem — re-linking won't help.**",
+			cleanAuthReason(message))
+		embed.Fields = []*discordgo.MessageEmbedField{{
+			Name: "Fix — update the plugin",
+			Value: "Bump the `dev.lavalink.youtube:youtube-plugin` version in grid's " +
+				"`packbot-lavalink/application.yml` to the newest build, then " +
+				"`docker restart PackBot-Lavalink`.\n" +
+				"Releases: <https://github.com/lavalink-devs/youtube-source/releases> — if the " +
+				"latest release doesn't mention the fix, a snapshot build from " +
+				"`https://maven.lavalink.dev/snapshots` usually lands it first.",
+		}}
+	} else {
+		embed.Title = "⚠️ YouTube playback is down — OAuth token expired"
+		embed.Description = fmt.Sprintf(
+			"Every YouTube client hit a login wall (**%s**) and a test stream also failed, "+
+				"so the burner account's OAuth **refresh token has expired or been revoked**. "+
+				"Music will keep failing until it's re-linked — it can't self-heal.",
+			cleanAuthReason(message))
+		embed.Fields = []*discordgo.MessageEmbedField{
 			{
 				Name: "Fix — re-link the burner account (~2 min)",
 				Value: "1. In grid's `packbot-lavalink/application.yml` (`plugins.youtube.oauth`), " +
@@ -79,8 +173,7 @@ func (m *Manager) maybeNotifyAuthFailure(message string) {
 				Value: "`/ytauth set token:<token>` pushes it into the live node instantly (no restart); " +
 					"`/ytauth status` shows the current token.",
 			},
-		},
-		Footer: style.Footer(),
+		}
 	}
 	if _, err := style.Send(m.session, channel.ID, "", embed); err != nil {
 		m.log.Error("failed to send YouTube auth alert DM", "error", err)
