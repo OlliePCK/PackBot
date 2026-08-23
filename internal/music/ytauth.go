@@ -62,34 +62,12 @@ func classifyYouTubeFailure(message string) ytFailure {
 	}
 }
 
-// probeVideoID is a stable, unrestricted video used to test whether YouTube
-// playback works at all.
-const probeVideoID = "dQw4w9WgXcQ"
-
-// youtubePlaybackWorks asks the node to start streaming a known-good video,
-// which exercises the same format-loading path that playback uses (searching
-// alone would still succeed with a dead token). The Range header keeps the
-// probe to a couple of bytes.
-func (m *Manager) youtubePlaybackWorks(ctx context.Context) bool {
-	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"http://"+m.nodeAddress+"/youtube/stream/"+probeVideoID, nil)
-	if err != nil {
-		return false
-	}
-	req.Header.Set("Authorization", m.nodePassword)
-	req.Header.Set("Range", "bytes=0-1")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	return resp.StatusCode >= 200 && resp.StatusCode < 300
-}
+// Alerting deliberately has no canary probe. The first attempt used a fixed
+// known-good video (dQw4w9WgXcQ), which turned out to stream fine from a
+// cached cipher while every real track failed — so it would have silenced true
+// alerts. The caller instead pages only once the circuit breaker has seen
+// maxConsecutiveFailures distinct tracks fail in a row, which is direct
+// evidence the source is broken rather than a guess about it.
 
 // authAlertInterval debounces the admin DM: one alert per window, not one
 // per failed track.
@@ -102,27 +80,18 @@ func (m *Manager) maybeNotifyAuthFailure(message string) {
 	if m.adminUserID == "" || cause == ytFailureNone {
 		return
 	}
+	// Only reached once the circuit breaker has seen several tracks fail in a
+	// row, so the failure is already established as systemic — a single dud
+	// track never pages.
 	m.authMu.Lock()
 	recent := time.Since(m.lastAuthAlert) < authAlertInterval
+	if !recent {
+		m.lastAuthAlert = time.Now()
+	}
 	m.authMu.Unlock()
 	if recent {
 		return
 	}
-
-	// Verify before paging. One track can fail on its own merits — age gate,
-	// region block, a single unhappy client — while YouTube playback is
-	// otherwise healthy. Alerting on the error text alone produced two false
-	// "your token expired" alarms when the token was fine, so only page when a
-	// probe confirms playback is genuinely broken.
-	if m.youtubePlaybackWorks(context.Background()) {
-		m.log.Warn("youtube track failed but playback probe succeeded; not alerting",
-			"cause", cause, "reason", cleanAuthReason(message))
-		return
-	}
-
-	m.authMu.Lock()
-	m.lastAuthAlert = time.Now()
-	m.authMu.Unlock()
 
 	channel, err := m.session.UserChannelCreate(m.adminUserID)
 	if err != nil {

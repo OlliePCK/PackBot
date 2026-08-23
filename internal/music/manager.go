@@ -80,6 +80,16 @@ type GuildPlayer struct {
 	// deliberate skip/stop/replace causes.
 	stopping bool
 
+	// consecutiveFailures counts tracks that failed back-to-back without any
+	// successful playback between them, and lastFailure is why the most recent
+	// one died. Together they drive the circuit breaker: when a source breaks
+	// (e.g. YouTube rotating its player script) every queued track fails
+	// instantly, and without this the bot burns the whole queue in seconds,
+	// posting a "Now playing" card for each — 12 cards and no audio, which is
+	// how a source outage looked to the room on 2026-08-23.
+	consecutiveFailures int
+	lastFailure         string
+
 	// onChange notifies the manager's update listeners (set at creation).
 	onChange func()
 }
@@ -273,6 +283,7 @@ func (m *Manager) cleanup(guildID string) {
 	gp.VoiceChannelID = ""
 	gp.stopping = false
 	gp.Filters = nil
+	gp.consecutiveFailures = 0
 	gp.mu.Unlock()
 	m.notifyUpdate(guildID)
 }
@@ -360,6 +371,11 @@ func (m *Manager) Enqueue(ctx context.Context, guildID string, tracks []*Track) 
 	gp.Queue = append(gp.Queue, tracks...)
 	queueLen := len(gp.Queue)
 	idle := gp.Current == nil
+	if idle {
+		// Fresh listening session: don't let failures from an earlier outage
+		// trip the breaker on this queue's first stumble.
+		gp.consecutiveFailures = 0
+	}
 	gp.mu.Unlock()
 	m.notifyUpdate(guildID)
 
@@ -665,6 +681,19 @@ func (m *Manager) onTrackEnd(player disgolink.Player, event lavalink.TrackEndEve
 		return
 	}
 
+	// Circuit breaker: count back-to-back failures, reset on any track that
+	// actually played through. Tripping stops the cascade instead of letting a
+	// broken source chew through the queue.
+	if event.Reason == lavalink.TrackEndReasonLoadFailed {
+		if m.recordTrackFailure(gp) {
+			return
+		}
+	} else if event.Reason == lavalink.TrackEndReasonFinished {
+		gp.mu.Lock()
+		gp.consecutiveFailures = 0
+		gp.mu.Unlock()
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -773,11 +802,64 @@ func (m *Manager) autoplayTrack(ctx context.Context, seed *Track, gp *GuildPlaye
 	return nil
 }
 
+// maxConsecutiveFailures is how many tracks may fail back-to-back before the
+// bot stops the queue. Three distinct tracks failing in a row is strong
+// evidence the source is broken rather than one dud track.
+const maxConsecutiveFailures = 3
+
+// recordTrackFailure counts a failed track and reports whether the circuit
+// breaker tripped. When it trips it clears the queue, tells the channel once,
+// and alerts the admin — the failures themselves are the evidence that the
+// problem is systemic, so no separate health probe is needed.
+func (m *Manager) recordTrackFailure(gp *GuildPlayer) bool {
+	gp.mu.Lock()
+	gp.consecutiveFailures++
+	failures := gp.consecutiveFailures
+	reason := gp.lastFailure
+	failed := gp.Current
+	if failures < maxConsecutiveFailures {
+		gp.mu.Unlock()
+		return false
+	}
+	// Tripped: abandon the rest of the queue rather than fail through it.
+	dropped := len(gp.Queue)
+	gp.consecutiveFailures = 0
+	gp.Queue = nil
+	gp.Current = nil
+	gp.mu.Unlock()
+
+	title := "unknown track"
+	if failed != nil {
+		title = failed.Title
+	}
+	m.log.Error("playback failing repeatedly; stopping queue",
+		"guild", gp.GuildID, "failures", failures, "last_track", title, "reason", reason)
+
+	msg := fmt.Sprintf("Couldn't play %d tracks in a row, so I've stopped", failures)
+	if dropped > 0 {
+		msg += fmt.Sprintf(" and cleared the %d still queued", dropped)
+	}
+	msg += ".\n\nThis is a problem with the audio source, not your request — try again shortly."
+	embed := errorEmbed(msg)
+	if reason != "" {
+		embed.Description += "\n-# " + cleanAuthReason(reason)
+	}
+	m.sendText(gp, embed)
+	m.notifyUpdate(gp.GuildID)
+
+	// Page the admin with the classified cause (rate-limited in ytauth.go).
+	m.maybeNotifyAuthFailure(reason)
+	return true
+}
+
 func (m *Manager) onTrackException(player disgolink.Player, event lavalink.TrackExceptionEvent) {
 	m.log.Error("track exception", "guild", player.GuildID(), "error", event.Exception.Message)
-	// Login-wall exceptions mean the YouTube OAuth token died — alert the
-	// admin by DM with the re-link steps (debounced; see ytauth.go).
-	m.maybeNotifyAuthFailure(event.Exception.Message)
+	// Record why; the TrackEnd(loadFailed) that follows drives the circuit
+	// breaker, which is what decides whether this is systemic enough to alert.
+	gp := m.Guild(player.GuildID().String())
+	gp.mu.Lock()
+	gp.lastFailure = event.Exception.Message
+	gp.mu.Unlock()
 }
 
 func (m *Manager) onTrackStuck(player disgolink.Player, event lavalink.TrackStuckEvent) {
