@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sort"
 	"time"
+
+	"github.com/OlliePCK/packbot/internal/bot"
 )
 
 // apiVersion is reported by /api/stats (Node reported package.json's 1.0.0).
@@ -22,8 +24,17 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		activeVoice = s.music.ActiveVoiceCount()
 	}
 
+	// "online" used to be hardcoded, which is how /api/stats kept reporting a
+	// healthy bot throughout the four-day gateway outage on 2026-09-14. It now
+	// reflects whether Discord is actually still talking to us.
+	status := "online"
+	if !bot.GatewayHealthy(s.discord) {
+		status = "degraded"
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":          "online",
+		"status":          status,
+		"gatewayHealthy":  bot.GatewayHealthy(s.discord),
 		"guilds":          len(guilds),
 		"users":           users,
 		"uptime":          uptime.Seconds(),
@@ -35,8 +46,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	// DataReady alone can lag reality: it stays true on a connection that is
+	// still open but has stopped ACKing heartbeats, so both must hold.
 	writeJSON(w, http.StatusOK, map[string]any{
-		"online":    s.discord.DataReady,
+		"online":    s.discord.DataReady && bot.GatewayHealthy(s.discord),
 		"timestamp": time.Now().UnixMilli(),
 	})
 }

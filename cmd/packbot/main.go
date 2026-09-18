@@ -20,8 +20,8 @@ import (
 	"github.com/OlliePCK/packbot/internal/jobs"
 	"github.com/OlliePCK/packbot/internal/logging"
 	"github.com/OlliePCK/packbot/internal/minecraft"
-	"github.com/OlliePCK/packbot/internal/pterodactyl"
 	"github.com/OlliePCK/packbot/internal/music"
+	"github.com/OlliePCK/packbot/internal/pterodactyl"
 	"github.com/OlliePCK/packbot/internal/spotify"
 	"github.com/OlliePCK/packbot/internal/storage"
 	"github.com/OlliePCK/packbot/internal/youtube"
@@ -65,6 +65,23 @@ func run() error {
 	session, err := discordgo.New("Bot " + cfg.Token)
 	if err != nil {
 		return fmt.Errorf("create discord session: %w", err)
+	}
+
+	// discordgo reports a dropped gateway at LogWarning and its default
+	// LogLevel is LogError, so that line is discarded. That silence is how a
+	// four-day outage (2026-09-14) left no trace in the logs at all, so raise
+	// the level and route the library's output into slog alongside ours.
+	session.LogLevel = discordgo.LogWarning
+	discordgo.Logger = func(msgL, _ int, format string, a ...any) {
+		msg := fmt.Sprintf(format, a...)
+		switch msgL {
+		case discordgo.LogError:
+			slog.Error(msg, "component", "discordgo")
+		case discordgo.LogWarning:
+			slog.Warn(msg, "component", "discordgo")
+		default:
+			slog.Info(msg, "component", "discordgo")
+		}
 	}
 
 	// YouTube Data API client is optional: without a key, /youtube degrades

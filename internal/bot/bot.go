@@ -96,6 +96,12 @@ func (b *Bot) Run(ctx context.Context) error {
 	}
 	slog.Info("gateway connected")
 
+	// discordgo reconnects on its own in the normal case; the watchdog covers
+	// the case where that machinery wedges and leaves the bot silently offline
+	// (see watchdog.go). It stops when ctx is cancelled, before Run() closes
+	// the session itself.
+	go b.watchGateway(ctx)
+
 	if b.cfg.RegisterCommands {
 		if err := b.registerCommands(); err != nil {
 			stopAndFlushTracker()
